@@ -6,6 +6,15 @@ they are not requirements for users of a compiled binary.
 
 ## Set up the environment
 
+Required CI installs explicitly pinned tools and runs `scripts/checks/all.py`
+directly. It does not require a Flox account. Local hooks run that same checker
+in the current environment, so activate your chosen toolchain before committing.
+The Cargo and Bun lockfiles remain required and frozen in CI.
+
+Flox is an alternative local environment. Its manifest declares the development
+tools, but the repository does not yet include a resolved Flox lockfile. Do not
+treat the manifest alone as a reproducible environment.
+
 Install Flox 1.19.1 through its official installation instructions. From the
 repository root:
 
@@ -22,9 +31,12 @@ provisioning is an explicit step. Allow network access during initial setup.
 
 The environment declares Rust 1.95.0, Bun 1.3.11 and Node 22.23.1. A complete
 Flox lockfile is required before the environment can be treated as reproducible.
-If it is absent or needs resolution, authenticate with `flox auth login`, then
-run `flox activate`. Commit the generated `.flox/env/manifest.lock` with its
-manifest after verifying the toolchain. Do not substitute an empty lockfile.
+Catalog-based resolution requires authentication. If you choose that setup,
+authenticate with `flox auth login`, then run `flox activate`. Commit the generated
+`.flox/env/manifest.lock` with its manifest after verifying the toolchain. Do not
+substitute an empty lockfile. Revision-pinned flake packages support resolution
+without Catalog authentication, but a matching environment for the declared
+versions and platforms has not yet been validated here.
 An up-to-date lockfile allows ordinary activation without catalog authentication.
 
 The declared platforms are Apple silicon, Intel macOS, Linux x86_64 and Linux
@@ -80,7 +92,14 @@ Use the same commands in CI and local hooks. The fast command is suitable for a
 pre-commit check; full documentation validation and tests belong in pre-push and
 CI checks. Formatting is never applied implicitly.
 
-For noninteractive execution:
+With tools already on PATH, run the shared checks directly:
+
+```sh
+python3 scripts/checks/all.py --fast
+python3 scripts/checks/all.py
+```
+
+For noninteractive execution in a resolved Flox environment:
 
 ```sh
 flox activate -- bun run docs:fast

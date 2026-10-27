@@ -12,6 +12,7 @@
     "crates/tools/": 3000,
     "packages/adapter/": 2000,
     "scripts/checks/": 1600,
+    "scripts/ci/": 140,
     "scripts/release/": 1200,
     "tests/": 5000,
     "vendor/netwatch/": 5695

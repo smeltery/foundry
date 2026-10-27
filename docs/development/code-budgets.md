@@ -211,4 +211,10 @@ requires renewed source and budget review. All Foundry-owned files retain the
 
 ## Failure handling
 
+The CI bootstrap has a 140-line allocation for its reviewed 128-line installer.
+It verifies selected tool versions and reads only digest-checked executable
+members from bounded utility archives. Its 72 test lines count under `tests/`;
+six tests cover archive integrity, member selection and exact version checks.
+Language installation uses pinned setup actions rather than custom installers.
+
 The checker returns 1 for exceeded budgets or missing component ownership, and 2 when its inputs or Git enumeration fail. CI and local hooks must use this same command and configuration. Symlinked source files require review rather than being followed automatically.
