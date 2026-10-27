@@ -209,6 +209,30 @@ The dependency patch and removal criteria are recorded in
 requires renewed source and budget review. All Foundry-owned files retain the
 400-line limit.
 
+The store allocation is now 13,750 physical Rust lines for reviewed loading
+snapshots and schema-11 continuation acceptance. The integrated measurement is
+13,570: 6,724 under `src/` and 6,846 under `tests/`, including comments, blank
+lines and test support. The 2,935-line increase over the schema-10 baseline covers
+bounded shared evidence extraction, intent/acceptance integrity, atomic writes,
+shared quota accounting and corruption, race, migration and retained-lineage tests.
+Independent source review found no remaining correctness blocker in this bounded
+store increment. The allocation leaves 180 lines for corrections; every owned
+file retains the 400-line limit. No tests or behavior were removed to fit it.
+Native restored execution and broader session operations are outside this increment.
+
+The CLI allocation is now 8,500 physical lines for independently reviewed shared
+validation, connection options, request fixtures, injected configuration, network
+commands and plugin-management parsing. The measured total is 8,385, leaving
+115 lines for corrections. Network parsing added 353 production and 580 fixture
+lines over the prior 6,627-line snapshot. Plugin parsing adds 105 production and
+401 fixture lines, including retained existing cases. Effort selection adds
+42 production and 277 fixture lines for four routes and pre-mutation rejection
+by local backends. Fixtures cover defaults,
+shared request shapes and rejection before backend configuration. Tests remain
+included; the 400-line file limit is unchanged. This allocation does not establish
+full command conformance or implement remote accounts, transport, native services,
+package installation or release packaging.
+
 ## Failure handling
 
 CI provisioning has a 150-line allocation for its reviewed 128-line installer

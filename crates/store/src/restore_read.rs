@@ -195,15 +195,27 @@ pub(crate) fn selection(
     row: &Row,
     configuration: [u8; 32],
 ) -> Result<CheckpointRef> {
+    selected_baseline(connection, row, configuration).map(|(checkpoint, _)| checkpoint.reference)
+}
+
+/// Preserve the verified selected body for callers that need private loading evidence.
+pub(crate) fn selected_baseline(
+    connection: &Connection,
+    row: &Row,
+    configuration: [u8; 32],
+) -> Result<(
+    crate::PrivateCheckpoint,
+    Option<crate::witness_storage::StoredWitness>,
+)> {
     admission::exclusive(connection, &row.session, Some(&row.id))?;
     let session = read_session(connection, &row.session)?;
     if session.version != number(row.version)? || session.active_attempt_id.is_some() {
         return Err(conflict("session changed since restore began"));
     }
-    let head = checkpoint_read::head(connection, &row.session)?
+    let (checkpoint, witness) = checkpoint_read::head(connection, &row.session)?
         .ok_or_else(|| conflict("restore checkpoint head is missing"))?
-        .private()?
-        .reference;
+        .private_and_witness()?;
+    let head = &checkpoint.reference;
     if head.id.as_str() != row.checkpoint
         || head.request_digest != row.checkpoint_digest
         || head.configuration_digest != configuration
@@ -212,7 +224,7 @@ pub(crate) fn selection(
     {
         return Err(conflict("restore head, cut or configuration changed"));
     }
-    Ok(head)
+    Ok((checkpoint, witness))
 }
 pub(crate) fn load(connection: &Connection, id: &str) -> Result<Row> {
     let valid: Option<bool> = connection.query_row(

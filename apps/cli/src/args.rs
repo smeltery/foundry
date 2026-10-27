@@ -20,7 +20,7 @@ pub struct Cli {
     pub database: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Option<Command>,
-    /// Task to start; omit to request an interactive session.
+    /// Task to start; interactive sessions are unsupported by the local backend.
     pub prompt: Option<String>,
     /// Grant one workspace tool operation for this task.
     #[arg(long = "tool-grant", value_enum, requires = "prompt")]
@@ -76,6 +76,16 @@ pub enum ToolGrant {
     WriteOverwrite,
 }
 
+/// Optional task effort requested from a capable backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Effort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+}
+
 #[derive(Debug, Default, Args, Serialize)]
 pub struct PromptOptions {
     #[arg(long, conflicts_with = "on")]
@@ -86,6 +96,7 @@ pub struct PromptOptions {
     pub dir: Option<PathBuf>,
     #[arg(long, short = 'y')]
     pub yes: bool,
+    /// Request detached execution (unsupported by the local backend).
     #[arg(long, short = 'd')]
     pub detach: bool,
     #[arg(long, conflicts_with = "no_repo")]
@@ -94,6 +105,9 @@ pub struct PromptOptions {
     pub no_repo: bool,
     #[arg(long)]
     pub model: Option<String>,
+    /// Requested effort; unsupported by the local adapter protocol.
+    #[arg(long, value_enum)]
+    pub effort: Option<Effort>,
     #[arg(long)]
     pub resume: Option<String>,
     #[arg(long)]
@@ -108,7 +122,7 @@ pub struct PromptOptions {
 pub enum Command {
     /// Serve local session tools over MCP standard input and output.
     Mcp,
-    /// Submit a task and wait, or return its identifier with --detach.
+    /// Run a task synchronously; the local backend does not support --detach.
     Run(RunOptions),
     /// Inspect and manage sessions.
     #[command(subcommand)]
@@ -117,7 +131,7 @@ pub enum Command {
     Ls(crate::session::ListOptions),
     /// Follow a session.
     Watch(crate::session::WatchOptions),
-    /// Deliver another instruction to a session.
+    /// Queue an instruction without starting or resuming execution.
     Send {
         id: String,
         #[arg(value_parser = nonempty)]
@@ -192,37 +206,17 @@ pub struct RunOptions {
     pub git_ref: Option<String>,
     #[arg(long)]
     pub model: Option<String>,
+    /// Requested effort; unsupported by the local adapter protocol.
+    #[arg(long, value_enum)]
+    pub effort: Option<Effort>,
+    /// Request detached execution (unsupported by the local backend).
     #[arg(long, short = 'd')]
     pub detach: bool,
 }
 
-#[derive(Debug, Args, Serialize)]
-#[command(args_conflicts_with_subcommands = true)]
-pub struct NetworkOptions {
-    #[command(subcommand)]
-    pub command: Option<NetworkCommand>,
-    #[arg(requires = "message")]
-    pub address: Option<String>,
-    #[arg(requires = "address", value_parser = nonempty)]
-    pub message: Option<String>,
-}
+pub use crate::network_args::{NetworkCommand, NetworkOptions};
 
-#[derive(Debug, Subcommand, Serialize)]
-#[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
-pub enum NetworkCommand {
-    /// List reachable agents.
-    Who,
-    /// Make an agent available from this folder.
-    Serve { agent: String },
-}
-
-#[derive(Debug, Subcommand, Serialize)]
-#[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
-pub enum PluginCommand {
-    List,
-    Add { name: String },
-    Remove { name: String },
-}
+pub use crate::plugin_args::PluginCommand;
 
 #[derive(Debug, Subcommand, Serialize)]
 #[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]

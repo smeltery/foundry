@@ -1,8 +1,13 @@
 pub mod account;
 pub mod args;
 pub mod computer;
+pub mod configuration;
 pub mod help;
 pub mod local;
+pub mod network_args;
+pub mod network_cli;
+pub mod plugin_args;
+mod plugin_cli;
 pub mod runner;
 pub mod session;
 pub mod watch;
@@ -85,8 +90,47 @@ pub fn normalize_upgrade(cli: &mut Cli) -> Result<(), CommandError> {
     Ok(())
 }
 
+/// Apply shell validation before either backend selection or request dispatch.
+pub fn normalize_and_validate(cli: &mut Cli) -> Result<(), CommandError> {
+    normalize_upgrade(cli)?;
+    if matches!(cli.command, Some(Command::Version | Command::Help { .. })) {
+        return Ok(());
+    }
+    if cli.command.is_some() {
+        if cli.prompt.is_some()
+            || serde_json::to_value(&cli.options)
+                .map_err(|error| CommandError::new("encoding", error.to_string()))?
+                != serde_json::to_value(args::PromptOptions::default())
+                    .map_err(|error| CommandError::new("encoding", error.to_string()))?
+        {
+            return Err(CommandError::new(
+                "usage",
+                "Root task options cannot be combined with a subcommand",
+            ));
+        }
+    } else {
+        if cli.options.detach && !cli.options.cloud && cli.options.on.is_none() {
+            return Err(CommandError::new("usage", "--detach needs --cloud or --on"));
+        }
+        if cli
+            .prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.trim().is_empty())
+        {
+            return Err(CommandError::new("usage", "task must not be empty"));
+        }
+    }
+    if let Some(Command::Network(options)) = &mut cli.command {
+        network_cli::normalize(options, &mut cli.output)?;
+    }
+    if let Some(Command::Plugins(command)) = &cli.command {
+        plugin_cli::validate(command)?;
+    }
+    Ok(())
+}
+
 pub fn dispatch(mut cli: Cli, backend: &mut impl Backend) -> Result<Response, CommandError> {
-    normalize_upgrade(&mut cli)?;
+    normalize_and_validate(&mut cli)?;
     if let Some(Command::Help { command }) = &cli.command {
         return help::render(command);
     }
@@ -102,16 +146,6 @@ pub fn dispatch(mut cli: Cli, backend: &mut impl Backend) -> Result<Response, Co
         Some(command) => serde_json::to_value(command)
             .map_err(|error| CommandError::new("encoding", error.to_string()))?,
         None => {
-            if cli.options.detach && !cli.options.cloud && cli.options.on.is_none() {
-                return Err(CommandError::new("usage", "--detach needs --cloud or --on"));
-            }
-            if cli
-                .prompt
-                .as_ref()
-                .is_some_and(|prompt| prompt.trim().is_empty())
-            {
-                return Err(CommandError::new("usage", "task must not be empty"));
-            }
             let mut options = serde_json::to_value(cli.options)
                 .map_err(|error| CommandError::new("encoding", error.to_string()))?;
             if !cli.tool_grants.is_empty() {
@@ -135,8 +169,22 @@ pub fn execute(
     stdout: &mut impl Write,
     stderr: &mut impl Write,
 ) -> std::io::Result<u8> {
-    let format = cli.output.format();
-    match dispatch(cli, backend) {
+    let format = if matches!(&cli.command, Some(Command::Network(options)) if network_cli::local_json(options))
+    {
+        OutputFormat::Json
+    } else {
+        cli.output.format()
+    };
+    render(dispatch(cli, backend), format, stdout, stderr)
+}
+
+pub(crate) fn render(
+    result: Result<Response, CommandError>,
+    format: OutputFormat,
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+) -> std::io::Result<u8> {
+    match result {
         Ok(response) => {
             match format {
                 OutputFormat::Text => writeln!(stdout, "{}", response.text)?,

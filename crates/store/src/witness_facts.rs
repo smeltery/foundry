@@ -30,9 +30,31 @@ pub(crate) fn verify(
     fence: &AttemptFence,
     body: &WitnessBodyV1,
 ) -> Result<()> {
-    let snapshot = crate::capture_snapshot::snapshot(connection, &fence.session_id)?;
+    verify_session(connection, &fence.session_id, body)
+}
+
+/// Check durable facts inside the caller's transaction; grants no execution authority.
+pub(crate) fn verify_session(
+    connection: &Connection,
+    session_id: &str,
+    body: &WitnessBodyV1,
+) -> Result<()> {
+    let snapshot = crate::capture_snapshot::snapshot(connection, session_id)?;
     require(snapshot.cut == body.header.cut)?;
-    let events = witness_events::selected(connection, &fence.session_id)?;
+    let events = witness_events::selected(connection, session_id)?;
+    verify_evidence(connection, session_id, body, &snapshot, &events)
+}
+
+/// Verify complete facts/events extracted in the caller's same transaction.
+/// The caller retains responsibility for ownership, selection and evidence bounds.
+pub(crate) fn verify_evidence(
+    connection: &Connection,
+    session_id: &str,
+    body: &WitnessBodyV1,
+    snapshot: &crate::CaptureSnapshot,
+    events: &[EvidenceEvent],
+) -> Result<()> {
+    require(snapshot.cut == body.header.cut)?;
     let mut messages = BTreeSet::new();
     let mut tools = BTreeSet::new();
     let mut explained = BTreeSet::new();
@@ -40,13 +62,13 @@ pub(crate) fn verify(
         match record {
             LogicalRecord::Prompt(p) => {
                 require(
-                    p.session_id == fence.session_id
+                    p.session_id == session_id
                         && p.text_digest == snapshot.prompt_digest
                         && p.text_bytes == snapshot.prompt_bytes,
                 )?;
                 let exists: bool = connection.query_row(
                     "SELECT EXISTS(SELECT 1 FROM attempts WHERE session_id=?1 AND id=?2)",
-                    params![fence.session_id, p.attempt_id],
+                    params![session_id, p.attempt_id],
                     |r| r.get(0),
                 )?;
                 require(exists)?;
@@ -64,24 +86,49 @@ pub(crate) fn verify(
                         && m.text_bytes == i.text_bytes,
                 )?;
                 messages.insert(i.message_id.as_str());
-                let DeliveryEvidence::OrdinaryEvent(identity) = &i.delivery else {
-                    return Err(foundry_contracts::ContractError::Unsupported(
-                        "Continue acceptance witness is not available".into(),
-                    )
-                    .into());
+                let event = match &i.delivery {
+                    DeliveryEvidence::OrdinaryEvent(identity) => events
+                        .iter()
+                        .find(|event| {
+                            event.kind == "message_accepted"
+                                && event.subject == i.message_id
+                                && event_matches(event, identity, &i.attempt_id)
+                        })
+                        .ok_or_else(|| {
+                            foundry_contracts::ContractError::Unsupported(
+                                "ordinary instruction acceptance evidence missing".into(),
+                            )
+                        })?,
+                    DeliveryEvidence::ContinueAcceptance(identity) => {
+                        let accepted = crate::continue_read::verified(
+                            connection,
+                            session_id,
+                            &identity.restore_id,
+                        )?
+                        .ok_or_else(|| conflict("instruction acceptance missing"))?;
+                        let intent = &accepted.input.intent;
+                        let receipt = &accepted.reference;
+                        require(
+                            receipt.record_digest == identity.digest
+                                && receipt.attempt_id == i.attempt_id
+                                && intent.message_id == i.message_id
+                                && intent.message_sequence == i.sequence
+                                && intent.message_text_digest == i.text_digest
+                                && intent.message_text_bytes == i.text_bytes,
+                        )?;
+                        events
+                            .iter()
+                            .find(|event| {
+                                event.kind == "continue_accepted"
+                                    && event.id == receipt.event_id
+                                    && event.sequence == receipt.event_sequence
+                                    && event.revision == 0
+                                    && event.attempt == i.attempt_id
+                                    && event.subject == i.message_id
+                            })
+                            .ok_or_else(|| conflict("instruction acceptance event missing"))?
+                    }
                 };
-                let event = events
-                    .iter()
-                    .find(|event| {
-                        event.kind == "message_accepted"
-                            && event.subject == i.message_id
-                            && event_matches(event, identity, &i.attempt_id)
-                    })
-                    .ok_or_else(|| {
-                        foundry_contracts::ContractError::Unsupported(
-                            "ordinary instruction acceptance evidence missing".into(),
-                        )
-                    })?;
                 explained.insert(event.sequence);
             }
             LogicalRecord::AdmittedResult(result) => {
@@ -89,7 +136,7 @@ pub(crate) fn verify(
                     WitnessOutcome::Success => ToolOutcome::Success,
                     WitnessOutcome::Failed => ToolOutcome::Failed,
                 };
-                verify_tool(&snapshot, &result.identity, outcome, result.output_digest)?;
+                verify_tool(snapshot, &result.identity, outcome, result.output_digest)?;
                 tools.insert(result.identity.call_id.as_str());
                 require(events.iter().any(|e| tool_event(e, &result.identity)))?;
                 for e in events.iter().filter(|e| tool_event(e, &result.identity)) {
@@ -97,7 +144,7 @@ pub(crate) fn verify(
                 }
             }
             LogicalRecord::SyntheticNoEffect(result) => {
-                verify_tool(&snapshot, &result.identity, ToolOutcome::Failed, None)?;
+                verify_tool(snapshot, &result.identity, ToolOutcome::Failed, None)?;
                 tools.insert(result.identity.call_id.as_str());
                 require(events.iter().any(|e| tool_event(e, &result.identity)))?;
                 for e in events.iter().filter(|e| tool_event(e, &result.identity)) {

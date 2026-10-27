@@ -6,15 +6,22 @@ mod capture_snapshot;
 mod checkpoint_codec;
 mod checkpoint_cut;
 mod checkpoint_finish;
+mod checkpoint_limits;
 mod checkpoint_read;
 mod checkpoint_types;
 mod checkpoints;
+mod continue_acceptance;
+mod continue_baseline;
+mod continue_codec;
+mod continue_intent;
+mod continue_read;
 mod events;
 mod fresh_attempt;
 mod messages;
 mod restore_continue;
 mod restore_message;
 mod restore_read;
+mod restore_snapshot;
 mod restore_types;
 mod restores;
 mod schema;
@@ -46,7 +53,12 @@ pub use checkpoint_types::{
     MAX_CHECKPOINT_BYTES, MAX_CHECKPOINT_COVERAGE_BYTES, MAX_CHECKPOINT_METADATA_BYTES,
     OpaqueCheckpointInput, PrivateCheckpoint,
 };
+pub use continue_intent::{
+    ContinueAcceptanceInput, ContinueAcceptanceRef, RestoreContinueCodec, RestoreContinueIntentV1,
+    RestoreContinueMode,
+};
 pub use fresh_attempt::FreshAttempt;
+pub use restore_snapshot::RestoreBaselineSnapshot;
 pub use restore_types::{
     BeginRestoreInput, BeginRestoreResult, ContinueDecision, ContinueInput, ContinueMessageBinding,
     ContinueMessageDecision, ContinueMessageInput, ContinueMessagePermit, ContinuePermit,
@@ -56,6 +68,7 @@ pub use restores::{
     MAX_RESTORE_ROWS_PER_DATABASE, MAX_RESTORE_ROWS_PER_SESSION, RESTORE_RECOVERY_BATCH_SIZE,
 };
 pub use tools::{ToolOutcome, ToolRecord};
+pub use witness_events::EvidenceEvent as RestoreEventEvidence;
 pub use witnessed_checkpoint::{PrivateWitness, WitnessedCheckpointInput};
 
 #[derive(Debug)]

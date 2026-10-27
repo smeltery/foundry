@@ -53,11 +53,34 @@ pub(crate) fn snapshot(
     connection: &rusqlite::Connection,
     session_id: &str,
 ) -> Result<CaptureSnapshot> {
+    extract(connection, session_id, || {
+        checkpoint_read::head(connection, session_id)?
+            .map(|row| row.private().map(|private| private.reference))
+            .transpose()
+    })
+}
+
+/// Reuse head metadata validated in the caller's current read transaction.
+/// This helper extracts facts only; it does not establish head selection or ownership.
+pub(crate) fn snapshot_with_head(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    head: CheckpointRef,
+) -> Result<CaptureSnapshot> {
+    if head.session_id != session_id {
+        return Err(conflict("capture head belongs to another session"));
+    }
+    extract(connection, session_id, || Ok(Some(head)))
+}
+
+fn extract(
+    connection: &rusqlite::Connection,
+    session_id: &str,
+    head: impl FnOnce() -> Result<Option<CheckpointRef>>,
+) -> Result<CaptureSnapshot> {
     let (message_count, tool_count) = capture_bounds::preflight(connection, session_id)?;
     let cut = checkpoint_cut::durable_cut(connection, session_id)?;
-    let head = checkpoint_read::head(connection, session_id)?
-        .map(|row| row.private().map(|private| private.reference))
-        .transpose()?;
+    let head = head()?;
     let (prompt_digest, prompt_bytes) =
         checkpoint_cut::with_prompt(connection, session_id, |text| {
             (
@@ -122,3 +145,6 @@ pub(crate) fn snapshot(
         tools,
     })
 }
+
+#[cfg(test)]
+mod tests;

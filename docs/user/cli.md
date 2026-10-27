@@ -39,9 +39,35 @@ does not install updates, and active `--update` is unsupported for local executi
 
 Both send forms reject empty or whitespace-only messages before dispatch. Nonblank
 message whitespace is preserved. Missing required values, conflicting flags and
-invalid enum values produce parser errors, generally status 2 and text on stderr,
-even with `--json`. Unknown paths passed to `help` produce a dispatch usage error
-and honor the selected output format.
+invalid enum values produce parser errors with status 2 and empty stdout. If an
+exact `--json`, `--output-format json` or `--output-format=json` selector occurs
+before the first `--` delimiter, the parser error is a JSON `error` object on
+stderr with `code` and `message`. Invalid values use code `invalid`; other parser
+failures use `usage`. Without such a selector, parser errors are text on stderr.
+Similar option names and selectors after `--` do not enable JSON errors.
+
+Parser errors occur before database or adapter configuration. Successful `--help`
+and `--version` requests retain their normal text output on stdout, even with a
+JSON selector. The `version --json` subcommand provides structured version output.
+Unknown paths passed to `help` produce a dispatch usage error and honor the
+selected output format.
+
+The deprecated `connect`/`device` options `--sessions VALUE` and
+`--cloud-sessions on|off` are accepted and ignored. `--sessions` consumes an opaque
+text value without numeric conversion. Neither option changes the effective
+backend request, sets a concurrency limit or enables cloud enrollment.
+
+## Effort selection
+
+Positional tasks, `run`, `session start` and `acp` accept
+`--effort low|medium|high|xhigh`. An omitted option leaves effort unset; the shell
+does not choose a default. Explicit values are preserved in backend requests.
+Missing or unsupported values fail during parsing before configuration.
+
+The local execution backend does not yet support effort selection. Supplying it
+returns an unsupported-option error before a session or attempt is created,
+including when an adapter is configured. ACP execution also remains unsupported.
+This option does not change the provider or adapter protocol.
 
 ## Create and inspect a queued session
 
@@ -108,6 +134,11 @@ compatible adapter.
 | Send/session send | Persist an instruction only | Persist an instruction only |
 | `mcp` | Local storage-backed MCP | Same storage-backed MCP; no adapter execution |
 
+Interactive sessions (omitting the task prompt) and detached execution are
+unsupported by the local backend. The parser retains `--detach` for the command
+surface, but it does not make local execution run in the background or return a
+detached session identifier. A configured adapter does not enable these modes.
+
 A configured adapter receives the working directory and session through the
 runtime protocol. The positional prompt form accepts `--dir`; run and session
 start use the current directory. A malformed relative adapter path is rejected
@@ -139,8 +170,10 @@ cleanup guarantee. Watch cannot preempt a blocked database or output operation.
 Use `--json` or `--output-format json` for structured results; these switches
 conflict. Ordinary successful responses go to stdout. Configuration and dispatch
 errors go to stderr with status 2; JSON errors contain an `error` object with
-`code` and `message`. Parser errors happen before dispatch and do not necessarily
-use the JSON error format.
+`code` and `message`. Parser errors happen before dispatch and use that JSON
+envelope when an exact selector is present as described under
+[parser validation](#help-aliases-and-parser-validation). Help/version output is
+not a parser error.
 
 The storage backend currently emits JSON-shaped text even without `--json`.
 Adapter execution in text mode emits its terminal result. Prefer `--json` when
@@ -159,3 +192,14 @@ installation are not established by these local workflows. Help includes planned
 commands and options that can still return unsupported.
 
 For setup and checks, see the [development environment](../development/environment.md).
+
+## Network command surface
+
+`f5y network` and the source-buildable `f5y-network` expose shared network command
+parsing. Service execution remains unsupported. See the
+[network interface](network.md) for commands, format limits and development help.
+
+## Plugin command surface
+
+See [plugin commands](plugins.md) for client/scope options, request validation
+and the current unsupported installation boundary.

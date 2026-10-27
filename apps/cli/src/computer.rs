@@ -4,6 +4,14 @@ use std::path::PathBuf;
 
 #[derive(Debug, Args, Serialize)]
 pub struct ConnectOptions {
+    /// Deprecated; accepted but ignored.
+    #[arg(long, value_name = "N")]
+    #[serde(skip_serializing)]
+    pub sessions: Option<String>,
+    /// Deprecated; accepted but ignored.
+    #[arg(long, value_enum)]
+    #[serde(skip_serializing)]
+    pub cloud_sessions: Option<Toggle>,
     #[arg(long, conflicts_with = "token")]
     pub to: Option<String>,
     #[arg(long)]
