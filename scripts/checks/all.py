@@ -94,6 +94,7 @@ def hygiene():
         run(sys.executable, "scripts/checks/naming.py", "--policy-json-env",
             "FOUNDRY_NAMING_POLICY", "--mode", mode)
     run("actionlint")
+    run("shellcheck", "scripts/ci/browser-sandbox.sh")
 
 
 def main():
