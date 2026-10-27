@@ -1,0 +1,31 @@
+[package]
+name = "foundry-network"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license-file = "../../LICENSE"
+repository = "https://github.com/smeltery/foundry"
+description = "Explicit peer transport and bounded network framing"
+publish = false
+
+[dependencies]
+data-encoding = "=2.11.1"
+ring = "=0.17.14"
+blake3 = "=1.8.7"
+getrandom = "=0.4.3"
+cap-std = "=4.0.3"
+cap-fs-ext = "=4.0.3"
+iroh = "=1.4.1"
+tokio = { version = "=1.53.3", features = ["io-util", "macros", "rt-multi-thread", "time"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+
+[dev-dependencies]
+iroh-relay = { version = "=1.4.1", features = ["server", "test-utils"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[dependencies.rusqlite]
+version = "=0.37.0"
+features = ["bundled"]

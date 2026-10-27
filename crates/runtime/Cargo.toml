@@ -1,0 +1,19 @@
+[package]
+name = "foundry-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "../../LICENSE"
+repository.workspace = true
+
+[dependencies]
+foundry-contracts = { version = "0.1.0", path = "../contracts" }
+foundry-tools = { version = "0.1.0", path = "../tools" }
+cap-std = "=4.0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

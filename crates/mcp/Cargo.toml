@@ -1,0 +1,10 @@
+[package]
+name = "foundry-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+license-file = "../../LICENSE"
+repository = "https://github.com/smeltery/foundry"
+
+[dependencies]
+serde_json = "1"

@@ -1,0 +1,15 @@
+[workspace]
+members = ["apps/cli", "crates/contracts", "crates/store", "crates/runtime", "crates/mcp", "crates/service", "crates/network", "crates/connectors", "crates/tools"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+repository = "https://github.com/smeltery/foundry"
+license-file = "LICENSE"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

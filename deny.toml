@@ -1,0 +1,25 @@
+# Run advisories, bans and sources independently of license clearance.
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[bans]
+# Transitive version overlap is visible without blocking supported dependencies.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+# No licenses are approved by this configuration. Clearance is a separate gate.
+[licenses]
+allow = []

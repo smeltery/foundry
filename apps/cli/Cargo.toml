@@ -1,0 +1,26 @@
+[package]
+name = "f5y"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Foundry agent command line"
+license-file = "../../LICENSE"
+repository = "https://github.com/smeltery/foundry"
+default-run = "f5y"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+signal-hook = "0.3"
+foundry-contracts = { version = "0.1.0", path = "../../crates/contracts" }
+foundry-store = { version = "0.1.0", path = "../../crates/store" }
+foundry-mcp = { version = "0.1.0", path = "../../crates/mcp" }
+foundry-service = { version = "0.1.0", path = "../../crates/service" }
+foundry-runtime = { version = "0.1.0", path = "../../crates/runtime" }
+foundry-tools = { version = "0.1.0", path = "../../crates/tools" }
+cap-std = "=4.0.3"
+
+[dev-dependencies]
+tempfile = "3"

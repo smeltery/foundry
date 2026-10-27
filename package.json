@@ -1,0 +1,27 @@
+{
+  "name": "foundry-tooling",
+  "private": true,
+  "packageManager": "bun@1.3.11",
+  "engines": {
+    "bun": "1.3.11",
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "adapter:check": "tsc -p packages/adapter/tsconfig.json",
+    "adapter:test": "bun test packages/adapter/test",
+    "docs:check": "bun scripts/checks/docs.ts",
+    "docs:fast": "bun scripts/checks/docs.ts",
+    "docs:test": "bun test scripts/checks/docs.test.ts",
+    "docs:browser": "PUPPETEER_CACHE_DIR=\"$PWD/.flox/cache/puppeteer\" node node_modules/puppeteer/lib/puppeteer/node/cli.js browsers install chrome-headless-shell"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "12.0.0",
+    "@types/bun": "1.3.11",
+    "@types/node": "22.19.19",
+    "github-slugger": "2.0.0",
+    "markdownlint-cli2": "0.24.0",
+    "marked": "18.1.2",
+    "puppeteer": "25.16.0",
+    "typescript": "5.9.2"
+  }
+}

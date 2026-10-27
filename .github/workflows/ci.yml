@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLOX_DISABLE_METRICS: "true"
+
+jobs:
+  check:
+    name: check (${{ matrix.group }}, ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [rust, dependencies, python, adapter, integration, mcp-sdk, docs, hygiene]
+        runner: [ubuntu-24.04]
+        include:
+          # Real paired-executable tests are ignored by the ordinary Rust suite.
+          - group: integration
+            runner: ubuntu-24.04-arm
+          - group: integration
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require reproducible environment
+        run: test -s .flox/env/manifest.lock
+      - uses: flox/install-flox-action@5bb9eaaffbeaa699a8251a1ae21ecf4c8e0e37d4 # v2
+        with:
+          version: 1.19.1
+          disable-metrics: "true"
+      - name: Install frozen tooling dependencies
+        if: matrix.group == 'docs' || matrix.group == 'adapter'
+        run: flox activate -- bun install --frozen-lockfile --ignore-scripts
+      - name: Install pinned browser
+        if: matrix.group == 'docs'
+        run: flox activate -- bun run docs:browser
+      - name: Run shared checks
+        env:
+          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
+          CHECK_GROUP: ${{ matrix.group }}
+        run: flox activate -- python3 scripts/checks/all.py --group "$CHECK_GROUP"
+      - name: Require unchanged dependency locks
+        run: git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock
+
+  required:
+    name: required
+    if: always()
+    needs: [check]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every check to pass
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: test "$CHECK_RESULT" = success

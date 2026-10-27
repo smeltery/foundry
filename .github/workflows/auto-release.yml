@@ -1,0 +1,68 @@
+name: auto-release
+
+on:
+  workflow_run:
+    workflows: [ci]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Includes the called workflow. Pending runs may coalesce; this is not a queue.
+concurrency:
+  group: foundry-release
+  cancel-in-progress: false
+
+jobs:
+  reserve:
+    if: >-
+      vars.FOUNDRY_RELEASE_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      tag: ${{ steps.reserve.outputs.tag }}
+    steps:
+      - name: Require tested workflow revision before reservation
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$WORKFLOW_SHA" = "$CANDIDATE_SHA"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Reserve or recover the exact tested commit
+        id: reserve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOUNDRY_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          FOUNDRY_RELEASE_ENABLED: ${{ vars.FOUNDRY_RELEASE_ENABLED }}
+          CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: >-
+          python3 scripts/release/github_snapshot.py reserve --execute
+          --sha "$CANDIDATE_SHA" --run-id "$CI_RUN_ID" --attempt "$CI_ATTEMPT"
+
+  release:
+    needs: reserve
+    if: vars.FOUNDRY_RELEASE_ENABLED == 'true' && needs.reserve.outputs.tag != ''
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      sha: ${{ github.event.workflow_run.head_sha }}
+      tag: ${{ needs.reserve.outputs.tag }}
+      run-id: ${{ format('{0}', github.event.workflow_run.id) }}
+      attempt: ${{ format('{0}', github.event.workflow_run.run_attempt) }}
+    secrets:
+      FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}

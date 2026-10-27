@@ -1,0 +1,154 @@
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      run-id:
+        required: true
+        type: string
+      attempt:
+        required: true
+        type: string
+    secrets:
+      FOUNDRY_NAMING_POLICY:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FLOX_DISABLE_METRICS: "true"
+  FOUNDRY_RELEASE_ENABLED: ${{ vars.FOUNDRY_RELEASE_ENABLED }}
+  FOUNDRY_WORKFLOW_SHA: ${{ github.workflow_sha }}
+  CANDIDATE_SHA: ${{ inputs.sha }}
+  RELEASE_TAG: ${{ inputs.tag }}
+  CI_RUN_ID: ${{ inputs.run-id }}
+  CI_ATTEMPT: ${{ inputs.attempt }}
+
+jobs:
+  preflight:
+    if: vars.FOUNDRY_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require tested workflow revision
+        run: test "$FOUNDRY_WORKFLOW_SHA" = "$CANDIDATE_SHA"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Revalidate tag and trusted CI snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/release/github_snapshot.py validate
+          --sha "$CANDIDATE_SHA" --tag "$RELEASE_TAG"
+          --run-id "$CI_RUN_ID" --attempt "$CI_ATTEMPT"
+      - name: Require committed environment lock
+        run: |
+          git ls-files --error-unmatch .flox/env/manifest.lock
+          test -s .flox/env/manifest.lock
+      - uses: flox/install-flox-action@5bb9eaaffbeaa699a8251a1ae21ecf4c8e0e37d4 # v2
+        with:
+          version: 1.19.1
+          disable-metrics: "true"
+      - name: Install frozen dependencies and pinned browser
+        run: |
+          flox activate -- bun install --frozen-lockfile --ignore-scripts
+          flox activate -- bun run docs:browser
+      - name: Run shared release checks
+        env:
+          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          flox activate -- python3 scripts/checks/all.py
+          flox activate -- python3 scripts/release/github_snapshot.py self-test
+          git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock
+
+  build:
+    needs: preflight
+    if: vars.FOUNDRY_RELEASE_ENABLED == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Require committed environment lock
+        run: |
+          git ls-files --error-unmatch .flox/env/manifest.lock
+          test -s .flox/env/manifest.lock
+      - uses: flox/install-flox-action@5bb9eaaffbeaa699a8251a1ae21ecf4c8e0e37d4 # v2
+        with:
+          version: 1.19.1
+          disable-metrics: "true"
+      - name: Test and build on the target architecture
+        run: |
+          flox activate -- python3 scripts/checks/all.py --group rust
+          flox activate -- cargo fetch --locked --target "$TARGET"
+          FOUNDRY_BUILD_VERSION="${RELEASE_TAG#v}" flox activate -- cargo build --release --frozen --package f5y --package foundry-tools --bins --target "$TARGET"
+          git diff --exit-code -- .flox/env/manifest.lock Cargo.lock
+      - name: Smoke test and package exact build
+        run: |
+          "target/$TARGET/release/f5y" --help
+          flox activate -- python3 scripts/release/github_snapshot.py pack \
+            --sha "$CANDIDATE_SHA" --tag "$RELEASE_TAG" --target "$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ inputs.sha }}-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  publish:
+    needs: [preflight, build]
+    if: vars.FOUNDRY_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-${{ inputs.sha }}-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify all bytes, stage one draft, publish and read back
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
+        run: >-
+          python3 scripts/release/github_snapshot.py publish --execute
+          --sha "$CANDIDATE_SHA" --tag "$RELEASE_TAG"
+          --run-id "$CI_RUN_ID" --attempt "$CI_ATTEMPT"

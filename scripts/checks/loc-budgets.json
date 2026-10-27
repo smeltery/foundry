@@ -1,0 +1,19 @@
+{
+  "default_file_lines": 400,
+  "components": {
+    "apps/cli/": 4800,
+    "crates/contracts/": 2300,
+    "crates/store/": 10800,
+    "crates/runtime/": 9700,
+    "crates/mcp/": 3000,
+    "crates/service/": 4700,
+    "crates/network/": 11600,
+    "crates/connectors/": 3000,
+    "crates/tools/": 3000,
+    "packages/adapter/": 2000,
+    "scripts/checks/": 1600,
+    "scripts/release/": 1200,
+    "tests/": 5000
+  },
+  "files": {}
+}

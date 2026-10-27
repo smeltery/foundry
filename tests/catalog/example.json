@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "connectors": [
+    {
+      "id": "sample",
+      "displayName": "Synthetic fixture",
+      "description": "Validation fixture only; not a working connector.",
+      "fixture": true,
+      "homepage": "https://provider.example",
+      "documentation": "https://provider.example/docs",
+      "icon": {
+        "kind": "remote",
+        "url": "https://provider.example/icon.svg"
+      },
+      "servers": [
+        {
+          "id": "primary",
+          "transport": "streamable-http",
+          "endpoint": {
+            "kind": "remote",
+            "url": "https://provider.example/mcp"
+          },
+          "auth": {
+            "kind": "api_key",
+            "placeholder": "credential"
+          },
+          "headers": {
+            "Authorization": "Bearer ${credential}",
+            "X-Fixture": "true"
+          }
+        }
+      ],
+      "skills": [
+        {
+          "id": "sample-workflow",
+          "url": "https://provider.example/skills/sample",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ]
+}

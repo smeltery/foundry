@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: foundry-fast
+        name: Foundry shared checks
+        entry: flox activate -- python3 scripts/checks/all.py --fast
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: foundry-full
+        name: Foundry full checks
+        entry: flox activate -- python3 scripts/checks/all.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

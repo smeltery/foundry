@@ -1,0 +1,35 @@
+[
+  {
+    "dictionary_utf8": "amber\nbirch\ncedar\ndune\n",
+    "dictionary_sha256": "fd0db918508ed1b04299f963bf6e2dc598f3108f1c65e41c894fa9dc20ef97fc",
+    "canonical_code_utf8": "amber-birch-cedar-amber",
+    "endpoint_context": "test-endpoint",
+    "secret_context": "test-secret",
+    "endpoint_seed_hex": "83852c7436e16b28bc644557bcf5089eb8415119292d9166b2927b0b1fe2146f",
+    "endpoint_public_key_hex": "256c69889ea163cd1e7dc5c7fd7a6c341f5a9eaef97c2dacfff3ecc2f36f002d",
+    "bearer_utf8": "84d3d31e8e1f71e83fa41987ee152b47",
+    "invitation_map_key_hex": "b4d2d406a691e3d59b5b004d0481397de340537ccba0496684f60469b262107a"
+  },
+  {
+    "dictionary_utf8": "amber\nbirch\ncedar\ndune\n",
+    "dictionary_sha256": "fd0db918508ed1b04299f963bf6e2dc598f3108f1c65e41c894fa9dc20ef97fc",
+    "canonical_code_utf8": "amber-birch-cedar-amber",
+    "endpoint_context": "test-endpoint-2",
+    "secret_context": "test-secret",
+    "endpoint_seed_hex": "a4197156f8eb1794bf000318201777aef0e5d2d1455a7a2f1044f44a34f455bf",
+    "endpoint_public_key_hex": "95bbf07f9faae0d2f25b6ae54cec71b785227d623d74b2cd90045291681c891d",
+    "bearer_utf8": "84d3d31e8e1f71e83fa41987ee152b47",
+    "invitation_map_key_hex": "b4d2d406a691e3d59b5b004d0481397de340537ccba0496684f60469b262107a"
+  },
+  {
+    "dictionary_utf8": "amber\nbirch\ncedar\ndune\n",
+    "dictionary_sha256": "fd0db918508ed1b04299f963bf6e2dc598f3108f1c65e41c894fa9dc20ef97fc",
+    "canonical_code_utf8": "amber-birch-cedar-amber",
+    "endpoint_context": "test-endpoint",
+    "secret_context": "test-secret-2",
+    "endpoint_seed_hex": "83852c7436e16b28bc644557bcf5089eb8415119292d9166b2927b0b1fe2146f",
+    "endpoint_public_key_hex": "256c69889ea163cd1e7dc5c7fd7a6c341f5a9eaef97c2dacfff3ecc2f36f002d",
+    "bearer_utf8": "1ae4333f1ae96244d3a43323b7bde077",
+    "invitation_map_key_hex": "24913aaac8547354d2fb25dbd3186c77629ecc219a6954f33614a0ed03091f4e"
+  }
+]
