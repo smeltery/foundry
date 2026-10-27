@@ -29,6 +29,10 @@ Puppeteer dependency into `.flox/cache/puppeteer`. It does not install a global
 browser. Dependency installation deliberately disables lifecycle scripts; browser
 provisioning is an explicit step. Allow network access during initial setup.
 
+Ubuntu CI installs an AppArmor profile permitting user namespaces only for the
+downloaded headless browser executable. This lets Chromium retain its sandbox
+while rendering diagrams; the profile is confined to the ephemeral runner.
+
 The environment declares Rust 1.95.0, Bun 1.3.11 and Node 22.23.1. A complete
 Flox lockfile is required before the environment can be treated as reproducible.
 Catalog-based resolution requires authentication. If you choose that setup,

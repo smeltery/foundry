@@ -63,6 +63,9 @@ jobs:
       - name: Install pinned browser
         if: matrix.group == 'docs'
         run: bun run docs:browser
+      - name: Permit pinned browser sandbox
+        if: matrix.group == 'docs'
+        run: bash scripts/ci/browser-sandbox.sh
       - name: Run shared checks
         env:
           FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}

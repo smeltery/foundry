@@ -22,7 +22,7 @@ def rust(fast):
     run("cargo", "fmt", "--all", "--check")
     run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
     if not fast:
-        run("cargo", "test", "--workspace", "--locked")
+        run("cargo", "test", "--workspace", "--locked", "--no-fail-fast")
 
 
 def python_checks():

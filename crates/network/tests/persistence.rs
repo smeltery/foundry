@@ -111,7 +111,9 @@ fn concurrent_writers_have_exactly_one_cas_winner() {
             let peer = fixture.founder.public();
             let barrier = barrier.clone();
             thread::spawn(move || {
-                let mut store = MembershipStore::open(&root, WAIT).unwrap();
+                // Exercise CAS serialization, not the separately tested busy deadline.
+                let mut store =
+                    MembershipStore::open(&root, std::time::Duration::from_secs(5)).unwrap();
                 barrier.wait();
                 store
                     .merge(1, peer, &update, &profile, NOW)
@@ -120,13 +122,18 @@ fn concurrent_writers_have_exactly_one_cas_winner() {
         })
         .collect();
     let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
-    assert_eq!(results.iter().filter(|r| matches!(r, Ok(2))).count(), 1);
+    assert_eq!(
+        results.iter().filter(|r| matches!(r, Ok(2))).count(),
+        1,
+        "{results:?}"
+    );
     assert_eq!(
         results
             .iter()
             .filter(|r| matches!(r, Err(PersistenceError::Conflict)))
             .count(),
-        1
+        1,
+        "{results:?}"
     );
 }
 #[test]

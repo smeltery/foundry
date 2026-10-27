@@ -211,7 +211,8 @@ requires renewed source and budget review. All Foundry-owned files retain the
 
 ## Failure handling
 
-The CI bootstrap has a 140-line allocation for its reviewed 128-line installer.
+CI provisioning has a 150-line allocation for its reviewed 128-line installer
+and 13-line browser sandbox setup.
 It verifies selected tool versions and reads only digest-checked executable
 members from bounded utility archives. Its 72 test lines count under `tests/`;
 six tests cover archive integrity, member selection and exact version checks.
