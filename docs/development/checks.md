@@ -1,11 +1,11 @@
 # Development checks
 
-Local hooks and CI execute the same Python orchestration script through Flox. JavaScript documentation tooling uses Bun; Rust uses Cargo. Environment and package lockfiles must be current before CI can pass.
+Local hooks and CI execute the same Python orchestration script. CI installs pinned tools directly; local checks use your prepared environment. JavaScript documentation tooling uses Bun; Rust uses Cargo. Cargo and Bun lockfiles must be current before CI can pass. A resolved Flox environment is an optional local setup; see [environment setup](environment.md).
 
 ```sh
-flox activate -- bun install --frozen-lockfile --ignore-scripts
-flox activate -- bun run docs:browser
-flox activate -- python3 scripts/checks/all.py
+bun install --frozen-lockfile --ignore-scripts
+bun run docs:browser
+python3 scripts/checks/all.py
 ```
 
 ## Check groups
@@ -41,8 +41,8 @@ flowchart LR
 Install hooks explicitly after preparing the environment:
 
 ```sh
-flox activate -- pre-commit install --hook-type pre-commit --hook-type pre-push
-flox activate -- pre-commit run --all-files
+pre-commit install --hook-type pre-commit --hook-type pre-push
+pre-commit run --all-files
 ```
 
 Pre-commit runs the fast suite; pre-push runs the full suite. CI runs all eight
@@ -60,4 +60,4 @@ Git history validation needs a complete clone. Binary or otherwise uninspected a
 
 ## Completion evidence
 
-After the final push, monitor all applicable checks until they pass. Record the final commit SHA and run links in the ticket. A green earlier commit, missing lockfile, cancelled job or unverified release artifact does not satisfy completion.
+After the final push, monitor all applicable checks until they pass. Record the final commit SHA and run links in the ticket. A green earlier commit, missing required package lockfile, cancelled job or unverified release artifact does not satisfy completion.

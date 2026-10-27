@@ -61,7 +61,7 @@ Flox environment or a cross-platform verification.
 
 ## Check documentation
 
-Run these commands from the repository root, inside Flox:
+Run these commands from the repository root in your prepared environment:
 
 ```sh
 bun run docs:fast
