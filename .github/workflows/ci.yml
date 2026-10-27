@@ -17,21 +17,35 @@ env:
   RUSTUP_TOOLCHAIN: "1.95.0"
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.scope.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13.13"
+      - id: scope
+        name: Select required check groups
+        env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_BASE: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/checks/ci_scope.py
+
   check:
+    needs: [plan]
     name: check (${{ matrix.group }}, ${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        group: [rust, dependencies, python, adapter, integration, mcp-sdk, docs, hygiene]
-        runner: [ubuntu-24.04]
-        include:
-          # Real paired-executable tests are ignored by the ordinary Rust suite.
-          - group: integration
-            runner: ubuntu-24.04-arm
-          - group: integration
-            runner: macos-15
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -77,11 +91,12 @@ jobs:
   required:
     name: required
     if: always()
-    needs: [check]
+    needs: [plan, check]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require every check to pass
         env:
+          PLAN_RESULT: ${{ needs.plan.result }}
           CHECK_RESULT: ${{ needs.check.result }}
-        run: test "$CHECK_RESULT" = success
+        run: test "$PLAN_RESULT" = success && test "$CHECK_RESULT" = success

@@ -45,12 +45,41 @@ pre-commit install --hook-type pre-commit --hook-type pre-push
 pre-commit run --all-files
 ```
 
-Pre-commit runs the fast suite; pre-push runs the full suite. CI runs all eight
-groups on Linux x64 and additionally requires the integration group on Linux
+Pre-commit runs the fast suite; pre-push runs the full suite. Main-branch pushes
+and manual CI runs execute all eight groups on Linux x64 and additionally require
+the integration group on Linux
 arm64 and macOS arm64. Those integration jobs build both executables and run the
 real-helper tests that the ordinary Rust suite skips. The aggregate gate requires
 every matrix job to succeed. Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
+
+## Pull request scope
+
+Pull requests always run documentation and hygiene checks. Changes under `docs/`
+need only those groups. CLI and Rust crate changes also run the whole Rust
+workspace, integration and MCP SDK checks. Adapter changes add Rust, adapter and
+integration checks. Mixed changes combine their groups; integration always runs
+on all three platforms above.
+
+Root files, shared contracts, workflows, scripts, tests, vendor code, Flox files
+and dependency manifests require the complete matrix. Unknown paths and empty
+comparisons also select everything. Renames include both old and new paths;
+comparison errors fail CI. The required aggregate checks both scope selection
+and every selected job, so failed planning cannot silently skip validation.
+
+## Parallel contribution policy
+
+Assign one integration owner for each delivery batch in the project tracker.
+That owner coordinates root manifests, lockfiles, shared contracts and final
+merges. Contributors claim a ticket and its owned paths before editing, use a
+focused branch, and use separate worktrees when working concurrently. Do not
+share a mutable checkout or overwrite another contributor's changes.
+
+Shared-file changes go through the integration owner before merging. Respect
+ticket dependencies and hand off interfaces explicitly. Move tickets to In
+Progress when work starts, In Review after implementation and local checks, and
+Done only after acceptance criteria and final-commit CI pass. Record remaining
+gaps without treating partial implementation as completion.
 
 ## External naming policy
 
