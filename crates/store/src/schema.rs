@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version > 10 {
+    if version > 11 {
         return Err(StoreError::Contract(ContractError::Unsupported(
             "database schema is newer than this store".into(),
         )));
@@ -211,6 +211,20 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
                 FOREIGN KEY(session_id,checkpoint_id) REFERENCES context_checkpoints(session_id,id)
              );
              PRAGMA user_version=10;",
+        )?;
+    }
+    if version < 11 {
+        tx.execute_batch(
+            "CREATE TABLE context_continue_acceptances (
+                restore_id TEXT PRIMARY KEY NOT NULL REFERENCES context_restores(id)
+                    CHECK(typeof(restore_id)='text' AND length(CAST(restore_id AS BLOB))=36),
+                intent_body BLOB NOT NULL CHECK(typeof(intent_body)='blob' AND length(intent_body) BETWEEN 1 AND 4096),
+                request_digest BLOB NOT NULL CHECK(typeof(request_digest)='blob' AND length(request_digest)=32),
+                event_sequence INTEGER NOT NULL CHECK(typeof(event_sequence)='integer' AND event_sequence>0),
+                committed_ms INTEGER NOT NULL CHECK(typeof(committed_ms)='integer' AND committed_ms>=0),
+                record_digest BLOB NOT NULL CHECK(typeof(record_digest)='blob' AND length(record_digest)=32)
+            );
+            PRAGMA user_version=11;",
         )?;
     }
     tx.commit()?;

@@ -2,7 +2,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::args::{ToolGrant, nonempty};
+use crate::args::{Effort, ToolGrant, nonempty};
 
 #[derive(Debug, Subcommand, Serialize)]
 #[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
@@ -22,6 +22,9 @@ pub enum SessionCommand {
         provider: Option<Provider>,
         #[arg(long)]
         model: Option<String>,
+        /// Requested effort; unsupported by the local adapter protocol.
+        #[arg(long, value_enum)]
+        effort: Option<Effort>,
     },
     Get {
         id: String,

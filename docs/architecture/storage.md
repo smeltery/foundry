@@ -188,6 +188,20 @@ recovery cannot authorize another execution. Failed publication leaves the old
 head and session intact; ordinary error or suspension cleanup remains available
 when the attempt still owns its lease.
 
+## Witnessed checkpoint publication
+
+Schema version 10 adds `finish_with_witnessed_checkpoint`. It atomically publishes
+private context, a bounded typed witness and the terminal result. The witness
+binds the source attempt, selected durable cut, payload, configuration and immediate
+parent. Publication checks complete instruction and tool correspondence, including
+ordinary acceptance events and schema-11 continuation acceptance records.
+
+Witness bodies are limited to 256 KiB and share the checkpoint quotas. Private
+witness reads verify stored integrity; neither the witness nor its hash proves
+native model behavior. Legacy opaque checkpoints are not automatically upgraded.
+A restored owner reads the current witnessed baseline through the
+[loading snapshot API](restoration.md#reading-a-witnessed-baseline).
+
 ## Recovery limits
 
 Schema version 8 adds separate loading ownership and one-use continuation

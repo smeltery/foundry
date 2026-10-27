@@ -56,7 +56,7 @@ fn documented_commands_parse() {
         vec!["f5y", "network", "who"],
         vec!["f5y", "network", "team/agent", "question"],
         vec!["f5y", "network", "serve", "codex"],
-        vec!["f5y", "plugins", "add", "test"],
+        vec!["f5y", "plugins", "add", "test", "--client", "codex"],
         vec!["f5y", "config", "get", "model"],
     ] {
         Cli::try_parse_from(&arguments).unwrap_or_else(|error| panic!("{arguments:?}: {error}"));

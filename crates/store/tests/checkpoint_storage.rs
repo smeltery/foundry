@@ -118,7 +118,7 @@ fn migration_five_keeps_revision_and_has_no_invented_checkpoint() {
     let id = session(&mut store);
     let fence = store.begin_attempt(&id, 0).unwrap();
     drop(store);
-    Connection::open(&path).unwrap().execute_batch("DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; PRAGMA user_version=5;").unwrap();
+    Connection::open(&path).unwrap().execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; PRAGMA user_version=5;").unwrap();
     let mut store = Store::open(&path).unwrap();
     assert_eq!(store.work_revision(&id).unwrap(), 1);
     assert!(store.checkpoint_head(&id).unwrap().is_none());

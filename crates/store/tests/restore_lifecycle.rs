@@ -232,7 +232,7 @@ fn migration_seven_adds_no_restore_authority() {
     drop(store);
     Connection::open(&path)
         .unwrap()
-        .execute_batch("DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; PRAGMA user_version=7;")
+        .execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; PRAGMA user_version=7;")
         .unwrap();
     let mut store = Store::open(&path).unwrap();
     assert_eq!(store.get(&id).unwrap(), before);

@@ -93,7 +93,7 @@ impl LocalBackend {
             .ok_or_else(|| invalid("arguments must be an object"))?;
         match operation {
             "start" => {
-                fields(args, &["prompt"], &["repo", "provider", "model"])?;
+                fields(args, &["prompt"], &["repo", "provider", "model", "effort"])?;
                 let prompt = string(args, "prompt")?.to_owned();
                 nonempty(&prompt)?;
                 let directory = std::env::current_dir()

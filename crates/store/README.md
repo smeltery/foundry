@@ -170,5 +170,25 @@ expiry preserves the prior session body. Continuing attempts use the ordinary
 attempt recovery API. The batch bounds returned restore records, not all SQLite
 scan/sort memory or the separate ordinary-attempt recovery operation.
 
+## Witnessed loading and acceptance
+
+Schema 10 adds `finish_with_witnessed_checkpoint` and `read_checkpoint_witness`.
+Private witnesses bind complete durable instruction/tool evidence to the payload,
+configuration, cut and immediate parent. Request format 2 includes the witness;
+legacy opaque request hashes remain unchanged and cannot be reinterpreted as
+witnessed records. Publication is atomic with terminal finalization.
+
+`restore_baseline_snapshot(&RestoreFence)` returns the selected private checkpoint,
+witness, bounded facts and sanitized event evidence in one owner-checked read
+transaction. It does not start execution. Schema 11 adds typed prebound continuation
+intents, `accept_restore_continuation` for atomic event/acknowledgement/acceptance
+persistence, and `continuation_acceptance` for historical recovery by request digest.
+Later witnesses bind the original acceptance record digest.
+
+The caller validates native loading and acknowledgement. Storage verifies durable
+correspondence and grants no authority through historical lookup. See the
+[restoration contract](../../docs/architecture/restoration.md) for limits, exact
+retries, migration and cancellation behavior.
+
 Run `cargo test -p foundry-store` and
 `cargo clippy -p foundry-store --all-targets -- -D warnings`.

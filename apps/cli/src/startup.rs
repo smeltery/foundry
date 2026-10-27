@@ -1,6 +1,6 @@
 use f5y::{
     CommandError, UnavailableBackend,
-    args::{Cli, Command, OutputFormat, PromptOptions},
+    args::{Cli, Command, OutputFormat},
     execute,
     local::LocalBackend,
     runner::ExecutionBackend,
@@ -37,7 +37,7 @@ fn database_path(
 
 /// Help and version bypass database and adapter configuration.
 pub fn run(mut cli: Cli) -> io::Result<u8> {
-    if let Err(error) = f5y::normalize_upgrade(&mut cli) {
+    if let Err(error) = f5y::normalize_and_validate(&mut cli) {
         return report_error(cli.output.format(), error);
     }
     if matches!(cli.command, Some(Command::Version | Command::Help { .. })) {
@@ -46,19 +46,6 @@ pub fn run(mut cli: Cli) -> io::Result<u8> {
             &mut UnavailableBackend,
             &mut io::stdout().lock(),
             &mut io::stderr().lock(),
-        );
-    }
-    if cli.command.is_some()
-        && (cli.prompt.is_some()
-            || serde_json::to_value(&cli.options)?
-                != serde_json::to_value(PromptOptions::default())?)
-    {
-        return report_error(
-            cli.output.format(),
-            CommandError::new(
-                "usage",
-                "Root task options cannot be combined with a subcommand",
-            ),
         );
     }
     let path = match database_path(cli.database.take(), std::env::var_os("FOUNDRY_DATABASE")) {

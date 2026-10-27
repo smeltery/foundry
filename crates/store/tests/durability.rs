@@ -252,9 +252,9 @@ fn migrations_are_versioned_and_newer_schemas_are_rejected() {
     let version: u32 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 10);
+    assert_eq!(version, 11);
     drop(Store::open(&path).unwrap());
-    connection.pragma_update(None, "user_version", 11).unwrap();
+    connection.pragma_update(None, "user_version", 12).unwrap();
     assert!(Store::open(&path).is_err());
 }
 

@@ -1,7 +1,7 @@
 # Checkpoint restoration
 
-Schema version 9 separates loading saved context from authorizing another turn
-and supports atomically binding a continuation to a queued instruction.
+Schema version 11 separates loading saved context, authorizing another turn and
+recording acceptance of an exact queued instruction.
 These are storage APIs for an execution owner. They do not enable CLI resume or
 provide native model-context validation. See [checkpoint storage](storage.md#opaque-context-checkpoints)
 for capture and publication guarantees.
@@ -101,6 +101,67 @@ Checkpoint references also expose the verified stored `record_digest`. Owners
 must preserve its bytes when binding a native restore exchange; the request digest
 and a hash of the record digest are different values. This is integrity metadata,
 not proof of native state or permission to execute.
+
+## Reading a witnessed baseline
+
+`restore_baseline_snapshot` reads the selected checkpoint, its private witness,
+complete durable facts and sanitized event evidence in one transaction. It requires
+a live, uncancelled loading/restored owner and unchanged head, configuration,
+session version and durable cut. It does not admit execution or renew the lease.
+Witnessless checkpoints and legacy raw tool events cannot supply this evidence.
+
+Returned facts and events share a 256 KiB normalized evidence limit. Logical
+records and selected event rows each have a 1,024-entry limit; excessive history
+fails instead of being truncated. Checkpoint payloads and witnesses retain their
+separate size limits. Events expose identities, hashes and byte lengths without
+raw instruction text or private receipts. SQLite cache and scan costs are outside
+these logical limits.
+
+The current witness receives full validation. Its immediate parent and historical
+continuation baselines are checked through bounded integrity metadata; older
+witness bodies are not recursively loaded. This verifies durable correspondence,
+not native model-context semantics.
+
+## Recording continuation acceptance
+
+Before authorization, the owner builds `RestoreContinueIntentV1` and supplies its
+`delivery_digest` to the message-bound authorization call. The intent binds the
+loading job, baseline record and witness, configuration, exact instruction and
+expected tail-receipt digest. The loading validation binding is the owner's
+assertion; it is distinct from the earlier capture validation binding.
+
+After validating the native acknowledgement, the owner calls
+`accept_restore_continuation` with the same live attempt fence and typed input.
+One immediate transaction verifies the preauthorized intent, appends a sanitized
+`continue_accepted` event, acknowledges that exact instruction and stores an
+immutable acceptance record. Event and acknowledgement advance work revision
+by two. Any failure rolls back all changes. An already delivered instruction or
+orphan reserved event cannot be adopted as a new acceptance.
+
+```mermaid
+sequenceDiagram
+    participant Owner
+    participant Store
+    Owner->>Store: Preauthorize intent digest and exact instruction
+    Store-->>Owner: One delivery permit
+    Owner->>Owner: Deliver once and validate native acknowledgement
+    Owner->>Store: Accept bound continuation under live attempt fence
+    Store->>Store: Append event, acknowledge instruction, persist acceptance
+    Store-->>Owner: Immutable acceptance reference
+    Owner->>Store: Recover by exact request digest
+    Store-->>Owner: Historical reference without execution authority
+```
+
+Exact mutation retries require the same live, uncancelled attempt and add no
+revision. `continuation_acceptance` supports read-only recovery after expiry or
+completion using the expected request digest. Neither operation returns another
+permit or resends a command. A later witness binds its instruction to the acceptance
+**record digest**; this differs from the request digest and authorization binding.
+
+Acceptance bodies are limited to 4 KiB. They and their associated events share
+the checkpoint storage quotas across all publication APIs. Exact retries and
+historical lookup remain available at quota. Schema 11 adds acceptance storage
+without reinterpreting earlier authorization hashes or fabricating old records.
 
 ## Validation boundary
 

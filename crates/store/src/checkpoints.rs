@@ -7,16 +7,6 @@ use crate::{
 use rusqlite::{TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 
-const SESSION_BYTES: i64 = 256 * 1024 * 1024;
-const DATABASE_BYTES: i64 = 1024 * 1024 * 1024;
-// Payload plus logical metadata, identities, digests and integer columns; no page/WAL estimate.
-const CHARGE_SQL: &str = "length(payload)+length(CAST(metadata AS BLOB))
-    +length(CAST(coverage AS BLOB))+length(CAST(id AS BLOB))
-    +length(CAST(session_id AS BLOB))+length(CAST(attempt_id AS BLOB))
-    +length(CAST(request_id AS BLOB))+COALESCE(length(CAST(parent_id AS BLOB)),0)+152
-    +COALESCE((SELECT 76 FROM context_finalizations WHERE checkpoint_id=context_checkpoints.id),0)
-    +COALESCE((SELECT length(body)+184 FROM context_witnesses WHERE checkpoint_id=context_checkpoints.id),0)";
-
 impl Store {
     /// One consistent read snapshot of durable work. This does not quiesce an adapter.
     pub fn checkpoint_cut(&self, fence: &AttemptFence) -> Result<CheckpointCut> {
@@ -162,15 +152,6 @@ pub(crate) fn publish(
         crate::witness_storage::check_parent(tx, &row, &witness.body)?;
         crate::witness_facts::verify(tx, fence, &witness.body)?;
     }
-    crate::witness_storage::check_quota_associations(tx)?;
-    let quota_query = format!(
-        "SELECT COALESCE(SUM(CASE WHEN session_id=?1 THEN {CHARGE_SQL} ELSE 0 END),0),
-                    COALESCE(SUM({CHARGE_SQL}),0) FROM context_checkpoints"
-    );
-    let (session_bytes, total_bytes): (i64, i64) =
-        tx.query_row(&quota_query, [&fence.session_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?;
     let bytes = (row.payload.len()
         + row.metadata.len()
         + row.coverage.len()
@@ -185,7 +166,7 @@ pub(crate) fn publish(
             .as_ref()
             .map_or(0, |w| w.encoded.bytes().len() + 184)
         + if prepared.finalization { 76 } else { 0 }) as i64;
-    quota(session_bytes, total_bytes, bytes)?;
+    crate::checkpoint_limits::check(tx, &fence.session_id, bytes)?;
     row.record_digest = row.record_hash();
     let inserted = tx.execute(
             "INSERT INTO context_checkpoints(
@@ -216,33 +197,4 @@ pub(crate) fn publish(
     checkpoint_cut::owner(tx, fence)?;
 
     Ok(reference)
-}
-
-fn quota(session: i64, total: i64, addition: i64) -> Result<()> {
-    if session < 0
-        || total < 0
-        || addition < 0
-        || session
-            .checked_add(addition)
-            .is_none_or(|n| n > SESSION_BYTES)
-        || total
-            .checked_add(addition)
-            .is_none_or(|n| n > DATABASE_BYTES)
-    {
-        return Err(conflict("checkpoint quota exceeded"));
-    }
-    Ok(())
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn quota_limits_are_inclusive_and_overflow_is_rejected() {
-        assert!(quota(SESSION_BYTES - 1, DATABASE_BYTES - 1, 1).is_ok());
-        assert!(quota(SESSION_BYTES, DATABASE_BYTES - 1, 1).is_err());
-        assert!(quota(0, DATABASE_BYTES, 1).is_err());
-        assert!(quota(i64::MAX, 0, 1).is_err());
-        assert!(quota(0, i64::MAX, 1).is_err());
-        assert!(quota(-1, 0, 1).is_err());
-    }
 }

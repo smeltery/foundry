@@ -33,6 +33,13 @@ pub struct PrivateWitness {
     digest: [u8; 32],
 }
 impl PrivateWitness {
+    pub(crate) fn from_verified(reference: CheckpointRef, witness: StoredWitness) -> Self {
+        Self {
+            reference,
+            digest: witness.encoded.digest(),
+            body: witness.body,
+        }
+    }
     pub fn reference(&self) -> &CheckpointRef {
         &self.reference
     }

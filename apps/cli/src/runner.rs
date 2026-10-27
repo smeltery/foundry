@@ -125,13 +125,20 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
         if operation != "prompt" && operation != "run" && !start {
             return self.fallback.execute(request);
         }
-        let grants = if operation == "prompt" {
-            &request.command["arguments"]["options"]["tool_grants"]
+        let task_options = if operation == "prompt" {
+            &request.command["arguments"]["options"]
         } else if start {
-            &request.command["arguments"]["arguments"]["tool_grants"]
+            &request.command["arguments"]["arguments"]
         } else {
-            &request.command["arguments"]["tool_grants"]
+            &request.command["arguments"]
         };
+        if task_options
+            .get("effort")
+            .is_some_and(|value| !value.is_null())
+        {
+            return Err(unsupported("option effort"));
+        }
+        let grants = &task_options["tool_grants"];
         let grants = tool_policy::grants(grants)?;
         // Preserve the store-only queue contract when execution was not configured.
         if start && self.adapter.is_none() && grants.is_empty() {
@@ -165,6 +172,7 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
                     "repo",
                     "no_repo",
                     "model",
+                    "effort",
                     "resume",
                     "update",
                     "upgrade",
@@ -195,13 +203,28 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
             if start {
                 fields(
                     args,
-                    &["prompt", "repo", "provider", "model", "tool_grants"],
+                    &[
+                        "prompt",
+                        "repo",
+                        "provider",
+                        "model",
+                        "effort",
+                        "tool_grants",
+                    ],
                 )?;
                 inactive(args, &["repo", "provider", "model"], &[])?;
             } else {
                 fields(
                     args,
-                    &["task", "repo", "git_ref", "model", "detach", "tool_grants"],
+                    &[
+                        "task",
+                        "repo",
+                        "git_ref",
+                        "model",
+                        "effort",
+                        "detach",
+                        "tool_grants",
+                    ],
                 )?;
                 inactive(args, &["repo", "git_ref", "model"], &["detach"])?;
             }
