@@ -198,6 +198,17 @@ accepted the isolated derivation API. No deployment dictionary, hosted defaults 
 listener implementation is bundled. Durable intents, policy binding, discovery
 and messaging integration remain outside this increment; file limits stay at 400.
 
+The pinned `vendor/netwatch/` dependency has an exact 5,695-line allocation,
+including its tests and build script. Executable Rust code is unchanged from
+version 0.19.3; the maintenance patch updates dependency constraints and one
+documentation sentence. Three upstream files exceed the owned-code limit and
+have path-specific exceptions at their measured sizes: 517, 1,218 and 1,159 lines.
+These preserve third-party structure, with no growth allowance or test exclusions.
+The dependency patch and removal criteria are recorded in
+[its maintenance notes](../../vendor/netwatch/PATCHES.md). Updating this snapshot
+requires renewed source and budget review. All Foundry-owned files retain the
+400-line limit.
+
 ## Failure handling
 
 The checker returns 1 for exceeded budgets or missing component ownership, and 2 when its inputs or Git enumeration fail. CI and local hooks must use this same command and configuration. Symlinked source files require review rather than being followed automatically.

@@ -13,7 +13,24 @@
     "packages/adapter/": 2000,
     "scripts/checks/": 1600,
     "scripts/release/": 1200,
-    "tests/": 5000
+    "tests/": 5000,
+    "vendor/netwatch/": 5695
   },
-  "files": {}
+  "files": {
+    "vendor/netwatch/src/interfaces.rs": {
+      "limit": 517,
+      "owner": "Foundry dependency maintainers",
+      "rationale": "Pinned third-party netwatch 0.19.3 source; preserve upstream structure. Executable code is unchanged; see vendor/netwatch/PATCHES.md."
+    },
+    "vendor/netwatch/src/udp.rs": {
+      "limit": 1218,
+      "owner": "Foundry dependency maintainers",
+      "rationale": "Pinned third-party netwatch 0.19.3 source; preserve upstream structure. Executable code is unchanged; see vendor/netwatch/PATCHES.md."
+    },
+    "vendor/netwatch/src/interfaces/bsd.rs": {
+      "limit": 1159,
+      "owner": "Foundry dependency maintainers",
+      "rationale": "Pinned third-party netwatch 0.19.3 source; preserve upstream structure. Executable code is unchanged; see vendor/netwatch/PATCHES.md."
+    }
+  }
 }
