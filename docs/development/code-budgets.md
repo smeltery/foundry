@@ -220,18 +220,16 @@ store increment. The allocation leaves 180 lines for corrections; every owned
 file retains the 400-line limit. No tests or behavior were removed to fit it.
 Native restored execution and broader session operations are outside this increment.
 
-The CLI allocation is now 8,500 physical lines for independently reviewed shared
-validation, connection options, request fixtures, injected configuration, network
-commands and plugin-management parsing. The measured total is 8,385, leaving
-115 lines for corrections. Network parsing added 353 production and 580 fixture
-lines over the prior 6,627-line snapshot. Plugin parsing adds 105 production and
-401 fixture lines, including retained existing cases. Effort selection adds
-42 production and 277 fixture lines for four routes and pre-mutation rejection
-by local backends. Fixtures cover defaults,
-shared request shapes and rejection before backend configuration. Tests remain
-included; the 400-line file limit is unchanged. This allocation does not establish
-full command conformance or implement remote accounts, transport, native services,
-package installation or release packaging.
+The CLI allocation is now 11,950 physical lines for reviewed command parsing,
+configuration and update/notice orchestration. The measured total is 11,828,
+leaving 122 lines for corrections. The update/notice increment adds 233 production
+and 805 fixture lines to the integrated 10,790-line baseline. It covers private
+setting observations, required preparation/diagnostic/launch consumers, updated
+launch handoff and notice-only suppression. Fixtures exercise the production
+orchestration through parsed dispatch, including failure ordering and route
+isolation. All tests remain counted and every owned file retains the 400-line
+limit. This allocation does not establish full command conformance or implement
+remote authentication, native services, installation or release packaging.
 
 ## Failure handling
 

@@ -1,8 +1,18 @@
 //! Injected configuration for a context-consuming backend, not local authentication.
+mod profile;
+mod profile_types;
+mod serve;
+mod serve_types;
 mod types;
+mod update;
+mod update_types;
 use crate::{Backend, CommandError, Request, Response};
+pub use profile_types::*;
 use serde_json::Value;
+pub use serve_types::*;
 pub use types::*;
+pub use update::PreSessionExecutor;
+pub use update_types::*;
 
 pub struct ConfiguredBackend<I, A, E> {
     inputs: I,
@@ -24,9 +34,30 @@ impl<I, A, E> ConfiguredBackend<I, A, E> {
 impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E> {
     fn execute(&mut self, mut request: Request) -> Result<Response, CommandError> {
         let scope = scope(&request)?;
+        let update_route = update::request_plan(&request)?;
+        if scope == Scope::Serve {
+            let explicit = serve::take(&mut request)?;
+            let InputSnapshot::Serve(inputs) = self
+                .inputs
+                .snapshot(scope)
+                .map_err(ConfigFailure::command_error)?
+            else {
+                return Err(ConfigFailure::InvalidRequest.command_error());
+            };
+            let context = ConfigurationContext::Serve(Box::new(serve::resolve(inputs, explicit)));
+            return self.executor.execute(request, context);
+        }
         // Explicit CLI secrets already existed in Request; never forward them in JSON.
         let explicit = if scope == Scope::Connect {
             Some(take_connect(&mut request).map_err(ConfigFailure::command_error)?)
+        } else {
+            None
+        };
+        let profile_changes = if scope == Scope::Connect {
+            Some(
+                profile::changes(&request.command["arguments"])
+                    .map_err(ConfigFailure::command_error)?,
+            )
         } else {
             None
         };
@@ -36,6 +67,15 @@ impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E>
             .map_err(ConfigFailure::command_error)?;
         let context = match (inputs, explicit) {
             (InputSnapshot::Session(inputs), None) => {
+                let pre_session = update_route
+                    .map(|(route, explicit)| update::plan(route, explicit, inputs.updates));
+                let mut endpoints = Vec::new();
+                push(
+                    &mut endpoints,
+                    Origin::EnvironmentEndpoint,
+                    inputs.environment_endpoint,
+                );
+                let endpoint = select(endpoints);
                 let mut candidates = Vec::new();
                 if let Some(key) = inputs.environment_key {
                     let unusable = key.expose().is_empty();
@@ -48,14 +88,18 @@ impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E>
                             inputs.selected_login,
                         );
                         ConfigurationContext::Session {
+                            pre_session,
                             identity: Selection::Pending {
                                 cause: PendingCause::OwnerPolicy,
                                 candidates,
                             },
+                            endpoint,
                         }
                     } else {
                         ConfigurationContext::Session {
-                            identity: self.identity(candidates)?,
+                            pre_session,
+                            identity: self.identity(candidates, &endpoint)?,
+                            endpoint,
                         }
                     }
                 } else {
@@ -65,7 +109,9 @@ impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E>
                         inputs.selected_login,
                     );
                     ConfigurationContext::Session {
-                        identity: self.identity(candidates)?,
+                        pre_session,
+                        identity: self.identity(candidates, &endpoint)?,
+                        endpoint,
                     }
                 }
             }
@@ -83,7 +129,6 @@ impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E>
                     Origin::SavedIdentity,
                     inputs.saved_identity,
                 );
-                let identity = self.identity(candidates)?;
                 let mut endpoints = Vec::new();
                 push(&mut endpoints, Origin::ExplicitEndpoint, explicit.endpoint);
                 push(
@@ -92,12 +137,20 @@ impl<I: Inputs, A: Accounts, E: Executor> Backend for ConfiguredBackend<I, A, E>
                     inputs.environment_endpoint,
                 );
                 push(&mut endpoints, Origin::SavedEndpoint, inputs.saved_endpoint);
+                let endpoint = select(endpoints);
+                let identity = self.identity(candidates, &endpoint)?;
                 let mut proxies = Vec::new();
                 push(&mut proxies, Origin::ExplicitProxy, explicit.proxy);
                 push(&mut proxies, Origin::SavedProxy, inputs.saved_proxy);
+                let profile = profile::resolve(
+                    inputs.profile.map(|facts| *facts),
+                    profile_changes.ok_or_else(|| ConfigFailure::InvalidRequest.command_error())?,
+                    &identity,
+                );
                 ConfigurationContext::Connect {
+                    profile: Box::new(profile),
                     identity,
-                    endpoint: select(endpoints),
+                    endpoint,
                     proxy: ConnectProxyPolicy {
                         selection: select(proxies),
                     },
@@ -112,6 +165,7 @@ impl<I, A: Accounts, E> ConfiguredBackend<I, A, E> {
     fn identity(
         &mut self,
         candidates: Vec<Candidate>,
+        endpoint: &Selection<Candidate>,
     ) -> Result<Selection<Identity>, CommandError> {
         match select(candidates) {
             Selection::Selected(credential)
@@ -122,7 +176,7 @@ impl<I, A: Accounts, E> ConfiguredBackend<I, A, E> {
             {
                 let workspace = self
                     .accounts
-                    .workspace(&credential)
+                    .workspace(&credential, endpoint)
                     .map_err(ConfigFailure::command_error)?;
                 Ok(Selection::Selected(Identity {
                     credential,
@@ -163,9 +217,15 @@ fn scope(request: &Request) -> Result<Scope, CommandError> {
     if request.command["operation"] == "session" {
         require_arguments(&request.command["arguments"])?;
     }
+    if request.command["operation"] == "prompt"
+        && !request.command["arguments"]["options"].is_object()
+    {
+        return Err(ConfigFailure::InvalidRequest.command_error());
+    }
     match request.command.get("operation").and_then(Value::as_str) {
         Some("connect") => Ok(Scope::Connect),
-        Some("ls" | "watch" | "send" | "cancel") => Ok(Scope::Session),
+        Some("serve") => Ok(Scope::Serve),
+        Some("prompt" | "run" | "ls" | "watch" | "send" | "cancel") => Ok(Scope::Session),
         Some("session")
             if matches!(
                 request.command["arguments"]["operation"].as_str(),

@@ -16,6 +16,7 @@ impl PrivateValue {
 pub enum Scope {
     Session,
     Connect,
+    Serve,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
@@ -23,6 +24,9 @@ pub enum Origin {
     EnvironmentKey,
     SelectedLogin,
     EnrollmentToken,
+    ExplicitToken,
+    EnvironmentToken,
+    SavedWorkerIdentity,
     SavedIdentity,
     ExplicitEndpoint,
     EnvironmentEndpoint,
@@ -64,11 +68,14 @@ pub struct Identity {
 }
 #[derive(Default)]
 pub struct SessionInputs {
+    pub updates: super::UpdateInputs,
+    pub environment_endpoint: Option<PrivateValue>,
     pub environment_key: Option<PrivateValue>,
     pub selected_login: Option<PrivateValue>,
 }
 #[derive(Default)]
 pub struct ConnectInputs {
+    pub profile: Option<Box<super::ProfileFacts>>,
     pub environment_key: Option<PrivateValue>,
     pub saved_identity: Option<PrivateValue>,
     pub environment_endpoint: Option<PrivateValue>,
@@ -80,6 +87,7 @@ pub struct ConnectInputs {
 pub enum InputSnapshot {
     Session(SessionInputs),
     Connect(ConnectInputs),
+    Serve(super::ServeInputs),
 }
 
 /// Value-free failures prevent injected secret-bearing diagnostics from escaping.
@@ -103,7 +111,11 @@ pub trait Inputs {
     fn snapshot(&mut self, scope: Scope) -> Result<InputSnapshot, ConfigFailure>;
 }
 pub trait Accounts {
-    fn workspace(&mut self, credential: &Candidate) -> Result<Workspace, ConfigFailure>;
+    fn workspace(
+        &mut self,
+        credential: &Candidate,
+        endpoint: &Selection<Candidate>,
+    ) -> Result<Workspace, ConfigFailure>;
 }
 pub struct ConnectProxyPolicy {
     pub selection: Selection<Candidate>,
@@ -115,10 +127,14 @@ impl ConnectProxyPolicy {
     }
 }
 pub enum ConfigurationContext {
+    Serve(Box<super::ServeContext>),
     Session {
+        pre_session: Option<super::PreSessionPlan>,
         identity: Selection<Identity>,
+        endpoint: Selection<Candidate>,
     },
     Connect {
+        profile: Box<super::ConnectProfile>,
         identity: Selection<Identity>,
         endpoint: Selection<Candidate>,
         proxy: ConnectProxyPolicy,
