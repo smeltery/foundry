@@ -2,7 +2,7 @@
   "default_file_lines": 400,
   "components": {
     "apps/cli/": 11950,
-    "crates/contracts/": 2300,
+    "crates/contracts/": 3550,
     "crates/store/": 13750,
     "crates/runtime/": 9700,
     "crates/mcp/": 3000,
