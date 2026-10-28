@@ -1,6 +1,8 @@
 //! Shared, versioned session and subprocess interfaces.
+pub mod capability;
 pub mod context;
 pub mod context_v2;
+pub mod permission;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

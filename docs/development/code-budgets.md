@@ -67,13 +67,16 @@ Three parent-run tests and independent source review cover strict bounds and
 historical prompt identity. These DTOs do not authorize restored execution; that
 state machine remains outside this allowance.
 
-The contracts budget is 2,300 lines for a measured 2,244-line baseline. Additive
-loading and continuation frames contribute 423 implementation/wiring and 256 test
-lines over the earlier 1,565 lines. Six parent-run tests and independent source
-review cover nested field validation, byte limits, exact correlation, payload
-hashes and receipt-last encoding. Existing execution does not route these frames
-or advertise their capabilities. The largest new file is 298 lines; no file
-exceptions are needed.
+The contracts budget is 3,550 lines for a measured 3,432-line baseline.
+The prior 2,244 lines cover shared session and private context interfaces.
+Capability negotiation and permission requests add 531 implementation lines,
+655 test lines and two module exports. They provide pure descriptor matching
+and one-use permission consumption, with 18 focused tests covering exact owner,
+version and profile matching, duplicate declarations, expiry, revocation and
+cross-request isolation. Existing runtime dispatch is unchanged; these helpers
+do not authenticate callers or establish native execution fidelity. The budget
+leaves 118 lines for corrections. All tests count and the largest file is 400
+lines; no file exceptions, compressed formatting or removed tests are needed.
 
 The CLI component budget is 4,800 lines after connecting explicit tool grants.
 The reviewed 4,567-line baseline includes 1,951 Rust source lines and 2,580 Rust

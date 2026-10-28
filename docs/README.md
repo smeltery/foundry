@@ -12,6 +12,7 @@ is underway; each page distinguishes tested functionality from planned features.
 
 ## Architecture
 
+- [Session and backend contracts](architecture/contracts.md)
 - [Complete CLI target contract](architecture/cli-contract.md)
 - [CLI configuration boundary](architecture/cli-configuration.md)
 - [Durable storage and recovery](architecture/storage.md)
