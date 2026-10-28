@@ -43,6 +43,8 @@ fn session_selection_reaches_consumer_for_each_supported_route() {
             let mut backend = fixture(InputSnapshot::Session(SessionInputs {
                 environment_key: key.and_then(private),
                 selected_login: login.and_then(private),
+                environment_endpoint: None,
+                updates: UpdateInputs::default(),
             }));
             let (code, out, err) = run(&route, &mut backend);
             assert_eq!(code, 3);
@@ -53,14 +55,14 @@ fn session_selection_reaches_consumer_for_each_supported_route() {
             assert_eq!(accounts.calls, [origin]);
             assert_eq!(consumer.calls.len(), 1);
             let (request, context) = &consumer.calls[0];
-            let ConfigurationContext::Session { identity: selected } = context else {
+            let ConfigurationContext::Session {
+                identity: selected, ..
+            } = context
+            else {
                 panic!("session context")
             };
             identity(selected, origin, workspace);
-            let encoded = serde_json::to_string(request).unwrap();
-            let debug = format!("{request:?}");
-            assert!(!encoded.contains("private-"));
-            assert!(!debug.contains("private-"));
+            assert_private_request(request);
         }
     }
 }
@@ -102,8 +104,7 @@ fn connect_single_keys_and_proxy_exclusion_reach_consumer() {
                     for field in ["api_key", "token", "api_url", "proxy"] {
                         assert!(request.command["arguments"].get(field).is_none());
                     }
-                    assert!(!format!("{request:?}").contains("private-"));
-                    assert!(!serde_json::to_string(request).unwrap().contains("private-"));
+                    assert_private_request(request);
                     let ConfigurationContext::Connect {
                         identity: selected,
                         proxy,
@@ -179,6 +180,7 @@ fn unresolved_connect_candidates_are_consumed_without_precedence_or_coalescing()
             identity,
             endpoint,
             proxy,
+            ..
         } = context
         else {
             panic!("connect context")
@@ -234,8 +236,8 @@ fn bypass_failures_and_unsupported_scope_do_not_consume_configuration() {
         (vec!["help", "session"], 0),
         (vec!["version"], 0),
         (vec!["--cloud", "ls"], 2),
-        (vec!["task"], 2),
-        (vec!["run", "--task", "task"], 2),
+        (vec!["serve", "--stop"], 2),
+        (vec!["mcp"], 2),
         (vec!["acp"], 2),
     ] {
         let mut backend = fixture(InputSnapshot::Session(SessionInputs::default()));
@@ -254,6 +256,8 @@ fn injected_failures_are_safe_and_never_fallback_or_invoke_executor() {
             let input = InputSnapshot::Session(SessionInputs {
                 environment_key: private("private-key-A"),
                 selected_login: private("private-login-B"),
+                environment_endpoint: None,
+                updates: UpdateInputs::default(),
             });
             let mut backend = ConfiguredBackend::new(
                 Source {
@@ -314,12 +318,15 @@ fn empty_and_absent_identity_remain_unresolved_owner_inputs() {
         let mut backend = fixture(InputSnapshot::Session(SessionInputs {
             environment_key: key.and_then(private),
             selected_login: login.and_then(private),
+            environment_endpoint: None,
+            updates: UpdateInputs::default(),
         }));
         assert_eq!(run(&["ls"], &mut backend).0, 3);
         let (_, accounts, consumer) = backend.into_parts();
         assert!(accounts.calls.is_empty());
         let ConfigurationContext::Session {
             identity: Selection::Pending { cause, candidates },
+            ..
         } = &consumer.calls[0].1
         else {
             panic!("pending identity")
