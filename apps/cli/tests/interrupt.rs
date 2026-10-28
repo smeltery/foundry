@@ -224,6 +224,9 @@ fn second_signal_escalates_after_graceful_request_without_waiting_for_timeout() 
 fn interrupted_watch_returns_130_without_cancelling_producer() {
     let mut producer = Running::start("graceful");
     let before = producer.store().get(producer.id()).unwrap();
+    // Adapter readiness precedes event persistence; avoid the 60-second empty poll.
+    let store = producer.store();
+    wait_until(|| !store.events(producer.id(), 0, 1).unwrap().is_empty());
     let mut watcher = Watcher(
         cli(producer.directory.path())
             .args(["watch", producer.id(), "--interval", "60"])
