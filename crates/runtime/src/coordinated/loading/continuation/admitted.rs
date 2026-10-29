@@ -19,6 +19,16 @@ pub struct RestoredRun {
     pub identity: ContinuationIdentity,
     pub delta: DeliveredTrace,
 }
+enum Handoff {
+    Running(
+        Box<(
+            crate::coordinated::engine::RestoredParts,
+            Arc<ContinuationBinding>,
+            ContinuationIdentity,
+        )>,
+    ),
+    Cancelled(Box<crate::coordinated::CaptureCancelled>),
+}
 impl AdmittedProcess {
     pub fn process_id(&self) -> u32 {
         self.loaded.process_id()
@@ -32,6 +42,17 @@ impl AdmittedProcess {
     pub fn close(self) -> Result<(), RuntimeError> {
         self.loaded.close()
     }
+    pub fn close_cancelled(
+        mut self,
+        receiver: &Receiver<CancelMode>,
+    ) -> Result<ContinuationCancelled, LoadingError> {
+        let mode = cancellation::require(receiver, None)?;
+        cancellation::finish(
+            &mut self.loaded,
+            Some(self.identity.attempt_id.clone()),
+            mode,
+        )
+    }
     pub fn run_restored(
         self,
         spec: &AdapterSpec,
@@ -41,7 +62,12 @@ impl AdmittedProcess {
         persistence: RuntimePersistence,
         tools: Option<TrustedToolPolicy>,
     ) -> Result<RestoredRun, RuntimeError> {
-        let (parts, binding, identity) = self.into_parts(session, cancellation, tools, None)?;
+        let Handoff::Running(parts) = self.into_parts(session, cancellation, tools, None)? else {
+            return Err(RuntimeError::Invalid(
+                "ordinary restored cancellation handoff",
+            ));
+        };
+        let (parts, binding, identity) = *parts;
         let (exit, delta) = crate::coordinated::engine::run_restored(
             spec,
             session,
@@ -71,7 +97,12 @@ impl AdmittedProcess {
         persistence: RuntimePersistence,
         options: crate::coordinated::FreshCaptureOptions,
     ) -> Result<crate::coordinated::CaptureExit, RuntimeError> {
-        let (parts, _, _) = self.into_parts(session, cancellation, None, Some(options))?;
+        let parts = match self.into_parts(session, cancellation, None, Some(options))? {
+            Handoff::Running(parts) => parts.0,
+            Handoff::Cancelled(stop) => {
+                return Ok(crate::coordinated::CaptureExit::Cancelled(stop));
+            }
+        };
         let (exit, _) = crate::coordinated::engine::run_restored(
             spec,
             session,
@@ -96,17 +127,8 @@ impl AdmittedProcess {
         cancellation: &Receiver<CancelMode>,
         tools: Option<TrustedToolPolicy>,
         capture: Option<crate::coordinated::FreshCaptureOptions>,
-    ) -> Result<
-        (
-            crate::coordinated::engine::RestoredParts,
-            Arc<ContinuationBinding>,
-            ContinuationIdentity,
-        ),
-        RuntimeError,
-    > {
+    ) -> Result<Handoff, RuntimeError> {
         let checked = (|| {
-            cancelled(cancellation)
-                .map_err(|_| RuntimeError::Invalid("restored admission cancelled"))?;
             if Instant::now() >= self.loaded.deadline
                 || session.active_attempt_id.as_deref() != Some(self.identity.attempt_id.as_str())
                 || self
@@ -142,6 +164,31 @@ impl AdmittedProcess {
         if let Err(error) = checked {
             self.loaded.stop()?;
             return Err(error);
+        }
+        let observed = match cancellation::observed(cancellation) {
+            Ok(mode) => mode,
+            Err(_) => {
+                self.loaded.stop()?;
+                return Err(RuntimeError::Protocol(
+                    "restored cancellation owner disconnected",
+                ));
+            }
+        };
+        if let Some(mode) = observed {
+            self.loaded.stop_cancelled()?;
+            if let Some(options) = capture {
+                return Ok(Handoff::Cancelled(Box::new(
+                    crate::coordinated::CaptureCancelled {
+                        owner_identity: Arc::clone(&options.owner.identity),
+                        session_id: session.id.clone(),
+                        attempt_id: self.identity.attempt_id.as_str().into(),
+                        mode,
+                        forced: true,
+                        cleanup: crate::coordinated::CleanupReceipt { _private: () },
+                    },
+                )));
+            }
+            return Err(RuntimeError::Invalid("restored admission cancelled"));
         }
         let capturing = capture.is_some();
         let (capture, tools) = match capture {
@@ -193,7 +240,7 @@ impl AdmittedProcess {
             .take()
             .ok_or(RuntimeError::Invalid("restored process closed"))?;
         let events = std::mem::replace(&mut self.loaded.events, std::sync::mpsc::channel().1);
-        Ok((
+        Ok(Handoff::Running(Box::new((
             crate::coordinated::engine::RestoredParts {
                 process,
                 events,
@@ -206,6 +253,6 @@ impl AdmittedProcess {
             },
             self.binding,
             self.identity,
-        ))
+        ))))
     }
 }

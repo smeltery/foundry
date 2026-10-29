@@ -48,3 +48,27 @@ fn generated_capture_job_accessor_preserves_identity() {
     assert_eq!(job.as_uuid(), &job.0);
     assert_eq!(job.as_uuid().get_version_num(), 4);
 }
+
+#[test]
+fn retained_matchers_reject_other_channels_with_identical_labels() {
+    let make = || {
+        let mut h = Harness::new("normal", Duration::from_secs(2));
+        let _ = h.event();
+        let matcher = h.owner.cancellation_matcher();
+        h.cancel.send(CancelMode::Hard).unwrap();
+        let EngineExit::Cancelled(stop) = h.finish_owned().unwrap() else {
+            panic!()
+        };
+        assert!(matcher.matches(&stop));
+        drop(h);
+        (matcher, stop)
+    };
+    let (first, first_stop) = make();
+    let (second, second_stop) = make();
+    assert_eq!(first_stop.session_id(), second_stop.session_id());
+    assert_eq!(first_stop.attempt_id(), second_stop.attempt_id());
+    assert!(first.matches(&first_stop));
+    assert!(second.matches(&second_stop));
+    assert!(!first.matches(&second_stop));
+    assert!(!second.matches(&first_stop));
+}

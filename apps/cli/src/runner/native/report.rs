@@ -60,6 +60,7 @@ mod tests {
     fn operation_rejection_is_distinct_from_release_and_liveness_failures() {
         let error = check_report(
             RestoreOwnerReport {
+                cancellation: None,
                 expired: false,
                 watchdog_panicked: false,
                 operation: Err(ServiceError::Coordination(
@@ -77,6 +78,7 @@ mod tests {
         );
         let error = check_report(
             RestoreOwnerReport {
+                cancellation: None,
                 expired: true,
                 watchdog_panicked: true,
                 operation: Ok(()),
@@ -97,6 +99,7 @@ mod tests {
         assert!(
             check_report(
                 RestoreOwnerReport {
+                    cancellation: None,
                     expired: false,
                     watchdog_panicked: false,
                     operation: Ok(()),
@@ -111,6 +114,7 @@ mod tests {
     fn runtime_execution_failure_survives_successful_owner_release() {
         let error = check_report(
             RestoreOwnerReport {
+                cancellation: None,
                 expired: false,
                 watchdog_panicked: false,
                 operation: Ok(()),

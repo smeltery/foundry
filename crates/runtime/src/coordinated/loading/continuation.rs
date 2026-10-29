@@ -1,9 +1,11 @@
 //! Trusted asynchronous owner handoff. Channel replies are not native or Store proof.
 mod admitted;
+mod cancellation;
 mod pending;
 use super::*;
 use crate::coordinated::origin::OriginIdentity;
 pub use admitted::{AdmittedProcess, RestoredRun};
+pub use cancellation::ContinuationCancelled;
 use foundry_contracts::{
     context::ContextId, context_observation::ObservationBinding, context_v2::ContinuationIdentity,
 };
@@ -129,3 +131,6 @@ mod support;
 
 #[cfg(all(test, unix))]
 mod activation_tests;
+
+#[cfg(all(test, unix))]
+mod cancellation_tests;

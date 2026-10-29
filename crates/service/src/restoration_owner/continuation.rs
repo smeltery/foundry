@@ -60,7 +60,7 @@ impl Link {
         fence: &RestoreFence,
         snapshot: &RestoreBaselineSnapshot,
         validated: &ValidatedLoad,
-        cancelled: impl Fn() -> bool,
+        check: impl Fn() -> Result<()>,
     ) -> Result<()> {
         let request = match self.requests.try_recv() {
             Ok(request) => request,
@@ -72,9 +72,7 @@ impl Link {
                 ));
             }
         };
-        if cancelled() {
-            return Err(ServiceError::Coordination("continuation owner stopped"));
-        }
+        check()?;
         let job = match &request {
             ContinuationRequest::Authorize { job, .. }
             | ContinuationRequest::Accept { job, .. } => job.clone(),
@@ -102,7 +100,7 @@ impl Link {
                         snapshot,
                         validated,
                         (job, tail_receipt_digest),
-                        &cancelled,
+                        &check,
                     )
                 }
             }
@@ -111,7 +109,7 @@ impl Link {
                 scope,
                 identity,
                 receipt,
-            } => self.accept(store, job, scope, identity, receipt, &cancelled),
+            } => self.accept(store, job, scope, identity, receipt, &check),
         };
         match result {
             Ok(reply) => self
@@ -131,7 +129,7 @@ impl Link {
         snapshot: &RestoreBaselineSnapshot,
         validated: &ValidatedLoad,
         request: (ContinuationJob, ContextDigest),
-        cancelled: &impl Fn() -> bool,
+        check: &impl Fn() -> Result<()>,
     ) -> Result<ContinuationReply> {
         let (job, tail) = request;
         let fresh = store.restore_baseline_snapshot(fence)?;
@@ -189,11 +187,7 @@ impl Link {
             message_id: message.id,
             expected_text_digest: raw(selected.text_digest),
         };
-        if cancelled() {
-            return Err(ServiceError::Coordination(
-                "continuation stopped before grant",
-            ));
-        }
+        check()?;
         let ContinueMessageDecision::Granted { permit, receipt } =
             store.authorize_continue_message(fence, input)?
         else {
@@ -214,11 +208,7 @@ impl Link {
             acceptance: None,
         });
         let grant = self.grant.as_mut().expect("grant installed");
-        if cancelled() {
-            return Err(ServiceError::Coordination(
-                "continuation stopped after grant",
-            ));
-        }
+        check()?;
         let mut acceptance = grant.acceptance();
         acceptance.authorization_binding = acceptance.computed_authorization_binding()?;
         let id = |value: &str| {
@@ -248,7 +238,7 @@ impl Link {
         scope: LoadingScope,
         identity: ContinuationIdentity,
         receipt: ContextReceipt,
-        cancelled: &impl Fn() -> bool,
+        check: &impl Fn() -> Result<()>,
     ) -> Result<ContinuationReply> {
         let grant = self
             .grant
@@ -268,20 +258,14 @@ impl Link {
         }
         let mut input = grant.acceptance();
         input.authorization_binding = input.computed_authorization_binding()?;
-        grant.acceptance = Some(store.accept_restore_continuation(&grant.fence, input)?);
-        grant.accepted = true;
-        if cancelled() || store.cancellation(&grant.fence)?.is_some() {
-            return Err(ServiceError::Coordination(
-                "continuation activation cancelled",
-            ));
-        }
-        // Read validates the still-live attempt credential without resetting watchdog.
-        store.heartbeat(&grant.fence)?;
-        if cancelled() {
-            return Err(ServiceError::Coordination(
-                "continuation activation expired",
-            ));
-        }
+        commit_acceptance(
+            store,
+            &grant.fence,
+            input,
+            &mut grant.acceptance,
+            &mut grant.accepted,
+            check,
+        )?;
         Ok(ContinuationReply::Activated { job })
     }
 }
@@ -304,3 +288,34 @@ pub(super) fn raw(value: ContextDigest) -> [u8; 32] {
     }
     result
 }
+
+fn check_stored_cancellation(store: &mut Store, fence: &AttemptFence) -> Result<()> {
+    if store.cancellation(fence)?.is_some() {
+        return Err(ServiceError::Coordination(
+            "stored restoration cancellation",
+        ));
+    }
+    Ok(())
+}
+
+// Preserve the committed acceptance before any authority check can stop activation.
+fn commit_acceptance(
+    store: &mut Store,
+    fence: &AttemptFence,
+    input: ContinueAcceptanceInput,
+    acceptance: &mut Option<foundry_store::ContinueAcceptanceRef>,
+    accepted: &mut bool,
+    check: &impl Fn() -> Result<()>,
+) -> Result<()> {
+    *acceptance = Some(store.accept_restore_continuation(fence, input)?);
+    *accepted = true;
+    check()?;
+    check_stored_cancellation(store, fence)?;
+    store.heartbeat(fence)?;
+    check()?;
+    check_stored_cancellation(store, fence)
+}
+
+#[cfg(test)]
+#[path = "continuation_accept_tests.rs"]
+mod acceptance_tests;

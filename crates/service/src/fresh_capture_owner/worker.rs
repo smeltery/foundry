@@ -115,6 +115,7 @@ impl Actor {
             Ok(None)
         };
         RestoreOwnerReport {
+            cancellation: None,
             expired: self.expired.load(Ordering::Acquire),
             watchdog_panicked: false,
             operation,

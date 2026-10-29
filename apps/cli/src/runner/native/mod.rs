@@ -22,6 +22,7 @@ mod loading;
 mod origin;
 mod report;
 mod restore;
+mod transition;
 use report::check_report;
 const PHASE: Duration = Duration::from_secs(30);
 

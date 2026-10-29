@@ -34,6 +34,9 @@ mod restoration_support;
 #[path = "publication_owner/restored_permissions.rs"]
 mod restored_permissions;
 
+#[path = "publication_owner/transition_cancel.rs"]
+mod transition_cancel;
+
 // Synthetic semantic fixture only. The parent separately supplies the real codec.
 struct Comparator;
 impl NativePublicationComparator for Comparator {

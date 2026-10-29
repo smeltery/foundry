@@ -5,6 +5,7 @@ mod capture_cancel;
 pub mod capture_owner;
 mod capture_stop;
 pub use capture_cancel::CaptureCancelled;
+pub use capture_owner::CaptureCancellationMatcher;
 mod engine;
 mod fresh_capture;
 pub mod loading;

@@ -227,12 +227,14 @@ impl FreshCaptureOwner {
         let mut report = match self.actor.take().map(JoinHandle::join) {
             Some(Ok(report)) => report,
             Some(Err(_)) => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired.load(Ordering::Acquire),
                 watchdog_panicked: false,
                 operation: Err(ServiceError::Coordination("fresh owner panicked")),
                 release: Err(ServiceError::Coordination("fresh cleanup unverified")),
             },
             None => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired.load(Ordering::Acquire),
                 watchdog_panicked: false,
                 operation: Ok(()),

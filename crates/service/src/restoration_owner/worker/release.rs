@@ -96,7 +96,26 @@ impl Actor {
             } else {
                 foundry_contracts::Lifecycle::Error
             };
-            store.finish_attempt(&grant.fence, lifecycle, None, None)?;
+            let session = store.finish_attempt(&grant.fence, lifecycle, None, None)?;
+            if lifecycle == foundry_contracts::Lifecycle::Suspended
+                && let Some(acceptance) = &grant.acceptance
+                && acceptance.attempt_id == grant.fence.attempt_id
+                && acceptance.session_id == session.id
+                && let Some(cleanup) = &reservation.cleanup
+                && cleanup.status() == CleanupStatus::Complete
+            {
+                reservation.cancellation = Some(RestoredCancellation {
+                    session,
+                    attempt: grant.fence.attempt_id.clone(),
+                    message: acceptance.message_id.clone(),
+                    scope: reservation.scope.clone(),
+                    cleanup: cleanup.clone(),
+                    capture: reservation
+                        .publication
+                        .as_ref()
+                        .map(|publication| publication.cancellation_matcher()),
+                });
+            }
             return Ok(None);
         }
         Ok(Some(store.close_restore(

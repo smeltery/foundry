@@ -94,7 +94,23 @@ pub struct CaptureOwnerEndpoint {
     pub replies: SyncSender<CaptureReply>,
 }
 
+/// Retains only exact capture-channel identity, not a sender or execution authority.
+pub struct CaptureCancellationMatcher {
+    identity: Arc<CaptureOwnerIdentity>,
+}
+impl CaptureCancellationMatcher {
+    pub fn matches(&self, stop: &super::CaptureCancelled) -> bool {
+        Arc::ptr_eq(&self.identity, &stop.owner_identity)
+    }
+}
+
 impl CaptureOwnerEndpoint {
+    pub fn cancellation_matcher(&self) -> CaptureCancellationMatcher {
+        CaptureCancellationMatcher {
+            identity: Arc::clone(&self.identity),
+        }
+    }
+
     /// Match cleanup authority to the exact channel that owned this capture.
     pub fn matches_cancelled(&self, stop: &super::CaptureCancelled) -> bool {
         Arc::ptr_eq(&self.identity, &stop.owner_identity)

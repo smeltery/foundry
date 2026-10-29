@@ -4,7 +4,7 @@ use super::*;
 
 /// Owned process cleanup completed; this is not durable publication or native proof.
 pub struct CleanupReceipt {
-    pub(super) _private: (),
+    pub(in crate::coordinated) _private: (),
 }
 pub struct PreparedCapture {
     pub(super) verified: super::super::capture::VerifiedCapture,

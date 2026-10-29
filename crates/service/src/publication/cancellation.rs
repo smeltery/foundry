@@ -1,7 +1,10 @@
 //! Cleanup-only cancellation matching; no checkpoint publication.
 use super::*;
-use foundry_runtime::coordinated::CaptureCancelled;
+use foundry_runtime::coordinated::{CaptureCancellationMatcher, CaptureCancelled};
 impl Publication {
+    pub(crate) fn cancellation_matcher(&self) -> CaptureCancellationMatcher {
+        self.capture.cancellation_matcher()
+    }
     pub(crate) fn check_cancelled(
         &self,
         fence: &AttemptFence,

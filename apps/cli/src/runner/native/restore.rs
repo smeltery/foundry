@@ -1,3 +1,4 @@
+use super::transition::Completion;
 use super::*;
 use foundry_contracts::{Session, context::ContextDigest};
 use foundry_runtime::coordinated::{CaptureExit, FreshCaptureOptions};
@@ -38,6 +39,7 @@ pub(super) fn run(
         snapshots,
     )
     .map_err(service_error)?;
+    let message_id = message.id.clone();
     let result = execute(
         &mut owner, session, message, configured, files, parts, control,
     );
@@ -52,31 +54,33 @@ pub(super) fn run(
             .join()
             .map_err(|_| failure("restore owner shutdown panicked"))
     })?;
-    let cancelled = result.as_ref().copied().unwrap_or(false);
     let mut report = report;
-    if cancelled
-        && matches!(
-            report.operation,
-            Err(foundry_service::ServiceError::Coordination(
-                "restoration cancelled" | "stored restoration cancellation"
-            ))
-        )
+    if let Ok(completion) = &result
+        && let Some(settlement) = report.cancellation.as_ref()
+        && !report.expired
+        && !report.watchdog_panicked
+        && report.release.is_ok()
+        && settlement.session().id == session.id
+        && settlement.message_id() == message_id
+        && match completion {
+            Completion::TransitionCancelled(stop) => settlement.matches_transition(stop),
+            Completion::CaptureCancelled(stop) => settlement.matches_capture(stop),
+            Completion::Published => false,
+        }
     {
-        report.operation = Ok(());
+        return Ok(report
+            .cancellation
+            .take()
+            .expect("checked settlement")
+            .into_session());
     }
-    check_report(report, result.is_err())?;
-    result?;
-    let done = store
+    let incomplete = !matches!(result, Ok(Completion::Published));
+    check_report(report, incomplete)?;
+    store
         .get(&session.id)
-        .map_err(|error| service_error(error.into()))?;
-    if cancelled
-        && (done.lifecycle != foundry_contracts::Lifecycle::Suspended
-            || done.active_attempt_id.is_some())
-    {
-        return Err(failure("restored cancellation did not suspend session"));
-    }
-    Ok(done)
+        .map_err(|error| service_error(error.into()))
 }
+
 fn execute(
     owner: &mut RestorationOwner,
     session: &Session,
@@ -85,7 +89,7 @@ fn execute(
     files: &artifacts::Files,
     parts: PreparedCaptureParts,
     control: &AtomicU8,
-) -> Result<bool, CommandError> {
+) -> Result<Completion, CommandError> {
     let cancellation = owner.take_cancellation().map_err(service_error)?;
     let held = loading::load(
         owner,
@@ -118,28 +122,32 @@ fn execute(
         .map_err(|_| failure("continuation failed"))?;
     loop {
         relay(control, |mode| owner.cancel(mode));
-        if pending
-            .poll(&held.cancellation)
-            .map_err(|_| failure("continuation failed"))?
-        {
-            break;
+        match pending.poll(&held.cancellation) {
+            Ok(true) => break,
+            Ok(false) => {}
+            Err(error) if transition::is_cancelled(&error) => {
+                let stop = pending
+                    .close_cancelled(&held.cancellation)
+                    .map_err(|_| failure("continuation cancellation cleanup unverified"))?;
+                return Ok(Completion::TransitionCancelled(stop));
+            }
+            Err(_) => return Err(failure("continuation failed")),
         }
         thread::sleep(Duration::from_millis(2));
     }
     let admitted = pending
         .into_admitted()
         .map_err(|_| failure("continuation not admitted"))?;
-    owner
-        .open_capture_with_permissions(publication(&configured)?, parts.permissions)
-        .map_err(service_error)?;
-    let ports = match loading::receive(owner, control, || Ok(())) {
-        Ok(RestoreReply::CaptureReady(ports)) => ports,
-        _ => {
-            admitted
-                .close()
-                .map_err(|_| failure("admitted cleanup failed"))?;
-            return Err(failure("capture endpoint absent"));
-        }
+    let (admitted, ports) = match transition::capture_ports(
+        owner,
+        admitted,
+        publication(&configured)?,
+        parts.permissions,
+        &held.cancellation,
+        control,
+    )? {
+        Ok(parts) => parts,
+        Err(stop) => return Ok(Completion::TransitionCancelled(stop)),
     };
     let result = thread::scope(|scope| {
         let runtime = scope.spawn(move || {
@@ -176,10 +184,12 @@ fn execute(
             1
         }
         // The registered cleanup observer and restoration release own suspension.
-        CaptureExit::Cancelled(_) => return Ok(true),
+        CaptureExit::Cancelled(stop) => return Ok(Completion::CaptureCancelled(stop)),
     };
     match (expected, loading::receive(owner, control, || Ok(()))?) {
-        (0, RestoreReply::Published(_)) | (1, RestoreReply::ActionRequired(_)) => Ok(false),
+        (0, RestoreReply::Published(_)) | (1, RestoreReply::ActionRequired(_)) => {
+            Ok(Completion::Published)
+        }
         _ => Err(failure("restored finalization mismatch")),
     }
 }

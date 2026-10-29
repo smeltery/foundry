@@ -37,6 +37,9 @@ impl CleanupObserver {
     pub(crate) fn complete(&self, success: bool) {
         self.0.store(if success { 1 } else { 2 }, Ordering::Release);
     }
+    pub(super) fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
     pub fn status(&self) -> CleanupStatus {
         match self.0.load(Ordering::Acquire) {
             1 => CleanupStatus::Complete,
@@ -133,6 +136,20 @@ impl LoadedProcess {
     }
     pub fn close(mut self) -> Result<(), RuntimeError> {
         self.stop()
+    }
+    pub(super) fn stop_cancelled(&mut self) -> Result<(), RuntimeError> {
+        let Some(mut process) = self.process.take() else {
+            return if self.observer.status() == CleanupStatus::Complete {
+                Ok(())
+            } else {
+                Err(RuntimeError::Protocol(
+                    "cancelled loading cleanup unavailable",
+                ))
+            };
+        };
+        let result = process.stop_context_cancelled(&self.events);
+        self.observer.complete(result.is_ok());
+        result
     }
     pub(super) fn stop(&mut self) -> Result<(), RuntimeError> {
         let Some(mut process) = self.process.take() else {

@@ -21,6 +21,8 @@ pub struct PendingContinuation {
     delta: Option<DeliveredTrace>,
     phase: Phase,
     buffered: VecDeque<ContextOutput>,
+    cancelled_mode: Option<CancelMode>,
+    failed: bool,
 }
 impl PendingContinuation {
     pub(super) fn new(
@@ -52,6 +54,8 @@ impl PendingContinuation {
             delta: None,
             phase: Phase::Grant,
             buffered: VecDeque::new(),
+            cancelled_mode: None,
+            failed: false,
         })
     }
     pub fn cleanup_observer(&self) -> CleanupObserver {
@@ -64,14 +68,47 @@ impl PendingContinuation {
         self.loaded.as_mut().map_or(Ok(()), LoadedProcess::stop)
     }
     pub fn poll(&mut self, cancellation: &Receiver<CancelMode>) -> Result<bool, LoadingError> {
+        if self.failed || self.cancelled_mode.is_some() {
+            return Err(LoadingError {
+                cause: RuntimeError::Invalid("continuation already stopped").into(),
+                cleanup: None,
+            });
+        }
         let result = self.poll_once(cancellation);
-        result.map_err(|cause| LoadingError {
-            cause,
-            cleanup: self.loaded.as_mut().and_then(|l| l.stop().err()),
+        result.map_err(|cause| {
+            self.failed = !matches!(cause, LoadingCause::Cancelled);
+            let cleanup = self.loaded.as_mut().and_then(|l| {
+                if self.cancelled_mode.is_some() {
+                    l.stop_cancelled().err()
+                } else {
+                    l.stop().err()
+                }
+            });
+            LoadingError { cause, cleanup }
         })
     }
+    pub fn close_cancelled(
+        mut self,
+        receiver: &Receiver<CancelMode>,
+    ) -> Result<ContinuationCancelled, LoadingError> {
+        if self.failed {
+            return Err(LoadingError {
+                cause: RuntimeError::Invalid("continuation failed before cancellation").into(),
+                cleanup: None,
+            });
+        }
+        let mode = cancellation::require(receiver, self.cancelled_mode)?;
+        cancellation::finish(
+            self.loaded.as_mut().unwrap(),
+            self.identity.as_ref().map(|i| i.attempt_id.clone()),
+            mode,
+        )
+    }
+    fn check_cancellation(&mut self, receiver: &Receiver<CancelMode>) -> Result<(), LoadingCause> {
+        cancellation::check(receiver, &mut self.cancelled_mode)
+    }
     fn poll_once(&mut self, cancellation: &Receiver<CancelMode>) -> Result<bool, LoadingCause> {
-        cancelled(cancellation)?;
+        self.check_cancellation(cancellation)?;
         let loaded = self
             .loaded
             .as_mut()
@@ -153,7 +190,7 @@ impl PendingContinuation {
                         RuntimeError::Protocol("unsolicited continuation owner reply").into(),
                     );
                 }
-                cancelled(cancellation)?;
+                cancellation::check(cancellation, &mut self.cancelled_mode)?;
                 match reply {
                     ContinuationReply::Granted {
                         job,
@@ -194,14 +231,14 @@ impl PendingContinuation {
                 }
             }
         }
-        cancelled(cancellation)?;
+        cancellation::check(cancellation, &mut self.cancelled_mode)?;
         if Instant::now() >= loaded.deadline {
             return Err(LoadingCause::RetainedTimeout);
         }
         Ok(matches!(self.phase, Phase::Admitted))
     }
     pub fn into_admitted(mut self) -> Result<AdmittedProcess, LoadingError> {
-        if !matches!(self.phase, Phase::Admitted) {
+        if self.failed || self.cancelled_mode.is_some() || !matches!(self.phase, Phase::Admitted) {
             return Err(LoadingError {
                 cause: RuntimeError::Invalid("continuation not admitted").into(),
                 cleanup: self.loaded.as_mut().and_then(|l| l.stop().err()),

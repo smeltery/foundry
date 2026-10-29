@@ -1,5 +1,7 @@
 //! Store-owned loading reservations. No native confirmation or execution admission.
 mod binding;
+mod settlement;
+pub use settlement::RestoredCancellation;
 mod cancellation;
 pub use cancellation::RestorationCancellation;
 mod continuation;
@@ -62,6 +64,7 @@ pub struct OwnerReply {
 
 #[derive(Debug)]
 pub struct RestoreOwnerReport {
+    pub cancellation: Option<RestoredCancellation>,
     pub expired: bool,
     pub watchdog_panicked: bool,
     pub operation: Result<()>,
@@ -353,12 +356,14 @@ impl RestorationOwner {
         let mut report = match self.actor.take().map(JoinHandle::join) {
             Some(Ok(report)) => report,
             Some(Err(_)) => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired(),
                 watchdog_panicked: false,
                 operation: Err(ServiceError::Coordination("restore owner panicked")),
                 release: Err(ServiceError::Coordination("restore release unverified")),
             },
             None => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired(),
                 watchdog_panicked: false,
                 operation: Ok(()),
@@ -368,6 +373,9 @@ impl RestorationOwner {
         let _ = self.renew.send(None);
         report.watchdog_panicked = self.watchdog.take().is_some_and(|h| h.join().is_err());
         report.expired |= self.expired();
+        if report.expired || report.watchdog_panicked {
+            report.cancellation = None;
+        }
         report
     }
 }
