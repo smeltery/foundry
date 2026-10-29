@@ -45,42 +45,45 @@ impl GroupReservation {
         }
         Err(Failure::Cleanup)
     }
-    fn signal_with(&mut self, signal: impl FnOnce(i32) -> bool) -> Result<(), Failure> {
-        self.exit_success()?;
-        if signal(self.pid) {
-            Ok(())
-        } else {
-            Err(Failure::Cleanup)
-        }
-    }
     fn stop(&mut self) -> Result<(), Failure> {
-        let exited = self.exit_success()?.is_some();
-        self.signal_with(|pid| {
-            let result = unsafe { libc::kill(-pid, libc::SIGKILL) };
-            if result == 0 {
-                return true;
+        self.stop_using(|pid| {
+            if unsafe { libc::kill(-pid, libc::SIGKILL) } == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
             }
-            let error = std::io::Error::last_os_error().raw_os_error();
-            if error == Some(libc::ESRCH) {
-                return true;
-            }
-            // Darwin reports EPERM for a group containing only its zombie leader.
-            // A second member or failed enumeration must remain cleanup failure.
-            #[cfg(target_os = "macos")]
-            if exited && error == Some(libc::EPERM) {
-                let mut members = [0_i32; 2];
-                let count = unsafe {
-                    libc::proc_listpgrppids(
-                        pid,
-                        members.as_mut_ptr().cast(),
-                        std::mem::size_of_val(&members) as i32,
-                    )
-                };
-                return count == 1 && members[0] == pid;
-            }
-            let _ = exited;
-            false
         })
+    }
+    fn stop_using(
+        &mut self,
+        signal: impl FnOnce(i32) -> std::io::Result<()>,
+    ) -> Result<(), Failure> {
+        self.exit_success()?;
+        let error = match signal(self.pid) {
+            Ok(()) => return Ok(()),
+            Err(error) => error.raw_os_error(),
+        };
+        if error == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        // Darwin can report EPERM after a live leader exits between the
+        // ownership check and kill. Re-observe without reaping before checking
+        // exact group membership; the reserved PID must never be reused here.
+        #[cfg(target_os = "macos")]
+        if error == Some(libc::EPERM) && self.exit_success()?.is_some() {
+            let mut members = [0_i32; 2];
+            let count = unsafe {
+                libc::proc_listpgrppids(
+                    self.pid,
+                    members.as_mut_ptr().cast(),
+                    std::mem::size_of_val(&members) as i32,
+                )
+            };
+            if count == 1 && members[0] == self.pid {
+                return Ok(());
+            }
+        }
+        Err(Failure::Cleanup)
     }
 }
 
@@ -221,12 +224,11 @@ pub fn run_with_output_limit(
     // Kill the entire owned group even on successful parent exit: inherited pipes
     // must not keep an unchecked descendant alive.
     let cleanup_deadline = Instant::now() + Duration::from_millis(250);
-    let kill_ok = group.stop().is_ok();
-    let waited = reap_until(&mut child, &mut group, cleanup_deadline);
+    let mut kill_ok = group.stop().is_ok();
     let mut sink = [0; 4096];
     let mut out_closed = false;
     let mut err_closed = false;
-    while Instant::now() < cleanup_deadline && !(out_closed && err_closed) {
+    while Instant::now() < cleanup_deadline {
         for (pipe, closed) in [
             (&mut stdout as &mut dyn Read, &mut out_closed),
             (&mut stderr as &mut dyn Read, &mut err_closed),
@@ -245,8 +247,18 @@ pub fn run_with_output_limit(
                 Err(_) => break,
             }
         }
+        // A descendant can fork concurrently with the first group signal. Keep
+        // the leader waitable so repeated signals cannot target a reused PID.
+        // Require a successful final signal; an intermediate EPERM while other
+        // dying members remain is not itself cleanup proof.
+        kill_ok = group.stop().is_ok();
+        if kill_ok && out_closed && err_closed {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(2));
     }
+    // No group signal is permitted after this final reap, even on timeout.
+    let waited = reap_until(&mut child, &mut group, cleanup_deadline);
     if !kill_ok || !waited || !out_closed || !err_closed {
         return Err(Failure::Cleanup);
     }
@@ -255,74 +267,5 @@ pub fn run_with_output_limit(
 }
 
 #[cfg(test)]
-mod reservation_tests {
-    use super::*;
-    #[test]
-    fn failed_stop_does_not_wait_for_a_live_leader() {
-        let mut child = Command::new("/bin/sleep")
-            .arg("30")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let mut group = GroupReservation {
-            pid: child.id() as i32,
-            owned: true,
-        };
-        assert!(group.signal_with(|_| false).is_err());
-        let started = Instant::now();
-        assert!(!reap_until(
-            &mut child,
-            &mut group,
-            started + Duration::from_millis(25)
-        ));
-        assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(child.try_wait().unwrap().is_none());
-        group.stop().unwrap();
-        assert!(reap_until(
-            &mut child,
-            &mut group,
-            Instant::now() + Duration::from_secs(1)
-        ));
-    }
-    #[test]
-    fn reaped_leader_never_signals_a_numeric_group() {
-        let mut child = Command::new("/usr/bin/true")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let mut reservation = GroupReservation {
-            pid: child.id() as i32,
-            owned: true,
-        };
-        child.wait().unwrap();
-        let mut called = false;
-        assert!(matches!(
-            reservation.signal_with(|_| {
-                called = true;
-                true
-            }),
-            Err(Failure::Cleanup)
-        ));
-        assert!(!called);
-        assert!(!reservation.owned);
-    }
-    #[test]
-    fn observed_exit_keeps_leader_waitable_until_cleanup() {
-        let mut child = Command::new("/usr/bin/true")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let mut reservation = GroupReservation {
-            pid: child.id() as i32,
-            owned: true,
-        };
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while reservation.exit_success().unwrap().is_none() {
-            assert!(Instant::now() < deadline);
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        assert_eq!(reservation.exit_success().unwrap(), Some(true));
-        reservation.stop().unwrap();
-        assert!(child.wait().unwrap().success());
-    }
-}
+#[path = "process_tests.rs"]
+mod reservation_tests;

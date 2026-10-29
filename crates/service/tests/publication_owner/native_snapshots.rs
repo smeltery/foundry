@@ -255,7 +255,11 @@ fn restored_cancel_after_s2_snapshots_without_replacing_native_head() {
             retained.cancel(CancelMode::Hard);
         }
         let report = shutdown.join().unwrap();
-        report.release.unwrap();
+        report.release.expect(if upgrade {
+            "hard-upgrade snapshot release failed"
+        } else {
+            "graceful snapshot release failed"
+        });
         let done = store.get(&h.fixture.session).unwrap();
         assert_eq!(done.lifecycle, Lifecycle::Suspended);
         assert!(done.active_attempt_id.is_none());
