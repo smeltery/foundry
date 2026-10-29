@@ -23,7 +23,9 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
           runtimes = import inputs.runtimes { inherit system; };
-          python = import inputs.python { inherit system; };
+          pythonPackages = pkgs.callPackage
+            (inputs.python + "/pkgs/development/interpreters/python/default.nix") { };
+          python = pythonPackages.python313.override { self = python; };
           utilities = import inputs.utilities { inherit system; };
           hooks = import inputs.hooks { inherit system; };
           target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
@@ -35,7 +37,7 @@
           };
           bun = runtimes.bun;
           nodejs = runtimes.callPackage ./nodejs.nix { };
-          python = python.python313;
+          inherit python;
           pre-commit = hooks.pre-commit;
           cargo-deny = utilities.cargo-deny;
           actionlint = utilities.actionlint;
