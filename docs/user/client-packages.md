@@ -107,10 +107,10 @@ plugin interface. The following bounded native checks were observed on
 
 | Client | Observed result | Remaining checks |
 | --- | --- | --- |
-| Claude Code 2.1.312 | Package validation; six commands and shared skill discovered; five real tools called; descriptor-only reconnect, idempotency, errors and session-local unload verified | CLI execution/continuation and persistent marketplace installation/removal |
+| Claude Code 2.1.312 | Seven skills discovered; five real tools called; descriptor-only reconnect, idempotency, errors and session-local unload verified; real CLI execution and same-session continuation observed with action-required outcomes | Persistent marketplace installation/removal and general model interpretation |
 | Cursor Agent 2026.10.01-e373342 | Private server approval and native enumeration of all five tools | Invocation probe required authentication; package workflows and Cursor IDE remain separate |
-| Codex CLI 0.165.0 | Restricted Linux container completed a credential-free local protocol-fixture turn | Prepared plugin discovery and real Foundry MCP/runtime checks |
-| Grok Build 1.0.70 | Scoped local installation, six commands and skill discovered; native MCP handshake and five-tool enumeration | Headless and ACP invocation probes required authentication; workflow execution remains unverified |
+| Codex CLI 0.165.0 | Seven skills and installed MCP connection discovered; all five tools called across reconnects with replay/conflict/error checks; uninstall preserves the database | Running-task execution/cleanup and general model interpretation |
+| Grok Build 1.0.70 | Scoped local installation, seven skills discovered; native MCP handshake and five-tool enumeration | Headless and ACP invocation probes required authentication; workflow execution remains unverified |
 | Cursor IDE | No installed-client result | Isolated provisioning, discovery and runtime checks |
 
 These probes kept existing user configuration and credentials inaccessible.

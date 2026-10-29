@@ -5,7 +5,9 @@ backend and invokes `serve_stdio`, or supplies in-memory streams through `serve`
 The executable exposes this transport through `f5y mcp`, with an explicit
 `--database PATH` or `FOUNDRY_DATABASE`. Executable integration tests cover stdio
 framing and persistence across processes. The official Python SDK has also been
-tested against the executable; GUI editor setup is not yet verified.
+tested against the executable. Native Claude and Codex clients have exercised all
+five tools through prepared packages using local protocol fixtures; those checks
+do not establish model interpretation or GUI editor setup.
 
 ## Connection lifecycle
 
