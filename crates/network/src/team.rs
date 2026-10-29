@@ -73,6 +73,12 @@ pub struct TeamDocument {
     pub attestations: BTreeMap<String, String>,
 }
 
+impl AsRef<TeamDocument> for TeamDocument {
+    fn as_ref(&self) -> &TeamDocument {
+        self
+    }
+}
+
 /// The transport supplies the authenticated joiner ID; this message cannot.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinRequest {

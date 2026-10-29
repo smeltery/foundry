@@ -2,6 +2,7 @@ use super::*;
 /// Policy bytes and verifier are constructed together; caller cannot assert a digest.
 pub struct StorePolicy {
     pub(super) profile: WireProfile,
+    pub(super) codes: Option<crate::code_invite::CodePolicy>,
     pub(super) verifier: Option<Arc<ProofVerifier>>,
     pub(super) digest: [u8; 32],
 }
@@ -38,10 +39,24 @@ impl StorePolicy {
             }
         };
         Ok(Self {
+            codes: None,
             profile,
             verifier,
             digest: digest(&data),
         })
+    }
+    /// Explicit opt-in binds the actual codebook and contexts, never an asserted digest.
+    /// Opening an existing v2 store with this policy does not migrate it.
+    pub fn with_codes(mut self, codes: crate::code_invite::CodePolicy) -> Result<Self> {
+        if self.codes.is_some() || !codes.matches_profile(&self.profile) {
+            return Err(StoreError::Binding);
+        }
+        let mut bytes = b"foundry/store-code-policy/v1\0".to_vec();
+        bytes.extend_from_slice(&self.digest);
+        bytes.extend_from_slice(&codes.binding());
+        self.digest = digest(&bytes);
+        self.codes = Some(codes);
+        Ok(self)
     }
 }
 

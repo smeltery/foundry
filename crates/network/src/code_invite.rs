@@ -56,6 +56,24 @@ pub struct DerivedCode {
     endpoint: iroh::SecretKey,
     bearer: String,
 }
+
+/// Opaque proof that a selected code matches the authenticated JOIN endpoint.
+/// The invitation hash is privileged and deliberately has no Debug/Serialize.
+pub struct CodeAnchor {
+    invitation_hash: String,
+    endpoint_context: String,
+    secret_context: String,
+}
+impl CodeAnchor {
+    pub(crate) fn invitation_hash(&self) -> &str {
+        &self.invitation_hash
+    }
+    pub(crate) fn matches_profile(&self, profile: &WireProfile) -> bool {
+        profile.validate().is_ok()
+            && self.endpoint_context == profile.invitation_endpoint_context
+            && self.secret_context == profile.invitation_secret_context
+    }
+}
 impl DerivedCode {
     pub fn endpoint_key(&self) -> &iroh::SecretKey {
         &self.endpoint
@@ -69,6 +87,47 @@ impl DerivedCode {
 }
 
 impl CodePolicy {
+    /// Pass the remote ID from the actual JOIN connection, not response JSON.
+    pub fn authenticate_endpoint(
+        &self,
+        code: &CanonicalCode,
+        authenticated: iroh::EndpointId,
+    ) -> Result<CodeAnchor> {
+        let derived = self.derive(code)?;
+        if derived.endpoint_key().public() != authenticated {
+            return Err(NetworkError::Invalid("invitation endpoint mismatch"));
+        }
+        Ok(CodeAnchor {
+            invitation_hash: data_encoding::HEXLOWER.encode(&derived.invitation_key()),
+            endpoint_context: self.endpoint_context.clone(),
+            secret_context: self.secret_context.clone(),
+        })
+    }
+    /// Stable binding to the actual ordered dictionary and derivation contexts.
+    /// Length-prefixing keeps word and context boundaries unambiguous.
+    pub fn binding(&self) -> [u8; 32] {
+        let mut hash = blake3::Hasher::new_derive_key("foundry code policy binding v1");
+        hash.update(&(self.book.words.len() as u64).to_be_bytes());
+        for value in self
+            .book
+            .words
+            .iter()
+            .chain([&self.endpoint_context, &self.secret_context])
+        {
+            hash.update(&(value.len() as u64).to_be_bytes());
+            hash.update(value.as_bytes());
+        }
+        *hash.finalize().as_bytes()
+    }
+
+    /// Checks this policy's derivation contexts, not transport or signing policy.
+    /// The store binds the remaining wire-profile fields separately.
+    pub fn matches_profile(&self, profile: &WireProfile) -> bool {
+        profile.validate().is_ok()
+            && self.endpoint_context == profile.invitation_endpoint_context
+            && self.secret_context == profile.invitation_secret_context
+    }
+
     pub fn new(book: Codebook, profile: &WireProfile) -> Result<Self> {
         profile.validate()?;
         Ok(Self {

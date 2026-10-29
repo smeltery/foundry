@@ -41,19 +41,53 @@ fn policy() -> CodePolicy {
         .as_ref()
         .try_into()
         .unwrap();
-    CodePolicy::new(
-        Codebook::from_bytes(bytes, digest).unwrap(),
-        &WireProfile {
-            team_alpn: b"team".to_vec(),
-            join_alpn: b"join".to_vec(),
-            protocol: 1,
-            signing_prefix: "test-signing".into(),
-            invitation_endpoint_context: "test-endpoint".into(),
-            invitation_secret_context: "test-secret".into(),
-            ticket_prefixes: vec!["test".into()],
-        },
-    )
-    .unwrap()
+    CodePolicy::new(Codebook::from_bytes(bytes, digest).unwrap(), &profile()).unwrap()
+}
+
+fn profile() -> WireProfile {
+    WireProfile {
+        team_alpn: b"team".to_vec(),
+        join_alpn: b"join".to_vec(),
+        protocol: 1,
+        signing_prefix: "test-signing".into(),
+        invitation_endpoint_context: "test-endpoint".into(),
+        invitation_secret_context: "test-secret".into(),
+        ticket_prefixes: vec!["test".into()],
+    }
+}
+
+#[test]
+fn durable_policy_binding_rejects_order_content_and_context_changes() {
+    let original = policy();
+    assert_eq!(original.binding(), policy().binding());
+    for words in [
+        vec!["birch", "amber", "cedar", "dune"],
+        vec!["amber", "birch", "cedar"],
+        vec!["amber", "birch", "cedar", "elm"],
+    ] {
+        let mut changed = policy();
+        changed.book.words = words.into_iter().map(String::from).collect();
+        assert_ne!(original.binding(), changed.binding());
+    }
+    for endpoint in [true, false] {
+        let mut changed = policy();
+        if endpoint {
+            changed.endpoint_context.push('x');
+        } else {
+            changed.secret_context.push('x');
+        }
+        assert_ne!(original.binding(), changed.binding());
+        assert!(!changed.matches_profile(&profile()));
+    }
+    let mut left = policy();
+    let mut right = policy();
+    left.book.words = vec!["ab".into(), "c".into()];
+    right.book.words = vec!["a".into(), "bc".into()];
+    assert_ne!(left.binding(), right.binding());
+    assert!(original.matches_profile(&profile()));
+    let mut invalid = profile();
+    invalid.team_alpn.clear();
+    assert!(!original.matches_profile(&invalid));
 }
 
 #[test]

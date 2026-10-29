@@ -31,6 +31,7 @@ fn record<T: RecordBody>(
         .map_err(|_| StoreError::Corrupt)
 }
 pub(super) fn validate(checkpoint: &Checkpoint, policy: &StorePolicy, now: i64) -> Result<()> {
+    intents::validate(checkpoint, policy)?;
     if checkpoint.accepted_ms < checkpoint.operation_ms {
         return Err(StoreError::Corrupt);
     }

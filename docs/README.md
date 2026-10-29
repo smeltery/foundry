@@ -10,6 +10,7 @@ is underway; each page distinguishes tested functionality from planned features.
 - [Resume a local session](user/resume.md)
 - [Sessions, attempts and cancellation](user/sessions.md)
 - [Network command interface](user/network.md)
+- [Local foreground daemon](user/daemon.md)
 - [Plugin command surface](user/plugins.md)
 - [Client packages and configuration](user/client-packages.md)
 

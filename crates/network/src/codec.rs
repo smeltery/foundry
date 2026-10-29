@@ -1,4 +1,5 @@
 use crate::{NetworkError, PeerFrame, Result};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{io, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -24,6 +25,13 @@ pub async fn read_frame(
     reader: &mut (impl AsyncRead + Unpin),
     timeout: Duration,
 ) -> Result<Option<PeerFrame>> {
+    read_json_frame(reader, timeout).await
+}
+
+pub(crate) async fn read_json_frame<T: DeserializeOwned>(
+    reader: &mut (impl AsyncRead + Unpin),
+    timeout: Duration,
+) -> Result<Option<T>> {
     if timeout.is_zero() {
         return Err(NetworkError::Invalid("positive frame timeout required"));
     }
@@ -50,6 +58,14 @@ pub async fn read_frame(
 pub async fn write_frame(
     writer: &mut (impl AsyncWrite + Unpin),
     frame: &PeerFrame,
+    timeout: Duration,
+) -> Result<()> {
+    write_json_frame(writer, frame, timeout).await
+}
+
+pub(crate) async fn write_json_frame<T: Serialize>(
+    writer: &mut (impl AsyncWrite + Unpin),
+    frame: &T,
     timeout: Duration,
 ) -> Result<()> {
     if timeout.is_zero() {

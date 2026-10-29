@@ -22,6 +22,9 @@ pub(super) fn migrate(
     now: i64,
     protection: &Protection,
 ) -> Result<()> {
+    if policy.codes.is_some() {
+        return Err(StoreError::Unsupported);
+    }
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let bytes = checkpoint::read_bytes(&tx, identity, 1)?;
     let old: Legacy = serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;

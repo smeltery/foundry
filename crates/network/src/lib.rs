@@ -1,16 +1,31 @@
-//! Authenticated QUIC transport and bounded frames, without team authorization.
+//! Authenticated transport, durable team authority and local daemon services.
+//! Peer sessions enforce admission; raw transport alone does not authorize a team.
 //! Profiles and relay choices are explicit. No public discovery is installed.
+pub mod attachments;
 pub mod full_team_store;
 pub mod identity;
+pub mod ipc_codec;
+pub mod join_protocol;
+#[cfg(unix)]
+pub mod local_ipc;
 pub use identity::{IdentityError, LocalIdentity, load_or_create_identity};
 
 pub mod code_invite;
+pub mod code_listener;
 pub mod codec;
+pub mod daemon_config;
+pub mod daemon_engine;
+#[cfg(unix)]
+pub mod daemon_host;
+pub mod daemon_lease;
 pub mod endpoint;
+pub mod mail_store;
 pub mod membership;
+pub mod peer_session;
 pub mod persistence;
 pub mod profile;
 pub mod proof;
+pub mod session_registry;
 pub mod signing;
 pub mod team;
 pub mod team_state;
