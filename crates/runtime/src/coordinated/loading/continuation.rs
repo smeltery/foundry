@@ -126,3 +126,6 @@ mod tests;
 mod capture_tests;
 #[cfg(all(test, unix))]
 mod support;
+
+#[cfg(all(test, unix))]
+mod activation_tests;

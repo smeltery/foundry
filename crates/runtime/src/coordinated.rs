@@ -1,8 +1,10 @@
 //! Opt-in tool coordination. Persistence is supplied by a trusted execution owner.
 //! Existing runtime entrypoints remain default-deny.
 pub mod capture;
+mod capture_cancel;
 pub mod capture_owner;
 mod capture_stop;
+pub use capture_cancel::CaptureCancelled;
 mod engine;
 mod fresh_capture;
 pub mod loading;

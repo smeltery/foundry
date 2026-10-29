@@ -5,7 +5,7 @@ use foundry_runtime::AdapterMessage;
 use foundry_store::{AttemptFence, Store};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -15,6 +15,7 @@ use std::{
 
 /// Owns renewal threads; freezing claims does not end lease coverage.
 pub(crate) struct RunLease {
+    settlement: Arc<Mutex<()>>,
     signals: RunControl,
     expired: Arc<AtomicBool>,
     stop: mpsc::Sender<()>,
@@ -60,6 +61,7 @@ impl RunLease {
             })
             .map_err(|_| ServiceError::Coordination("cannot start lease watchdog"))?;
         let mut lease = Self {
+            settlement: Arc::new(Mutex::new(())),
             signals: signals.clone(),
             expired: Arc::clone(&expired),
             stop,
@@ -68,6 +70,7 @@ impl RunLease {
             monitor: None,
         };
         let updates = lease.renew.clone();
+        let settlement = Arc::clone(&lease.settlement);
         let fence = fence.clone();
         let monitor = thread::Builder::new()
             .name("foundry-lease".into())
@@ -76,6 +79,7 @@ impl RunLease {
                     store,
                     &fence,
                     LeaseRenewal {
+                        settlement,
                         interval: options.poll_interval,
                         budget: options.lease_duration * 2 / 3,
                         updates,
@@ -106,6 +110,23 @@ impl RunLease {
 
     pub fn expired(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.expired)
+    }
+
+    /// Serialize the terminal transaction with renewal. A failed transaction
+    /// keeps renewal alive; success stops it before a stale heartbeat can run.
+    pub fn settle<T>(&self, finish: impl FnOnce() -> Result<T>) -> Result<T> {
+        let _guard = self
+            .settlement
+            .lock()
+            .map_err(|_| ServiceError::Coordination("lease settlement lock poisoned"))?;
+        if self.expired.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination("lease renewal deadline elapsed"));
+        }
+        let result = finish();
+        if result.is_ok() {
+            self.request_stop();
+        }
+        result
     }
 
     pub fn freeze_claims(&self) {

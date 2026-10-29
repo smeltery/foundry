@@ -21,6 +21,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "publication_owner/cancellation.rs"]
+mod cancellation;
+#[path = "publication_owner/native_snapshots.rs"]
+mod native_snapshots;
 #[path = "publication_owner/permission_stop.rs"]
 mod permission_stop;
 #[path = "publication_owner/permissions.rs"]

@@ -89,11 +89,10 @@ impl Service {
         let session = self.store.get(id)?;
         let (cancel_tx, cancel_rx) = mpsc::channel();
         let (message_tx, message_rx) = mpsc::sync_channel(1);
-        let signals = RunControl::new(control);
+        let signals = RunControl::new(Arc::clone(&control));
         let accepting = Arc::clone(&signals.accepting);
         if let Some(mode) = signals.relay(&cancel_tx) {
             self.store.request_cancel(id, mode)?;
-            return self.finish(&fence, Lifecycle::Suspended, None, None);
         }
         let lease = match RunLease::start(
             monitor_store,
@@ -126,7 +125,7 @@ impl Service {
                 },
             }
             .run(policy, || {
-                lease.request_stop();
+                lease.freeze_claims();
             });
             write_error = failure;
             result
@@ -217,7 +216,7 @@ impl Service {
                         }
                     },
                 );
-                lease.request_stop();
+                lease.freeze_claims();
                 drop(event_tx);
                 match writer.join() {
                     Ok(Ok(())) => {}
@@ -229,7 +228,20 @@ impl Service {
                 result
             })
         };
-        // Runtime and persistence workers have cleaned up before lease joins.
+        // Successful cleanup enters a settlement loop which retains renewal when
+        // a terminal transaction loses to a newly committed cancellation.
+        if write_error.is_none()
+            && let Ok(runtime) = runtime_result
+        {
+            let result = self.finish_clean_run(&fence, &session, runtime, &control, &lease);
+            let report = lease.join();
+            if report.expired || report.watchdog_panicked {
+                return Err(ServiceError::Coordination("lease renewal deadline elapsed"));
+            }
+            report.monitor_result?;
+            return result;
+        }
+        // Runtime, persistence and snapshot workers have cleaned up before joins.
         let lease_report = lease.join();
         if lease_report.expired || lease_report.watchdog_panicked {
             write_error = Some(ServiceError::Coordination("lease renewal deadline elapsed"));

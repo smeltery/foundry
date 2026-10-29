@@ -267,3 +267,37 @@ fn checked_context_cleanup_accepts_idle_shutdown_but_rejects_unconsumed_output()
         assert_eq!(process.workers.remaining(), 0);
     }
 }
+
+#[test]
+fn cancellation_cleanup_discards_output_but_joins_all_owned_workers() {
+    let (spec, session) = fixture("normal", 0);
+    let (mut process, events) = Process::spawn_context(&spec, &session).unwrap();
+    start(&process, &session);
+    assert!(matches!(
+        next(&events),
+        ContextOutput::Ordinary(WireEvent::Event(AdapterEvent::Ready { .. }))
+    ));
+    assert!(matches!(
+        next(&events),
+        ContextOutput::Context(ContextEvent::Candidate { .. })
+    ));
+    process.stop_context_cancelled(&events).unwrap();
+    assert_eq!(process.workers.remaining(), 0);
+    assert!(matches!(
+        events.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+}
+
+#[test]
+fn cancellation_cleanup_does_not_hide_lost_child_ownership() {
+    let (spec, session) = fixture("normal", 0);
+    let (mut process, events) = Process::spawn_context(&spec, &session).unwrap();
+    process.child.kill().unwrap();
+    process.child.wait().unwrap();
+    assert!(process.stop_context_cancelled(&events).is_err());
+    assert!(process.ownership_lost);
+    assert!(!process.stopped);
+    assert!(process.stop_context_cancelled(&events).is_err());
+    assert_eq!(process.workers.remaining(), 0);
+}

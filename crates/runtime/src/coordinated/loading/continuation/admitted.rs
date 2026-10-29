@@ -84,9 +84,7 @@ impl AdmittedProcess {
         match exit {
             EngineExit::ActionRequired(stop) => Ok(CaptureExit::ActionRequired(stop)),
             EngineExit::Prepared(prepared) => Ok(CaptureExit::Prepared(prepared)),
-            EngineExit::Ordinary(RunResult::Cancelled { mode, forced }) => {
-                Ok(CaptureExit::Cancelled { mode, forced })
-            }
+            EngineExit::Cancelled(stop) => Ok(CaptureExit::Cancelled(stop)),
             EngineExit::Ordinary(_) => Err(RuntimeError::Protocol(
                 "ordinary completion during restored capture",
             )),

@@ -244,10 +244,7 @@ fn queued_claim_cancel_and_owner_timeout_never_prepare() {
         h.commit(terminal);
         let result = h.finish_owned();
         if mode == "cancel" {
-            assert!(matches!(
-                result,
-                Ok(EngineExit::Ordinary(crate::RunResult::Cancelled { .. }))
-            ));
+            assert!(matches!(result, Ok(EngineExit::Cancelled(_))));
         } else {
             assert!(result.is_err(), "{mode}");
         }
@@ -275,10 +272,7 @@ fn cancellation_and_deadline_during_native_owner_wait_suppress_verified_authorit
         });
         let result = h.finish_owned();
         if cancel {
-            assert!(matches!(
-                result,
-                Ok(EngineExit::Ordinary(crate::RunResult::Cancelled { .. }))
-            ));
+            assert!(matches!(result, Ok(EngineExit::Cancelled(_))));
         } else {
             assert!(matches!(
                 result,

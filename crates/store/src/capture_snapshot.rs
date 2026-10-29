@@ -37,6 +37,26 @@ pub struct CaptureToolEvidence {
 }
 
 impl Store {
+    /// Facts and sanitized acceptance events from one fenced transaction.
+    pub fn capture_snapshot_with_events(
+        &self,
+        fence: &AttemptFence,
+    ) -> Result<(CaptureSnapshot, Vec<crate::RestoreEventEvidence>)> {
+        let tx = self.connection.unchecked_transaction()?;
+        checkpoint_cut::owner(&tx, fence)?;
+        let facts = snapshot(&tx, &fence.session_id)?;
+        let events = crate::witness_events::selected(&tx, &fence.session_id)?;
+        if events
+            .iter()
+            .any(|event| event.sequence > facts.cut.event_seq)
+        {
+            return Err(conflict("capture event evidence exceeds cut"));
+        }
+        checkpoint_cut::owner(&tx, fence)?;
+        tx.commit()?;
+        Ok((facts, events))
+    }
+
     /// One fenced read snapshot, with complete sorted coverage and bounded digest evidence.
     /// No raw contents/tokens are returned. Bounds do not cover SQLite cache or scan time.
     pub fn capture_snapshot(&self, fence: &AttemptFence) -> Result<CaptureSnapshot> {

@@ -1,9 +1,11 @@
 use super::*;
+mod cancellation;
 use crate::{publication::Publication, tool_worker::WorkerControl};
 use foundry_store::{AttemptFence, Store};
 use std::time::Duration;
 
 pub(super) struct Actor {
+    pub snapshot: Option<crate::cancellation_snapshot::SnapshotSettings>,
     pub permissions: Option<Arc<crate::permission::ToolPermissions>>,
     pub options: RestoreOwnerOptions,
     pub budget: Duration,
@@ -81,6 +83,18 @@ impl Actor {
                 Ok(None)
             } else if !exposed || runtime_cleanup_verified {
                 (|| {
+                    if self.expired.load(Ordering::Acquire) {
+                        return Err(ServiceError::Coordination(
+                            "fresh lease expired; attempt retained",
+                        ));
+                    }
+                    if let Some(publication) = publication
+                        && !publication.cancelled_workers_complete()?
+                    {
+                        return Err(ServiceError::Coordination(
+                            "fresh publication cleanup incomplete",
+                        ));
+                    }
                     if let Some(mode) = self.signals.relay(&self.cancel) {
                         store.request_cancel(&session, mode)?;
                     }
@@ -117,25 +131,64 @@ impl Actor {
     ) -> Result<()> {
         let mut heartbeat = Instant::now();
         loop {
-            self.live()?;
+            if self.cancellation_mode(store, fence)?.is_some() {
+                return self.drain_cancelled(
+                    store,
+                    fence,
+                    publication,
+                    runtime_cleanup_verified,
+                    attempt_finalized,
+                );
+            }
+            self.owner_live()?;
             if Instant::now() >= heartbeat {
                 let deadline = Instant::now() + self.budget;
                 store.heartbeat(fence)?;
-                self.live()?;
+                self.owner_live()?;
                 if let Some(mode) = store.cancellation(fence)? {
                     let _ = self.cancel.send(mode);
-                    return Err(ServiceError::Coordination("fresh attempt cancelled"));
+                    return self.drain_cancelled(
+                        store,
+                        fence,
+                        publication,
+                        runtime_cleanup_verified,
+                        attempt_finalized,
+                    );
                 }
                 self.renew
                     .send(Some(deadline))
                     .map_err(|_| ServiceError::Coordination("fresh watchdog stopped"))?;
                 heartbeat = Instant::now() + self.options.lease.poll_interval;
             }
-            publication.poll(store, fence)?;
+            if let Err(error) = publication.poll(store, fence) {
+                if self.cancellation_mode(store, fence)?.is_some() {
+                    return self.drain_cancelled(
+                        store,
+                        fence,
+                        publication,
+                        runtime_cleanup_verified,
+                        attempt_finalized,
+                    );
+                }
+                return Err(error);
+            }
             match self.requests.try_recv() {
                 Ok(job) => {
                     let reply = match job {
-                        Job::FinishCapture(prepared) => {
+                        Job::Cancelled(stop) => {
+                            publication.check_cancelled(fence, &stop)?;
+                            *runtime_cleanup_verified = true;
+                            store.request_cancel(&fence.session_id, stop.mode())?;
+                            let _cleanup = stop.into_cleanup();
+                            return self.drain_cancelled(
+                                store,
+                                fence,
+                                publication,
+                                runtime_cleanup_verified,
+                                attempt_finalized,
+                            );
+                        }
+                        Job::Capture(prepared) => {
                             publication.check_prepared(fence, &prepared)?;
                             *runtime_cleanup_verified = true;
                             self.live()?;
@@ -143,7 +196,7 @@ impl Actor {
                                 publication.finish(store, fence, *prepared)?,
                             ))
                         }
-                        Job::FinishActionRequired(stop) => {
+                        Job::ActionRequired(stop) => {
                             publication.check_action_required(fence, &stop)?;
                             *runtime_cleanup_verified = true;
                             self.live()?;
@@ -163,6 +216,14 @@ impl Actor {
             }
             thread::sleep(Duration::from_millis(2));
         }
+    }
+    fn owner_live(&self) -> Result<()> {
+        if self.expired.load(Ordering::Acquire) || self.stopping.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination(
+                "fresh capture stopped or expired",
+            ));
+        }
+        Ok(())
     }
     fn live(&self) -> Result<()> {
         if self.expired.load(Ordering::Acquire)

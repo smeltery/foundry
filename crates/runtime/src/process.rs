@@ -44,6 +44,7 @@ pub(crate) struct Process {
     workers: Workers,
     pub events: Receiver<WireEvent>,
     stopped: bool,
+    ownership_lost: bool,
     context_attempt: Option<String>,
     loading_scope: Option<foundry_contracts::context_v2::LoadingScope>,
     latch: Option<Arc<Mutex<continuation::Latch>>>,
@@ -142,6 +143,7 @@ impl Process {
             workers: Workers::default(),
             events,
             stopped: false,
+            ownership_lost: false,
             context_attempt,
             loading_scope,
             latch,
@@ -206,6 +208,7 @@ impl Process {
         let group = -(self.child.id() as i32);
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
         loop {
+            self.check_child_ownership()?;
             if self.child.try_wait()?.is_some() {
                 // Reaping releases the PID reservation: never signal this group again.
                 self.stopped = true;
@@ -233,11 +236,15 @@ impl Process {
     }
 
     fn stop_child(&mut self) -> Result<(), RuntimeError> {
+        if self.ownership_lost {
+            return Err(RuntimeError::Protocol("adapter child ownership lost"));
+        }
         if self.stopped {
             return Ok(());
         }
         #[cfg(unix)]
         {
+            self.check_child_ownership()?;
             // The unreaped direct child reserves this PID, which is also the PGID.
             // Kill descendants even when the leader has already exited.
             let result = unsafe { libc::kill(-(self.child.id() as i32), libc::SIGKILL) };

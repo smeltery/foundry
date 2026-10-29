@@ -82,7 +82,7 @@ pub(super) fn run(
         options,
     )? {
         EngineExit::Ordinary(result) => Ok(result),
-        EngineExit::ActionRequired(_) => Err(RuntimeError::Invalid(
+        EngineExit::Cancelled(_) | EngineExit::ActionRequired(_) => Err(RuntimeError::Invalid(
             "capture stop requires private finalization",
         )),
         EngineExit::Prepared(prepared) => {
@@ -114,6 +114,16 @@ pub(super) fn run_owned(
         ));
     }
     if let Ok(mode) = cancellation.try_recv() {
+        if let ingress::ExecutionMode::CaptureStartup(_, owner) = &options.mode {
+            return Ok(EngineExit::Cancelled(Box::new(CaptureCancelled {
+                owner_identity: Arc::clone(&owner.identity),
+                session_id: session.id.clone(),
+                attempt_id: attempt.into(),
+                mode,
+                forced: false,
+                cleanup: CleanupReceipt { _private: () },
+            })));
+        }
         return Ok(EngineExit::Ordinary(RunResult::Cancelled {
             mode,
             forced: false,
@@ -142,14 +152,24 @@ pub(super) fn run_owned(
     if let Some(helper) = state.job.as_mut().and_then(|job| job.helper.as_mut()) {
         helper.request_stop();
     }
-    let adapter_cleanup = if matches!(result, Ok(Proposal::Validated(_)))
+    let adapter_cleanup = if state.startup.is_some()
+        && matches!(result, Ok(Proposal::Ordinary(RunResult::Cancelled { .. })))
+    {
+        match &state.ingress {
+            Ingress::Context(events) | Ingress::Restored { events, .. } => {
+                state.process.stop_context_cancelled(events)
+            }
+            Ingress::Legacy => Err(protocol("capture cleanup requires private transport")),
+        }
+    } else if matches!(result, Ok(Proposal::Validated(_)))
         || (state.startup.is_some()
             && matches!(
                 result,
                 Ok(Proposal::PermissionStop(
                     PermissionDisposition::ActionRequired
                 ))
-            )) {
+            ))
+    {
         match &state.ingress {
             Ingress::Context(events) | Ingress::Restored { events, .. } => {
                 state.process.stop_context_checked(events)

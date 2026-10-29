@@ -156,18 +156,19 @@ fn cancellation_after_cleanup_never_records_action_required() {
         .request_cancel(&h.session, foundry_contracts::CancelMode::Hard)
         .unwrap();
     h.owner.finish_action_required(*h.stop).unwrap();
-    expect_initial_error(&mut h.owner);
+    let FreshCaptureReply::Cancelled(result) = receive(&mut h.owner) else {
+        panic!("expected suspended cancellation")
+    };
+    assert_eq!(result.lifecycle, Lifecycle::Suspended);
+    assert!(result.outcome.is_none());
     let report = h.owner.shutdown();
-    assert!(report.operation.is_err());
-    // If the owner observes cancellation before consuming proof, retention is required.
+    report.operation.unwrap();
+    report.release.unwrap();
     let session = h.store.get(&h.session).unwrap();
+    assert_eq!(session.lifecycle, Lifecycle::Suspended);
     assert!(session.outcome.is_none());
-    if report.release.is_ok() {
-        assert_eq!(session.lifecycle, Lifecycle::Suspended);
-        assert!(session.active_attempt_id.is_none());
-    } else {
-        assert!(session.active_attempt_id.is_some());
-    }
+    assert!(session.active_attempt_id.is_none());
+    assert!(h.store.checkpoint_head(&h.session).unwrap().is_none());
 }
 
 #[test]

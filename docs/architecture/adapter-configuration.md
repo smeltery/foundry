@@ -1,8 +1,9 @@
 # Explicit adapter configuration
 
 The service library provides `PreparedLocalAdapter` and `Service::run_prepared`
-for an explicitly provisioned adapter. This configuration path is separate from
-the CLI's executable-only `FOUNDRY_ADAPTER` setting. The repository does not bundle
+for an explicitly provisioned adapter. The CLI selects this path with
+`FOUNDRY_ADAPTER_CONFIG` alongside its fixed `FOUNDRY_ADAPTER` executable; see
+[local adapter setup](../user/local-adapter.md). The repository does not bundle
 a model provider or discover credentials from account files or the environment.
 
 ## Preparation and startup

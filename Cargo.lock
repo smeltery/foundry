@@ -839,6 +839,7 @@ dependencies = [
  "foundry-service",
  "foundry-store",
  "foundry-tools",
+ "libc",
  "serde",
  "serde_json",
  "signal-hook",
@@ -973,11 +974,13 @@ dependencies = [
 name = "foundry-service"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cap-std",
  "foundry-contracts",
  "foundry-runtime",
  "foundry-store",
  "foundry-tools",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1007,6 +1010,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

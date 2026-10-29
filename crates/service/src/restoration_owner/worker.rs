@@ -15,6 +15,7 @@ pub(super) struct Channels {
     pub renew: mpsc::Sender<Option<Instant>>,
 }
 pub(super) struct Actor {
+    snapshot_settings: Option<crate::cancellation_snapshot::SnapshotSettings>,
     options: RestoreOwnerOptions,
     budget: Duration,
     io: Channels,
@@ -36,12 +37,20 @@ struct Reservation {
 impl Actor {
     pub fn new(options: RestoreOwnerOptions, budget: Duration, io: Channels) -> Self {
         Self {
+            snapshot_settings: None,
             options,
             budget,
             io,
         }
     }
 
+    pub fn with_snapshot(
+        mut self,
+        settings: Option<crate::cancellation_snapshot::SnapshotSettings>,
+    ) -> Self {
+        self.snapshot_settings = settings;
+        self
+    }
     pub fn run(
         self,
         path: PathBuf,
@@ -113,7 +122,7 @@ impl Actor {
         if let Some(publication) = reservation.as_ref().and_then(|r| r.publication.as_ref()) {
             publication.cancel();
         }
-        let release = match reservation.as_ref() {
+        let release = match reservation.as_mut() {
             Some(reservation) => self.release(&mut store, reservation, operation.is_err()),
             None => Ok(None),
         };

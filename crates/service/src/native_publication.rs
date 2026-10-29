@@ -47,6 +47,7 @@ pub struct PublicationConfiguration {
 pub struct NativePublicationJob {
     pub(crate) runtime: Box<CaptureValidationJob>,
     pub(crate) snapshot: Arc<CaptureSnapshot>,
+    pub(crate) events: Arc<[foundry_store::RestoreEventEvidence]>,
     pub(crate) baseline: Option<Arc<RestoreBaselineSnapshot>>,
     pub(crate) acceptance: Option<ContinueAcceptanceRef>,
     pub(crate) registration: ContextDigest,
@@ -57,6 +58,9 @@ pub struct NativePublicationJob {
     pub(crate) cancelled: Arc<AtomicBool>,
 }
 impl NativePublicationJob {
+    pub fn events(&self) -> &[foundry_store::RestoreEventEvidence] {
+        &self.events
+    }
     pub fn runtime_job(&self) -> &CaptureValidationJob {
         &self.runtime
     }
@@ -101,6 +105,7 @@ pub struct NativePublicationComparison {
 
 /// Runtime endpoints and metadata; never an AttemptFence or publication approval.
 pub struct CapturePorts {
+    pub messages: std::sync::mpsc::Receiver<foundry_runtime::AdapterMessage>,
     pub session: foundry_contracts::Session,
     pub attempt_id: String,
     pub profile: ProfileBinding,

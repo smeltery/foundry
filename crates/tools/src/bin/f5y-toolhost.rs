@@ -19,6 +19,10 @@ fn run() -> Result<(), HostError> {
         println!("f5y-toolhost {}", env!("FOUNDRY_VERSION"));
         return Ok(());
     }
+    if arguments.len() == 1 && arguments[0] == "--workspace-snapshot" {
+        // Dedicated single-threaded helper adopts the two reserved descriptors once.
+        return unsafe { foundry_tools::workspace_snapshot::serve_inherited() };
+    }
     if !arguments.is_empty() {
         return Err(HostError::Protocol);
     }

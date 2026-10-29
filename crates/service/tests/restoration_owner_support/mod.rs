@@ -24,10 +24,26 @@ pub struct Fixture {
 }
 impl Fixture {
     pub fn new(lease: Duration) -> Self {
+        Self::with_workspace(lease, None)
+    }
+    pub fn with_workspace(lease: Duration, workspace: Option<&std::path::Path>) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("store.db");
         let mut store = Store::open(&path).unwrap();
-        let session = witness::checkpoint::session(&mut store);
+        let session = match workspace {
+            None => witness::checkpoint::session(&mut store),
+            Some(path) => {
+                store
+                    .create(foundry_contracts::CreateSession {
+                        prompt: "opaque storage fixture".into(),
+                        directory: path.display().to_string(),
+                        model: None,
+                        idempotency_key: None,
+                    })
+                    .unwrap()
+                    .id
+            }
+        };
         let fence = store.begin_attempt(&session, 0).unwrap();
         let input = witness::input(&store, &fence, "capture");
         let head = store

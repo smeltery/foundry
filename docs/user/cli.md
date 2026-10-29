@@ -64,10 +64,12 @@ Positional tasks, `run`, `session start` and `acp` accept
 does not choose a default. Explicit values are preserved in backend requests.
 Missing or unsupported values fail during parsing before configuration.
 
-The local execution backend does not yet support effort selection. Supplying it
-returns an unsupported-option error before a session or attempt is created,
-including when an adapter is configured. ACP execution also remains unsupported.
-This option does not change the provider or adapter protocol.
+Local execution accepts effort selection when both an adapter executable and an
+explicit [private configuration](local-adapter.md) are selected. An explicit
+option replaces the file's effort; omission retains the file's value. Without
+private configuration, explicit effort remains unsupported before session
+creation. ACP execution remains unsupported. Effort does not change the provider
+or grant additional permissions.
 
 ## Create and inspect a queued session
 
@@ -75,7 +77,7 @@ This exact sequence was verified with separate executable invocations. It create
 a temporary database and explicitly disables adapter execution:
 
 ```sh
-unset FOUNDRY_ADAPTER
+unset FOUNDRY_ADAPTER FOUNDRY_ADAPTER_CONFIG
 demo_dir="$(mktemp -d)"
 export FOUNDRY_DATABASE="$demo_dir/state.db"
 ./target/debug/f5y session start --prompt "Record a local task" --json > "$demo_dir/session.json"
@@ -125,6 +127,12 @@ or a command plus arguments. The executable must implement the
 [adapter protocol](../architecture/runtime.md); an arbitrary program is not a
 compatible adapter.
 
+For model selection, private provider resources and configured tool ceilings,
+also set `FOUNDRY_ADAPTER_CONFIG`. Follow [local adapter setup](local-adapter.md)
+for file permissions, workspace matching and explicit tool grants. Invalid
+configuration fails execution rather than falling back to a queued session.
+The table below assumes no private configuration when the adapter is unset.
+
 | Invocation | Adapter unset | Adapter configured |
 | --- | --- | --- |
 | `session start --prompt TEXT` | Create a queued record only | Create and run synchronously |
@@ -144,6 +152,10 @@ runtime protocol. The positional prompt form accepts `--dir`; run and session
 start use the current directory. A malformed relative adapter path is rejected
 when constructing the execution backend, even for ordinary session queries.
 Unset it to use the storage-only workflow above.
+
+With an explicitly installed native profile, root `--resume` can inspect or
+continue the same session. See [local continuation](resume.md) for registration,
+checkpoint requirements and the distinction between inspection and execution.
 
 The [application service](../architecture/service.md) persists events and the
 terminal session. Completion maps success to status 0, failure to 1,
@@ -187,7 +199,7 @@ session without execution; send queues an instruction without starting or
 resuming work. See the [MCP boundary](../architecture/mcp.md).
 
 Interactive conversations, cloud workers, remote execution, provider account
-setup, model selection, automatic updates and release
+setup, automatic updates and release
 installation are not established by these local workflows. Help includes planned
 commands and options that can still return unsupported.
 

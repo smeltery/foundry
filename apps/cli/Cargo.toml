@@ -21,6 +21,7 @@ foundry-service = { version = "0.1.0", path = "../../crates/service" }
 foundry-runtime = { version = "0.1.0", path = "../../crates/runtime" }
 foundry-tools = { version = "0.1.0", path = "../../crates/tools" }
 cap-std = "=4.0.3"
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -20,6 +20,7 @@ impl PreparedCapture {
 }
 pub(crate) enum EngineExit {
     Ordinary(RunResult),
+    Cancelled(Box<CaptureCancelled>),
     Prepared(Box<PreparedCapture>),
     ActionRequired(Box<CaptureActionRequired>),
 }
@@ -35,6 +36,19 @@ impl From<RunResult> for Proposal {
 }
 
 impl Coordinator<'_> {
+    fn cancelled_exit(&self, mode: CancelMode, forced: bool) -> EngineExit {
+        match &self.startup {
+            Some(startup) => EngineExit::Cancelled(Box::new(CaptureCancelled {
+                owner_identity: startup.cancellation_identity(),
+                session_id: self.session.id.clone(),
+                attempt_id: self.attempt.into(),
+                mode,
+                forced,
+                cleanup: CleanupReceipt { _private: () },
+            })),
+            None => EngineExit::Ordinary(RunResult::Cancelled { mode, forced }),
+        }
+    }
     /// Called only after explicit owned process/helper cleanup succeeds.
     pub(super) fn finish(
         &self,
@@ -47,10 +61,7 @@ impl Coordinator<'_> {
             Proposal::PermissionStop(disposition) => {
                 match cancellation.try_recv() {
                     Ok(mode) => {
-                        return Ok(EngineExit::Ordinary(RunResult::Cancelled {
-                            mode,
-                            forced: true,
-                        }));
+                        return Ok(self.cancelled_exit(mode, true));
                     }
                     Err(TryRecvError::Disconnected)
                         if self.startup.is_some()
@@ -95,14 +106,14 @@ impl Coordinator<'_> {
                     _ => Err(protocol("invalid permission stop")),
                 }
             }
+            Proposal::Ordinary(RunResult::Cancelled { mode, forced }) => {
+                Ok(self.cancelled_exit(mode, forced))
+            }
             Proposal::Ordinary(result) => Ok(EngineExit::Ordinary(result)),
             Proposal::Validated(verified) => {
                 match cancellation.try_recv() {
                     Ok(mode) => {
-                        return Ok(EngineExit::Ordinary(RunResult::Cancelled {
-                            mode,
-                            forced: true,
-                        }));
+                        return Ok(self.cancelled_exit(mode, true));
                     }
                     Err(TryRecvError::Disconnected)
                         if matches!(self.ingress, Ingress::Restored { .. }) =>

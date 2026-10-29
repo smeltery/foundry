@@ -1,13 +1,20 @@
 //! Explicitly configured local adapter execution over the application service.
+mod configuration;
+#[cfg(unix)]
+mod native;
+mod native_registration;
+mod prepared;
+mod task;
 mod tool_policy;
 use crate::{Backend, CommandError, Request, Response};
 use foundry_contracts::{ContractError, CreateSession, Lifecycle, Outcome, Session};
 use foundry_runtime::AdapterSpec;
 use foundry_service::{Service, ServiceError};
 use foundry_store::StoreError;
-use serde_json::{Map, Value, json};
-use std::path::{Path, PathBuf};
+use serde_json::json;
+use std::path::PathBuf;
 use std::sync::{Arc, atomic::AtomicU8};
+use task::{fields, object, string};
 
 /// Delegates non-execution operations to the existing backend.
 /// Merely constructing this wrapper does not open a database or run a process.
@@ -15,6 +22,8 @@ pub struct ExecutionBackend<B> {
     database: PathBuf,
     fallback: B,
     adapter: Option<PathBuf>,
+    adapter_configuration: Option<PathBuf>,
+    native_profile: Option<PathBuf>,
     toolhost_override: Option<PathBuf>,
     control: Arc<AtomicU8>,
 }
@@ -32,6 +41,8 @@ impl<B: Backend> ExecutionBackend<B> {
             database: database.into(),
             fallback,
             adapter,
+            adapter_configuration: None,
+            native_profile: None,
             toolhost_override: None,
             control: Arc::new(AtomicU8::new(0)),
         })
@@ -45,9 +56,18 @@ impl<B: Backend> ExecutionBackend<B> {
             std::env::var_os("FOUNDRY_ADAPTER").map(PathBuf::from),
         )
         .map(|mut backend| {
+            backend.adapter_configuration =
+                std::env::var_os("FOUNDRY_ADAPTER_CONFIG").map(PathBuf::from);
             backend.toolhost_override = std::env::var_os("FOUNDRY_TOOLHOST").map(PathBuf::from);
+            backend.native_profile = std::env::var_os("FOUNDRY_NATIVE_PROFILE").map(PathBuf::from);
             backend
         })
+    }
+
+    /// Store a private configuration locator; load it only for a local execution.
+    pub fn with_adapter_configuration(mut self, path: PathBuf) -> Self {
+        self.adapter_configuration = Some(path);
+        self
     }
 
     /// Share startup's signal control without installing handlers in library users.
@@ -57,7 +77,7 @@ impl<B: Backend> ExecutionBackend<B> {
     }
 
     /// Explicit trusted development helper override; release provenance is not verified.
-    /// Only used with nonempty grants; validated before opening the session database.
+    /// Prepared execution always validates it; legacy execution uses it only with grants.
     pub fn with_toolhost(mut self, executable: PathBuf) -> Self {
         self.toolhost_override = Some(executable);
         self
@@ -104,17 +124,12 @@ impl<B: Backend> ExecutionBackend<B> {
                 Arc::clone(&self.control),
             ),
         };
-        let session = result.map_err(|error| {
-            let mut error = service_error(error);
-            error.message = format!("{} (session {})", error.message, queued.id);
-            error
-        })?;
-        terminal_response(session)
+        finish(result, &queued.id)
     }
 }
 
 impl<B: Backend> Backend for ExecutionBackend<B> {
-    fn execute(&mut self, request: Request) -> Result<Response, CommandError> {
+    fn execute(&mut self, mut request: Request) -> Result<Response, CommandError> {
         if request.version != 1 {
             return Err(unsupported("request version"));
         }
@@ -125,124 +140,102 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
         if operation != "prompt" && operation != "run" && !start {
             return self.fallback.execute(request);
         }
-        let task_options = if operation == "prompt" {
-            &request.command["arguments"]["options"]
-        } else if start {
-            &request.command["arguments"]["arguments"]
-        } else {
-            &request.command["arguments"]
-        };
-        if task_options
-            .get("effort")
-            .is_some_and(|value| !value.is_null())
+        if operation == "prompt" && !request.command["arguments"]["options"]["resume"].is_null() {
+            let id = request.command["arguments"]["options"]["resume"]
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| invalid("invalid resume session"))?
+                .to_owned();
+            if request.command["arguments"]["prompt"].is_null() {
+                existing_database(&self.database)?;
+                request.command = json!({"operation":"session","arguments":{"operation":"get","arguments":{"id":id}}});
+                return self.fallback.execute(request);
+            }
+            #[cfg(unix)]
+            return native::resume(self, request, &id);
+            #[cfg(not(unix))]
+            return Err(unsupported("native profile platform"));
+        }
+        let task_options = task::options(&request, operation, start);
+        if self.native_profile.is_some() && self.adapter_configuration.is_none() {
+            return Err(invalid(
+                "native profile requires private adapter configuration",
+            ));
+        }
+        if self.adapter_configuration.is_none()
+            && task_options
+                .get("effort")
+                .is_some_and(|value| !value.is_null())
         {
             return Err(unsupported("option effort"));
         }
         let grants = &task_options["tool_grants"];
         let grants = tool_policy::grants(grants)?;
         // Preserve the store-only queue contract when execution was not configured.
-        if start && self.adapter.is_none() && grants.is_empty() {
+        if start
+            && self.adapter.is_none()
+            && self.adapter_configuration.is_none()
+            && grants.is_empty()
+        {
             return self.fallback.execute(request);
         }
-        let arguments = object(
-            command
-                .get("arguments")
-                .ok_or_else(|| invalid("arguments are required"))?,
-            "arguments",
-        )?;
-        let (prompt, directory) = if operation == "prompt" {
-            fields(arguments, &["prompt", "options"])?;
-            if arguments.get("prompt").is_none_or(Value::is_null) {
-                return Err(unsupported("interactive sessions"));
+        let task = task::resolve(&request, self.adapter_configuration.is_some())?;
+        if let Some(path) = &self.adapter_configuration {
+            let executable = self.adapter.as_deref().ok_or_else(|| {
+                invalid("private adapter configuration requires an adapter executable")
+            })?;
+            if let Some(registration) = &self.native_profile {
+                #[cfg(unix)]
+                return native::run(
+                    &self.database,
+                    registration,
+                    prepared::resolve(task, executable, path, self.toolhost_override.as_deref())?,
+                    &self.control,
+                    None,
+                );
+                #[cfg(not(unix))]
+                return Err(unsupported("native profile platform"));
             }
-            let options = object(
-                arguments
-                    .get("options")
-                    .ok_or_else(|| invalid("prompt options are required"))?,
-                "options",
-            )?;
-            fields(
-                options,
-                &[
-                    "cloud",
-                    "on",
-                    "dir",
-                    "yes",
-                    "detach",
-                    "repo",
-                    "no_repo",
-                    "model",
-                    "effort",
-                    "resume",
-                    "update",
-                    "upgrade",
-                    "tool_grants",
-                ],
-            )?;
-            inactive(
-                options,
-                &["on", "repo", "model", "resume"],
-                &["cloud", "detach", "no_repo", "update", "upgrade"],
-            )?;
-            if options.get("yes").is_some_and(|value| !value.is_boolean()) {
-                return Err(invalid("yes must be a boolean"));
-            }
-            (string(arguments, "prompt")?, directory(options.get("dir"))?)
-        } else {
-            let args = if start {
-                fields(arguments, &["operation", "arguments"])?;
-                object(
-                    arguments
-                        .get("arguments")
-                        .ok_or_else(|| invalid("start arguments are required"))?,
-                    "start arguments",
-                )?
-            } else {
-                arguments
-            };
-            if start {
-                fields(
-                    args,
-                    &[
-                        "prompt",
-                        "repo",
-                        "provider",
-                        "model",
-                        "effort",
-                        "tool_grants",
-                    ],
-                )?;
-                inactive(args, &["repo", "provider", "model"], &[])?;
-            } else {
-                fields(
-                    args,
-                    &[
-                        "task",
-                        "repo",
-                        "git_ref",
-                        "model",
-                        "effort",
-                        "detach",
-                        "tool_grants",
-                    ],
-                )?;
-                inactive(args, &["repo", "git_ref", "model"], &["detach"])?;
-            }
-            (
-                string(args, if start { "prompt" } else { "task" })?,
-                directory(None)?,
+            let resolved =
+                prepared::resolve(task, executable, path, self.toolhost_override.as_deref())?;
+            let snapshots = foundry_service::cancellation_snapshot::SnapshotSettings::for_database(
+                resolved.helper().to_path_buf(),
+                &self.database,
             )
-        };
+            .map_err(service_error)?;
+            let request = resolved.request.clone();
+            let prepared = resolved.prepare(None)?;
+            let mut service = Service::open(&self.database)
+                .map_err(service_error)?
+                .with_workspace_snapshots(snapshots);
+            let queued = service.create(request).map_err(service_error)?;
+            let result = service.run_prepared(
+                &queued.id,
+                queued.version,
+                prepared,
+                Arc::clone(&self.control),
+            );
+            return finish(result, &queued.id);
+        }
         self.run(
             CreateSession {
-                prompt: prompt.into(),
-                directory,
+                prompt: task.prompt,
+                directory: task.directory,
                 model: None,
                 idempotency_key: None,
             },
-            grants,
+            task.grants,
         )
     }
+}
+
+fn finish(result: Result<Session, ServiceError>, id: &str) -> Result<Response, CommandError> {
+    let session = result.map_err(|error| {
+        let mut error = service_error(error);
+        error.message = format!("{} (session {})", error.message, id);
+        error
+    })?;
+    terminal_response(session)
 }
 
 fn terminal_response(session: Session) -> Result<Response, CommandError> {
@@ -270,64 +263,17 @@ fn terminal_response(session: Session) -> Result<Response, CommandError> {
     })
 }
 
-fn directory(value: Option<&Value>) -> Result<String, CommandError> {
-    let path = match value {
-        None | Some(Value::Null) => {
-            std::env::current_dir().map_err(|_| invalid("working directory is unavailable"))?
-        }
-        Some(Value::String(path)) if !path.trim().is_empty() => PathBuf::from(path),
-        _ => return Err(invalid("working directory must be a nonempty path")),
-    };
-    let path = Path::new(&path)
-        .canonicalize()
-        .map_err(|_| invalid("working directory does not exist"))?;
-    if !path.is_dir() {
-        return Err(invalid("working directory must be a directory"));
-    }
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| invalid("working directory must be UTF-8"))
-}
-fn object<'a>(value: &'a Value, label: &str) -> Result<&'a Map<String, Value>, CommandError> {
-    value
-        .as_object()
-        .ok_or_else(|| invalid(&format!("{label} must be an object")))
-}
-fn fields(arguments: &Map<String, Value>, allowed: &[&str]) -> Result<(), CommandError> {
-    for key in arguments.keys() {
-        if !allowed.contains(&key.as_str()) {
-            return Err(unsupported(&format!("option {key}")));
-        }
-    }
-    Ok(())
-}
-fn string<'a>(arguments: &'a Map<String, Value>, key: &str) -> Result<&'a str, CommandError> {
-    arguments
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| invalid(&format!("{key} must be a string")))
-}
-fn inactive(
-    arguments: &Map<String, Value>,
-    optional: &[&str],
-    flags: &[&str],
-) -> Result<(), CommandError> {
-    for key in optional {
-        if arguments.get(*key).is_some_and(|value| !value.is_null()) {
-            return Err(unsupported(&format!("option {key}")));
-        }
-    }
-    for key in flags {
-        match arguments.get(*key) {
-            None | Some(Value::Bool(false)) => {}
-            Some(Value::Bool(true)) => return Err(unsupported(&format!("option {key}"))),
-            _ => return Err(invalid(&format!("{key} must be a boolean"))),
-        }
-    }
-    Ok(())
-}
 fn invalid(message: &str) -> CommandError {
     CommandError::new("invalid", message)
+}
+fn existing_database(path: &std::path::Path) -> Result<(), CommandError> {
+    if !path.metadata().is_ok_and(|metadata| metadata.is_file()) {
+        return Err(CommandError::new(
+            "storage",
+            "database must be an existing file",
+        ));
+    }
+    Ok(())
 }
 fn unsupported(message: &str) -> CommandError {
     CommandError::new(

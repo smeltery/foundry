@@ -98,7 +98,15 @@ pub struct Harness {
 impl Harness {
     pub fn new(comparator: u8, mode: &str) -> Self {
         let fixture = Fixture::new(Duration::from_secs(3));
-        let mut owner = fixture.start("load");
+        let owner = fixture.start("load");
+        Self::with_owner(fixture, owner, comparator, mode)
+    }
+    pub fn with_owner(
+        fixture: Fixture,
+        mut owner: RestorationOwner,
+        comparator: u8,
+        mode: &str,
+    ) -> Self {
         let scope = fixture.reserved(&mut owner);
         owner.request_baseline().unwrap();
         let RestoreReply::Baseline(snapshot) = receive(&mut owner).result.unwrap() else {

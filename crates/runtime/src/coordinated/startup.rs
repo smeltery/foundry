@@ -101,7 +101,11 @@ impl Startup {
         state.restored_origin = Some(origin);
         state.trace = trace;
         state.message_ack = message_ack;
-        state.enter(Phase::Active);
+        state.pending = Some(CaptureRequest::ActivateAdmission {
+            correlation: state.correlation.clone(),
+            message_ack,
+        });
+        state.enter(Phase::ActivationPending);
         Ok(state)
     }
     fn enter(&mut self, phase: Phase) {
@@ -156,6 +160,9 @@ impl Startup {
         }
         self.enter(Phase::StartPending);
         Ok(())
+    }
+    pub(super) fn cancellation_identity(&self) -> std::sync::Arc<CaptureOwnerIdentity> {
+        std::sync::Arc::clone(&self.owner.identity)
     }
     pub(super) fn check_permission_stop(
         &self,
@@ -300,3 +307,7 @@ mod terminal_failure_tests;
 #[cfg(all(test, unix))]
 #[path = "capture_stop_tests.rs"]
 mod stop_tests;
+
+#[cfg(test)]
+#[path = "capture_cancel_tests.rs"]
+mod cancel_tests;

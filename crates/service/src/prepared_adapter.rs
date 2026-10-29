@@ -40,6 +40,13 @@ pub struct PreparedLocalAdapter {
     tools: PermissionTools,
 }
 
+/// One-use native runtime inputs and their matching service authority.
+pub struct PreparedCaptureParts {
+    pub spec: AdapterSpec,
+    pub policy: TrustedToolPolicy,
+    pub permissions: ToolPermissions,
+}
+
 impl PreparedLocalAdapter {
     pub fn new(
         mut spec: AdapterSpec,
@@ -119,6 +126,22 @@ impl PreparedLocalAdapter {
     /// Retain before execution; invalidate before publishing a changed selection.
     pub fn revocation(&self) -> ToolPermissionRevocation {
         self.tools.permissions.revocation()
+    }
+
+    /// Transfer the existing bootstrap and policy without rebuilding authority.
+    pub fn into_capture_parts(self) -> Result<PreparedCaptureParts> {
+        let PermissionTools {
+            policy,
+            permissions,
+        } = self.tools;
+        let permissions = Arc::try_unwrap(permissions)
+            .map_err(|_| ServiceError::Coordination("prepared permissions are shared"))?;
+        permissions.check_policy(&policy.identity())?;
+        Ok(PreparedCaptureParts {
+            spec: self.spec,
+            policy,
+            permissions,
+        })
     }
 
     fn check_session(&self, session: &Session) -> Result<()> {
