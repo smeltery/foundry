@@ -15,8 +15,8 @@ python3 scripts/checks/all.py
 | `rust` | Formatting, Clippy with warnings denied, workspace tests |
 | `dependencies` | Locked Cargo advisory, dependency-ban and source checks |
 | `python` | Repository validation tests and catalog fixture validation |
-| `adapter` | Strict TypeScript checking and offline adapter protocol tests |
-| `integration` | Fresh CLI/adapter subprocess tests and a real tool-helper write through durable session records |
+| `adapter` | Strict TypeScript checking, ESM build and offline adapter protocol tests |
+| `integration` | Fresh CLI/adapter subprocess tests, Rust/compiled-TS private bootstrap, and real helper writes with durable receipts and consuming permissions |
 | `mcp-sdk` | Official Python SDK against a fresh CLI subprocess, using hash-pinned test dependencies |
 | `docs` | Documentation tooling tests, Markdown, links and rendered diagrams |
 | `hygiene` | License digest, whitespace, LOC, external naming policy and workflow syntax |

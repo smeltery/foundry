@@ -40,6 +40,7 @@ impl RunLease {
         cancellation: mpsc::Sender<CancelMode>,
         messages: mpsc::SyncSender<AdapterMessage>,
     ) -> Result<Self> {
+        signals.permissions.initialize(initial_deadline);
         let (stop, stopped) = mpsc::channel();
         let (renew, renewed) = mpsc::channel();
         let expired = Arc::new(AtomicBool::new(false));

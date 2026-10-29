@@ -16,6 +16,8 @@ impl TrustedToolPolicy {
             ));
         }
         let policy = Self {
+            identity: ToolPolicyIdentity::new(),
+            authorization_required: false,
             helper,
             directory,
             grants,
@@ -35,6 +37,51 @@ impl TrustedToolPolicy {
         Ok(policy)
     }
 
+    /// Opt into mandatory consuming authorization; bare durable claims cannot dispatch.
+    pub fn require_authorization(mut self) -> Self {
+        self.authorization_required = true;
+        self
+    }
+
+    pub fn identity(&self) -> ToolPolicyIdentity {
+        self.identity.clone()
+    }
+
+    pub fn try_clone(&self) -> Result<Self, RuntimeError> {
+        Ok(Self {
+            identity: self.identity.clone(),
+            authorization_required: self.authorization_required,
+            helper: self.helper.clone(),
+            directory: self.directory.try_clone()?,
+            grants: self.grants.clone(),
+            limits: self.limits.clone(),
+            timeout: self.timeout,
+        })
+    }
+
+    pub(super) fn apply_grant(
+        &self,
+        request: &mut host::Request,
+        grant: ToolDispatchGrant,
+    ) -> Result<(), ToolAdmissionFailure> {
+        let required = match (&*request.tool, &request.input) {
+            ("read", host::Input::Path(_)) => host::Grant::Read,
+            ("list", host::Input::Path(_)) => host::Grant::List,
+            ("write", host::Input::Write(args)) => match args.mode {
+                host::WriteMode::Create => host::Grant::Create,
+                host::WriteMode::Overwrite => host::Grant::Overwrite,
+            },
+            _ => return Err(ToolAdmissionFailure::Invalid),
+        };
+        if !grant.grants.contains(&required)
+            || grant.grants.iter().any(|item| !self.grants.contains(item))
+        {
+            return Err(ToolAdmissionFailure::Invalid);
+        }
+        request.grants = grant.grants;
+        checked_request(request).map_err(|_| ToolAdmissionFailure::Invalid)
+    }
+
     pub(super) fn prepare(
         &self,
         attempt: &str,
@@ -52,7 +99,7 @@ impl TrustedToolPolicy {
             },
             _ => return Err("invalid"),
         };
-        if !self.grants.contains(&grant) {
+        if !self.authorization_required && !self.grants.contains(&grant) {
             return Err("denied");
         }
         let request = host::Request {

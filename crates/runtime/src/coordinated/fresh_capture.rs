@@ -11,6 +11,7 @@ pub struct FreshCaptureOptions {
 /// Prepared is private handoff authority, never durable task completion.
 pub enum CaptureExit {
     Prepared(Box<PreparedCapture>),
+    ActionRequired(Box<CaptureActionRequired>),
     Cancelled { mode: CancelMode, forced: bool },
 }
 
@@ -46,6 +47,7 @@ pub fn run_fresh_capture(
             policy: options.policy,
         },
     )? {
+        engine::EngineExit::ActionRequired(stop) => Ok(CaptureExit::ActionRequired(stop)),
         engine::EngineExit::Prepared(prepared) => Ok(CaptureExit::Prepared(prepared)),
         engine::EngineExit::Ordinary(RunResult::Cancelled { mode, forced }) => {
             Ok(CaptureExit::Cancelled { mode, forced })

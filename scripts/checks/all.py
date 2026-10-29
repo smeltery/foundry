@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -44,16 +45,26 @@ def docs():
 
 def adapter():
     run("bun", "run", "adapter:check")
+    run("bun", "run", "adapter:build")
     run("bun", "run", "adapter:test")
 
 
 def integration():
     if os.name == "nt":
         raise ValueError("adapter process supervision requires a Unix platform")
+    bun = shutil.which("bun")
+    if bun is None:
+        raise ValueError("integration checks require the pinned Bun executable")
+    run("bun", "run", "adapter:build")
     run("cargo", "build", "--locked", "--package", "f5y", "--package", "foundry-tools",
         "--bins", "--target-dir", str(ROOT / "target"))
     environment = dict(os.environ, FOUNDRY_TEST_BINARY=str(ROOT / "target/debug/f5y"),
-                       FOUNDRY_TEST_TOOLHOST=str(ROOT / "target/debug/f5y-toolhost"))
+                       FOUNDRY_TEST_TOOLHOST=str(ROOT / "target/debug/f5y-toolhost"),
+                       FOUNDRY_TEST_BUN=str(Path(bun).resolve()))
+    subprocess.run(
+        ["cargo", "test", "--locked", "--package", "foundry-runtime", "--test", "configured_ts",
+         "--", "--ignored"], cwd=ROOT, env=environment, check=True,
+    )
     subprocess.run(
         ["bun", "test", "packages/adapter/test/rust-interop.test.ts"],
         cwd=ROOT, env=environment, check=True,
@@ -61,6 +72,11 @@ def integration():
     subprocess.run(
         ["cargo", "test", "--locked", "--package", "foundry-service", "--test", "tools",
          "real_toolhost_executes_a_granted_write_and_commits_receipt", "--", "--ignored", "--exact"],
+        cwd=ROOT, env=environment, check=True,
+    )
+    subprocess.run(
+        ["cargo", "test", "--locked", "--package", "foundry-service", "--test", "tool_permissions",
+         "real_toolhost_creation_consumes_permission_once", "--", "--ignored", "--exact"],
         cwd=ROOT, env=environment, check=True,
     )
     subprocess.run(
@@ -91,8 +107,10 @@ def hygiene():
     run("git", "diff", "--cached", "--check")
     run(sys.executable, "scripts/checks/loc.py")
     for mode in ("tracked", "history"):
+        # History visits every path in every commit, including unchanged blobs.
+        limits = ("--max-files", "100000") if mode == "history" else ()
         run(sys.executable, "scripts/checks/naming.py", "--policy-json-env",
-            "FOUNDRY_NAMING_POLICY", "--mode", mode)
+            "FOUNDRY_NAMING_POLICY", "--mode", mode, *limits)
     run("actionlint")
     run("shellcheck", "scripts/ci/browser-sandbox.sh")
 

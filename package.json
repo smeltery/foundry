@@ -8,6 +8,7 @@
   },
   "scripts": {
     "adapter:check": "tsc -p packages/adapter/tsconfig.json",
+    "adapter:build": "tsc -p packages/adapter/tsconfig.build.json",
     "adapter:test": "bun test packages/adapter/test",
     "docs:check": "bun scripts/checks/docs.ts",
     "docs:fast": "bun scripts/checks/docs.ts",

@@ -1,5 +1,6 @@
 /target/
 /node_modules/
+/packages/adapter/dist/
 .env
 .env.*
 !.env.example

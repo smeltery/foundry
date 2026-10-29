@@ -28,6 +28,7 @@ pub(super) struct Job {
     expects_digest: bool,
     ledger_digest: Option<[u8; 32]>,
     shared_reply: Option<SharedToolReply>,
+    admission_failed: bool,
 }
 impl Job {
     pub fn new(request: host::Request) -> Self {
@@ -57,6 +58,7 @@ impl Job {
             expects_digest: false,
             ledger_digest: None,
             shared_reply: None,
+            admission_failed: false,
         }
     }
 
@@ -65,23 +67,40 @@ impl Job {
         reply: PersistenceReply,
         policy: &TrustedToolPolicy,
         stop: Arc<AtomicBool>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Option<PermissionDisposition>, RuntimeError> {
         if self.pending.is_some() {
             return Err(protocol("tool reply preceded request submission"));
         }
         match reply {
+            PersistenceReply::ToolBlocked {
+                checkpoint,
+                disposition,
+            } if checkpoint == self.checkpoint && self.phase == Phase::Claim => {
+                if !matches!(
+                    disposition,
+                    PermissionDisposition::Denied
+                        | PermissionDisposition::ActionRequired
+                        | PermissionDisposition::Unsupported
+                ) {
+                    return Err(protocol("invalid blocked tool disposition"));
+                }
+                self.phase = Phase::Ready;
+                self.request.take();
+                return Ok(Some(disposition));
+            }
+            PersistenceReply::ToolAuthorized {
+                checkpoint,
+                authorization,
+            } if checkpoint == self.checkpoint && self.phase == Phase::Claim => {
+                self.start(policy, stop, Some(authorization))?;
+            }
             PersistenceReply::ToolClaimed { checkpoint }
                 if checkpoint == self.checkpoint && self.phase == Phase::Claim =>
             {
-                let request = self
-                    .request
-                    .take()
-                    .ok_or_else(|| protocol("missing owned tool request"))?;
-                match policy.spec().and_then(|spec| ToolProcess::start(spec, request, stop).map_err(|_| protocol("tool failed before lifecycle start"))) {
-                    Ok(helper) => { self.helper = Some(helper); self.phase = Phase::Running; }
-                    Err(_) => self.finish(ToolEvidence::FailedBeforeSpawn, ToolDisposition::NoEffectFailure,
-                        Some(serde_json::json!({"status":"error","code":"tool_start_failed","effect":"none"}))),
+                if policy.authorization_required {
+                    return Err(protocol("tool authorization required"));
                 }
+                self.start(policy, stop, None)?;
             }
             PersistenceReply::ToolFinished {
                 checkpoint,
@@ -97,6 +116,51 @@ impl Job {
                 self.accept_finished(checkpoint, disposition, output_digest, true)?;
             }
             _ => return Err(protocol("unexpected tool persistence reply")),
+        }
+        Ok(None)
+    }
+
+    pub fn call_id(&self) -> &str {
+        &self.call_id
+    }
+
+    fn start(
+        &mut self,
+        policy: &TrustedToolPolicy,
+        stop: Arc<AtomicBool>,
+        authorization: Option<Box<dyn ToolDispatchAuthorization>>,
+    ) -> Result<(), RuntimeError> {
+        let mut request = self
+            .request
+            .take()
+            .ok_or_else(|| protocol("missing owned tool request"))?;
+        let start = policy.spec().and_then(|spec| {
+            if let Some(authorization) = authorization {
+                let admitted = if stop.load(std::sync::atomic::Ordering::Acquire) {
+                    Err(ToolAdmissionFailure::Cancelled)
+                } else {
+                    authorization
+                        .consume(&policy.identity, &request)
+                        .and_then(|grant| policy.apply_grant(&mut request, grant))
+                };
+                if admitted.is_err() {
+                    self.admission_failed = true;
+                    return Err(protocol("tool permission admission failed"));
+                }
+            }
+            ToolProcess::start(spec, request, stop)
+                .map_err(|_| protocol("tool failed before lifecycle start"))
+        });
+        match start {
+            Ok(helper) => {
+                self.helper = Some(helper);
+                self.phase = Phase::Running;
+            }
+            Err(_) => self.finish(
+                ToolEvidence::FailedBeforeSpawn,
+                ToolDisposition::NoEffectFailure,
+                Some(serde_json::json!({"status":"error","code":"tool_start_failed","effect":"none"})),
+            ),
         }
         Ok(())
     }
@@ -200,6 +264,9 @@ impl Job {
         if self.phase != Phase::Ready {
             return Ok(false);
         }
+        if self.admission_failed {
+            return Err(protocol("tool permission admission failed"));
+        }
         if self.disposition == Some(ToolDisposition::Uncertain) {
             return Err(protocol("tool effects are uncertain"));
         }
@@ -267,61 +334,5 @@ pub(super) fn protocol(message: &'static str) -> RuntimeError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn failed_before_lifecycle_start_requests_explicit_evidence_with_no_digest() {
-        let policy = TrustedToolPolicy::new(
-            std::env::temp_dir().join("unused-helper"),
-            cap_std::fs::Dir::open_ambient_dir(std::env::temp_dir(), cap_std::ambient_authority())
-                .unwrap(),
-            vec![host::Grant::Read],
-            host::HostLimits {
-                request_bytes: host::MAX_REQUEST_BYTES,
-                read_bytes: 262144,
-                write_bytes: 262144,
-                output_bytes: host::MAX_REPLY_BYTES,
-                entries: 256,
-            },
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        let request = policy
-            .prepare(
-                "attempt",
-                "call",
-                "read",
-                serde_json::json!({"path":"file"}),
-            )
-            .unwrap();
-        let mut job = Job::new_capture(request);
-        job.pending.take();
-        job.reply(
-            PersistenceReply::ToolClaimed {
-                checkpoint: job.checkpoint,
-            },
-            &policy,
-            Arc::new(AtomicBool::new(true)),
-        )
-        .unwrap();
-        assert!(matches!(
-            job.pending.take(),
-            Some(PersistenceRequest::FinishToolWithEvidence {
-                evidence: ToolEvidence::FailedBeforeSpawn,
-                ..
-            })
-        ));
-        assert!(
-            job.accept_finished(
-                job.checkpoint,
-                ToolDisposition::NoEffectFailure,
-                Some([1; 32]),
-                true
-            )
-            .is_err()
-        );
-        job.accept_finished(job.checkpoint, ToolDisposition::NoEffectFailure, None, true)
-            .unwrap();
-        assert!(job.phase == Phase::Ready);
-    }
-}
+#[path = "tool_tests.rs"]
+mod tests;

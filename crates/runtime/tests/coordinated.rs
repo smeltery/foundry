@@ -285,3 +285,6 @@ fn wrong_checkpoint_and_wrong_disposition_abort_without_result() {
         assert!(!fixture.root.join("adapter-result").exists());
     }
 }
+
+#[path = "coordinated/permissions.rs"]
+mod permissions;

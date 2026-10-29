@@ -21,6 +21,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "publication_owner/permission_stop.rs"]
+mod permission_stop;
+#[path = "publication_owner/permissions.rs"]
+mod permissions;
+#[path = "restoration_native_support/mod.rs"]
+mod restoration_support;
+#[path = "publication_owner/restored_permissions.rs"]
+mod restored_permissions;
+
 // Synthetic semantic fixture only. The parent separately supplies the real codec.
 struct Comparator;
 impl NativePublicationComparator for Comparator {

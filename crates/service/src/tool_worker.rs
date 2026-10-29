@@ -18,6 +18,7 @@ mod tests;
 
 pub(crate) struct WorkerControl {
     pub signals: RunControl,
+    pub permissions: Option<Arc<crate::permission::ToolPermissions>>,
     /// Capture owners activate only after their correlated startup barrier.
     pub activate_on_ready: bool,
     pub expired: Arc<AtomicBool>,
@@ -50,6 +51,39 @@ pub(crate) struct PersistenceState {
     count: usize,
 }
 impl PersistenceState {
+    fn claim_authorized(
+        &mut self,
+        store: &mut Store,
+        fence: &AttemptFence,
+        checkpoint: CheckpointId,
+        intent: &ToolIntent,
+        control: &WorkerControl,
+    ) -> Result<PersistenceReply> {
+        validate_intent(intent, self.active.is_some(), self.count)?;
+        let authority = match &control.permissions {
+            Some(permissions) => match permissions.prepare(fence, intent, &control.signals)? {
+                crate::permission::PreparedPermission::Blocked(disposition) => {
+                    return Ok(PersistenceReply::ToolBlocked {
+                        checkpoint,
+                        disposition,
+                    });
+                }
+                crate::permission::PreparedPermission::Authorized(authority) => Some(authority),
+            },
+            None => None,
+        };
+        let record = claim(store, fence, intent, self.active.is_some(), self.count)?;
+        self.active = Some((checkpoint, record));
+        self.count += 1;
+        Ok(match authority {
+            Some(authorization) => PersistenceReply::ToolAuthorized {
+                checkpoint,
+                authorization,
+            },
+            None => PersistenceReply::ToolClaimed { checkpoint },
+        })
+    }
+
     pub(crate) fn idle(&self) -> bool {
         self.active.is_none()
     }
@@ -102,11 +136,7 @@ impl PersistenceState {
                 .and_then(|()| persist_event(store, fence, &event))
                 .map(|()| PersistenceReply::EventCommitted { checkpoint }),
             PersistenceRequest::ClaimTool { intent, .. } => {
-                claim(store, fence, &intent, self.active.is_some(), self.count).map(|record| {
-                    self.active = Some((checkpoint, record));
-                    self.count += 1;
-                    PersistenceReply::ToolClaimed { checkpoint }
-                })
+                self.claim_authorized(store, fence, checkpoint, &intent, control)
             }
             PersistenceRequest::FinishTool { evidence, .. }
             | PersistenceRequest::FinishToolWithEvidence { evidence, .. } => {
@@ -179,6 +209,12 @@ fn claim(
     active: bool,
     count: usize,
 ) -> Result<ToolRecord> {
+    validate_intent(intent, active, count)?;
+    let digest = tool_digest::input(&intent.tool, &intent.input)?;
+    Ok(store.claim_tool(fence, &intent.call_id, &intent.tool, digest)?)
+}
+
+fn validate_intent(intent: &ToolIntent, active: bool, count: usize) -> Result<()> {
     if active || count >= MAX_TOOL_CALLS {
         return Err(invalid("tool admission limit exceeded"));
     }
@@ -192,8 +228,7 @@ fn claim(
     if bytes.len() > host::MAX_REQUEST_BYTES {
         return Err(invalid("tool request exceeds byte limit"));
     }
-    let digest = tool_digest::input(&intent.tool, &intent.input)?;
-    Ok(store.claim_tool(fence, &intent.call_id, &intent.tool, digest)?)
+    Ok(())
 }
 
 fn finish(

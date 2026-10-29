@@ -82,6 +82,7 @@ impl AdmittedProcess {
         )?;
         use crate::coordinated::{CaptureExit, engine::EngineExit};
         match exit {
+            EngineExit::ActionRequired(stop) => Ok(CaptureExit::ActionRequired(stop)),
             EngineExit::Prepared(prepared) => Ok(CaptureExit::Prepared(prepared)),
             EngineExit::Ordinary(RunResult::Cancelled { mode, forced }) => {
                 Ok(CaptureExit::Cancelled { mode, forced })

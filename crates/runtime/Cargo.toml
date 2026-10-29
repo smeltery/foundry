@@ -10,6 +10,7 @@ repository.workspace = true
 foundry-contracts = { version = "0.1.0", path = "../contracts" }
 foundry-tools = { version = "0.1.0", path = "../tools" }
 cap-std = "=4.0.3"
+base64 = "=0.22.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

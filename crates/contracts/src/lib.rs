@@ -1,4 +1,5 @@
 //! Shared, versioned session and subprocess interfaces.
+pub mod adapter_selection;
 pub mod capability;
 pub mod context;
 pub mod context_observation;

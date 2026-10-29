@@ -31,7 +31,7 @@ impl Service {
         spec: &AdapterSpec,
         control: Arc<AtomicU8>,
     ) -> Result<Session> {
-        self.run_inner(id, expected_version, spec, control, None)
+        self.run_inner(id, expected_version, spec, control, None, None)
     }
 
     /// Execute explicitly granted workspace tools through the trusted helper.
@@ -44,7 +44,27 @@ impl Service {
         control: Arc<AtomicU8>,
         policy: TrustedToolPolicy,
     ) -> Result<Session> {
-        self.run_inner(id, expected_version, spec, control, Some(policy))
+        self.run_inner(id, expected_version, spec, control, Some(policy), None)
+    }
+
+    /// Execute tools only after consuming trusted, live, one-use permission.
+    pub fn run_with_permissions(
+        &mut self,
+        id: &str,
+        expected_version: u64,
+        spec: &AdapterSpec,
+        control: Arc<AtomicU8>,
+        tools: crate::permission::PermissionTools,
+    ) -> Result<Session> {
+        tools.permissions.check_policy(&tools.policy.identity())?;
+        self.run_inner(
+            id,
+            expected_version,
+            spec,
+            control,
+            Some(tools.policy),
+            Some(tools.permissions),
+        )
     }
 
     fn run_inner(
@@ -54,6 +74,7 @@ impl Service {
         spec: &AdapterSpec,
         control: Arc<AtomicU8>,
         policy: Option<TrustedToolPolicy>,
+        permissions: Option<Arc<crate::permission::ToolPermissions>>,
     ) -> Result<Session> {
         let monitor_store = Store::open_with_lease(&self.path, self.options.lease_duration)?;
         // Start before the database operation: lock waits must consume our budget.
@@ -97,6 +118,7 @@ impl Service {
                 cancellation: &cancel_rx,
                 messages: &message_rx,
                 control: WorkerControl {
+                    permissions,
                     signals: signals.clone(),
                     activate_on_ready: true,
                     expired: Arc::clone(&expired),

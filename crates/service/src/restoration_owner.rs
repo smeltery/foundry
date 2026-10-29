@@ -4,6 +4,7 @@ mod continuation;
 pub(crate) mod validation;
 pub use continuation::ContinueSelection;
 use foundry_runtime::coordinated::loading::continuation::ContinuationOwner;
+mod capture;
 mod worker;
 use crate::native_validation::{NativeExpectations, NativeValidatorRegistration};
 use foundry_contracts::context_observation::{ObservationBinding, ObservationFrame};
@@ -48,6 +49,7 @@ pub enum RestoreReply {
     Continuation(ContinuationOwner),
     CaptureReady(Box<crate::native_publication::CapturePorts>),
     Published(Box<foundry_store::FinalizedCheckpoint>),
+    ActionRequired(Box<foundry_contracts::Session>),
 }
 
 /// A correlated result, not restoration or execution authority.
@@ -75,8 +77,12 @@ enum JobKind {
     },
     NativeStatus,
     OpenContinuation(ContinueSelection),
-    OpenCapture(Box<crate::native_publication::PublicationConfiguration>),
+    OpenCapture(
+        Box<crate::native_publication::PublicationConfiguration>,
+        Option<Arc<crate::permission::ToolPermissions>>,
+    ),
     FinishCapture(Box<foundry_runtime::coordinated::PreparedCapture>),
+    FinishActionRequired(Box<foundry_runtime::coordinated::CaptureActionRequired>),
     BindPlan(Box<RestoreDescriptor>),
     RegisterCleanup {
         scope: LoadingScope,
@@ -151,6 +157,7 @@ impl RestorationOwner {
         let (renew, renewed) = mpsc::channel();
         let requested = Arc::new(AtomicU8::new(0));
         let signals = RunControl::new(Arc::clone(&requested));
+        signals.permissions.initialize(deadline);
         let expired = Arc::new(AtomicBool::new(false));
         let stopping = Arc::new(AtomicBool::new(false));
         let watch_signals = signals.clone();
@@ -280,19 +287,6 @@ impl RestorationOwner {
 
     pub fn open_continuation(&mut self, selection: ContinueSelection) -> Result<ContextReceipt> {
         self.submit(JobKind::OpenContinuation(selection))
-    }
-
-    pub fn open_capture(
-        &mut self,
-        configuration: crate::native_publication::PublicationConfiguration,
-    ) -> Result<ContextReceipt> {
-        self.submit(JobKind::OpenCapture(Box::new(configuration)))
-    }
-    pub fn finish_capture(
-        &mut self,
-        prepared: foundry_runtime::coordinated::PreparedCapture,
-    ) -> Result<ContextReceipt> {
-        self.submit(JobKind::FinishCapture(Box::new(prepared)))
     }
 
     fn submit(&mut self, kind: JobKind) -> Result<ContextReceipt> {

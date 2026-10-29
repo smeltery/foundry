@@ -111,7 +111,7 @@ impl Coordinator<'_> {
                         continue;
                     }
                     if let Some(result) = self.persisted(reply)? {
-                        return Ok(result.into());
+                        return Ok(result);
                     }
                 }
                 Err(TryRecvError::Disconnected) => {

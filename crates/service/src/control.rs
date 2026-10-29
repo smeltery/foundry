@@ -9,12 +9,14 @@ use std::sync::{
 pub(crate) struct RunControl {
     pub accepting: Arc<AtomicBool>,
     pub admission: crate::admission::AdmissionGate,
+    pub permissions: crate::permission_gate::PermissionGate,
     requested: Arc<AtomicU8>,
     observed: Arc<AtomicU8>,
 }
 impl RunControl {
     pub fn new(requested: Arc<AtomicU8>) -> Self {
         Self {
+            permissions: crate::permission_gate::PermissionGate::new(Arc::clone(&requested)),
             requested,
             observed: Arc::new(AtomicU8::new(0)),
             accepting: Arc::new(AtomicBool::new(false)),
@@ -24,6 +26,7 @@ impl RunControl {
 
     /// Permanently stop new claims without waiting for a claim already in flight.
     pub fn stop_admission(&self) {
+        self.permissions.revoke();
         self.admission.freeze();
         self.accepting.store(false, Ordering::Release);
     }
@@ -45,8 +48,8 @@ impl RunControl {
         if requested > previous
             && let Some(mode) = mode
         {
-            // A closed receiver means the supervisor has already returned; finalization
-            // still observes this state and persists cancellation before completion.
+            // A closed receiver means supervision has returned. A later owner admission
+            // still observes this state; an already admitted terminal result may win.
             let _ = sender.send(mode);
         }
         mode

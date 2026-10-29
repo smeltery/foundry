@@ -99,7 +99,7 @@ def bootstrap(group):
         output("pkg-config", "--version")
     if group in BUN_GROUPS:
         require_version(("bun", "--version"), "1.3.11")
-    if group in {"docs", "adapter"}:
+    if group in BUN_GROUPS:
         require_version(("node", "--version"), "v22.23.1")
     utilities = {"dependencies": ["cargo-deny"], "hygiene": ["actionlint", "shellcheck"]}
     if group not in utilities:

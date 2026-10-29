@@ -1,7 +1,12 @@
 //! Private trusted-owner messages, never adapter-deserialized authority.
 use super::capture::{CaptureCut, CaptureValidationJob, VerifiedCapture};
 use foundry_contracts::context::ContextId;
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::{
+    Arc,
+    mpsc::{Receiver, SyncSender, sync_channel},
+};
+
+pub(super) struct CaptureOwnerIdentity;
 
 pub const CAPTURE_OWNER_CAPACITY: usize = 2;
 
@@ -71,6 +76,7 @@ pub enum CaptureReply {
 }
 
 pub struct CaptureOwner {
+    pub(super) identity: Arc<CaptureOwnerIdentity>,
     pub(super) requests: SyncSender<CaptureRequest>,
     pub(super) replies: Receiver<CaptureReply>,
 }
@@ -78,17 +84,31 @@ pub struct CaptureOwner {
 /// The service owns its worker and must stop/join it after runtime cleanup.
 /// Acknowledgment never certifies model startup or permits reopening a frozen gate.
 pub struct CaptureOwnerEndpoint {
+    identity: Arc<CaptureOwnerIdentity>,
     pub requests: Receiver<CaptureRequest>,
     pub replies: SyncSender<CaptureReply>,
+}
+
+impl CaptureOwnerEndpoint {
+    /// Match cleanup authority to the exact channel that owned this capture.
+    pub fn matches_action_required(&self, stop: &super::CaptureActionRequired) -> bool {
+        Arc::ptr_eq(&self.identity, &stop.owner_identity)
+    }
 }
 
 impl CaptureOwner {
     pub fn channel() -> (Self, CaptureOwnerEndpoint) {
         let (requests, request_rx) = sync_channel(CAPTURE_OWNER_CAPACITY);
         let (reply_tx, replies) = sync_channel(CAPTURE_OWNER_CAPACITY);
+        let identity = Arc::new(CaptureOwnerIdentity);
         (
-            Self { requests, replies },
+            Self {
+                identity: Arc::clone(&identity),
+                requests,
+                replies,
+            },
             CaptureOwnerEndpoint {
+                identity,
                 requests: request_rx,
                 replies: reply_tx,
             },

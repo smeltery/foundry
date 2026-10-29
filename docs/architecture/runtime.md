@@ -43,6 +43,11 @@ messages and malformed frame contents are withheld from runtime diagnostics.
 
 ## Message receipts
 
+An explicitly prepared adapter can require a private configuration exchange before
+Ready and Start. It uses the same process, pipes and original readiness deadline;
+see [adapter configuration](adapter-configuration.md) for the one-use packet,
+selection identity and credential boundary.
+
 The base protocol remains version 1. Live instruction delivery separately requires
 `ready.capabilities` to contain `message_ack_v2`; there is no fallback to the older
 acknowledgement capability. Without it, messages are not forwarded.
@@ -107,8 +112,9 @@ joined worker cleanup even when its bounded output queue is full.
 This is codec and transport support only. Capability negotiation, capture/restore
 phase authority, operation correlation, one-use continuation, semantic validation
 and checkpoint publication are not implemented by this layer. A valid digest or
-receipt does not prove a completed turn. In particular, comparing a restore
-payload with an earlier restore declaration requires a future supervisor.
+receipt does not prove a completed turn. The
+[restoration supervisor and service owner](restoration.md) enforce the declared
+payload, native validation and continuation boundaries.
 
 ## Fresh capture supervision
 
@@ -139,8 +145,9 @@ replies, queued instructions and observed cleanup faults prevent a prepared resu
 `PreparedCapture` is a private handoff after process cleanup, not a stored
 checkpoint or completed session. The service must keep ownership alive through
 atomic publication, check the exact accepted binding and preflight the store's
-combined metadata and terminal size limit. These service operations and native
-validation are still being integrated.
+combined metadata and terminal size limit. The
+[service capture and restoration path](restoration.md) supplies that ownership;
+it still requires an explicitly registered native validator.
 
 This entrypoint sends the original opening input. It rejects a cut with an
 existing checkpoint head and does not implement restored execution. Historical

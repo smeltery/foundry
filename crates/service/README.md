@@ -16,6 +16,8 @@ requires an explicitly constructed trusted workspace-tool policy.
 | `recover_expired()` | Explicitly recovered sessions |
 | `run(id, expected_version, &AdapterSpec)` | Persisted terminal session; tools denied |
 | `run_with_tools(id, version, &AdapterSpec, control, policy)` | Coordinated run with explicit trusted tool policy |
+| `run_with_permissions(id, version, &AdapterSpec, control, tools)` | Coordinated run requiring consuming tool authorization |
+| `run_prepared(id, version, prepared, control)` | Session-checked private adapter configuration and consuming tool authorization |
 
 Create sessions with an absolute working directory. Pass an executable path in
 `AdapterSpec`; executable names are not searched through PATH by the runtime.
@@ -46,8 +48,12 @@ guarantee.
 
 All subprocess cleanup is delegated to the runtime. Store recovery cannot undo
 external effects or prove that a crashed owner's subprocess stopped. Reconcile any
-uncertain external operation before starting another attempt. No fork, rewind,
-provider credentials or automatic retry is implemented here.
+uncertain external operation before starting another attempt. No fork, rewind or
+automatic retry is implemented here. The prepared adapter path accepts explicit
+private credentials; it does not discover accounts or include a model provider.
+See [adapter configuration](../../docs/architecture/adapter-configuration.md) for
+startup ordering, one-use packets and the distinction between tool availability
+and permission.
 
 Run `cargo test -p foundry-service` and
 `cargo clippy -p foundry-service --all-targets -- -D warnings`. Unix integration
