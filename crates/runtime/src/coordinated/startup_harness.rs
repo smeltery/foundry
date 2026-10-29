@@ -105,9 +105,7 @@ impl Harness {
             let outcome = outcome.map(|exit| match exit {
                 CaptureExit::ActionRequired(stop) => engine::EngineExit::ActionRequired(stop),
                 CaptureExit::Prepared(prepared) => engine::EngineExit::Prepared(prepared),
-                CaptureExit::Cancelled { mode, forced } => {
-                    engine::EngineExit::Ordinary(RunResult::Cancelled { mode, forced })
-                }
+                CaptureExit::Cancelled(stop) => engine::EngineExit::Cancelled(stop),
             });
             result_tx.send(outcome).unwrap();
         });
@@ -184,6 +182,10 @@ impl Harness {
     pub fn finish(&mut self) -> Result<RunResult, RuntimeError> {
         match self.finish_owned()? {
             engine::EngineExit::Ordinary(result) => Ok(result),
+            engine::EngineExit::Cancelled(stop) => Ok(RunResult::Cancelled {
+                mode: stop.mode(),
+                forced: stop.forced(),
+            }),
             engine::EngineExit::ActionRequired(_) => {
                 Err(RuntimeError::Invalid("private capture permission stop"))
             }

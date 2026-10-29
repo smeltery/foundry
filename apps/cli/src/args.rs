@@ -105,7 +105,7 @@ pub struct PromptOptions {
     pub no_repo: bool,
     #[arg(long)]
     pub model: Option<String>,
-    /// Requested effort; unsupported by the local adapter protocol.
+    /// Requested effort; local execution requires explicit adapter configuration.
     #[arg(long, value_enum)]
     pub effort: Option<Effort>,
     #[arg(long)]
@@ -206,7 +206,7 @@ pub struct RunOptions {
     pub git_ref: Option<String>,
     #[arg(long)]
     pub model: Option<String>,
-    /// Requested effort; unsupported by the local adapter protocol.
+    /// Requested effort; local execution requires explicit adapter configuration.
     #[arg(long, value_enum)]
     pub effort: Option<Effort>,
     /// Request detached execution (unsupported by the local backend).

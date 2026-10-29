@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const TOOL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) fn grants(value: &Value) -> Result<Vec<Grant>, CommandError> {
     if value.is_null() {
@@ -41,6 +41,15 @@ pub(super) fn build(
     if grants.is_empty() {
         return Ok(None);
     }
+    let helper = helper_path(helper_override)?;
+    let directory = Dir::open_ambient_dir(directory, cap_std::ambient_authority())
+        .map_err(|_| invalid("workspace tool directory is unavailable"))?;
+    TrustedToolPolicy::new(helper, directory, grants, limits(), TOOL_TIMEOUT)
+        .map(Some)
+        .map_err(|_| invalid("invalid workspace tool policy"))
+}
+
+pub(super) fn helper_path(helper_override: Option<&Path>) -> Result<PathBuf, CommandError> {
     let helper = match helper_override {
         Some(path) if path.is_absolute() => path.to_path_buf(),
         Some(_) => {
@@ -63,16 +72,15 @@ pub(super) fn build(
     if !helper.is_file() {
         return Err(invalid("workspace tool helper must be a file"));
     }
-    let directory = Dir::open_ambient_dir(directory, cap_std::ambient_authority())
-        .map_err(|_| invalid("workspace tool directory is unavailable"))?;
-    let limits = HostLimits {
+    Ok(helper)
+}
+
+pub(super) fn limits() -> HostLimits {
+    HostLimits {
         request_bytes: host::MAX_REQUEST_BYTES,
         read_bytes: 256 * 1024,
         write_bytes: 256 * 1024,
         output_bytes: host::MAX_REPLY_BYTES,
         entries: 256,
-    };
-    TrustedToolPolicy::new(helper, directory, grants, limits, TOOL_TIMEOUT)
-        .map(Some)
-        .map_err(|_| invalid("invalid workspace tool policy"))
+    }
 }

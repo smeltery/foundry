@@ -46,7 +46,7 @@ pub(in crate::coordinated) fn run_restored(
         delivery: Delivery::default(),
         seen: HashSet::new(),
     };
-    state.delivery.enabled = parts.message_ack;
+    state.delivery.enabled = state.startup.is_none() && parts.message_ack;
     let result = state.supervise(cancellation, messages);
     state.stop.store(true, Ordering::Release);
     if let Some(helper) = state.job.as_mut().and_then(|job| job.helper.as_mut()) {
@@ -55,9 +55,17 @@ pub(in crate::coordinated) fn run_restored(
     let Ingress::Restored { events, buffered } = &state.ingress else {
         unreachable!()
     };
-    let cleanup = state.process.stop_context_checked(events);
+    let cancelled = matches!(result, Ok(Proposal::Ordinary(RunResult::Cancelled { .. })));
+    let cleanup = if cancelled {
+        state.process.stop_context_cancelled(events)
+    } else {
+        state.process.stop_context_checked(events)
+    };
     let helper = state.job.as_mut().map_or(Ok(()), Job::cleanup);
-    let drained = if buffered.borrow().is_empty() {
+    let drained = if cancelled {
+        buffered.borrow_mut().clear();
+        Ok(())
+    } else if buffered.borrow().is_empty() {
         Ok(())
     } else {
         Err(protocol("unconsumed restored output after cleanup"))

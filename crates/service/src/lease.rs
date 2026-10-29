@@ -4,7 +4,7 @@ use foundry_runtime::AdapterMessage;
 use foundry_store::{AttemptFence, Store};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -12,6 +12,7 @@ use std::{
 };
 
 pub(crate) struct LeaseRenewal {
+    pub settlement: Arc<Mutex<()>>,
     pub interval: Duration,
     pub budget: Duration,
     pub updates: mpsc::Sender<Option<Instant>>,
@@ -29,6 +30,14 @@ pub(crate) fn monitor_attempt(
 ) -> Result<()> {
     let mut delivered = None;
     loop {
+        let guard = lease
+            .settlement
+            .lock()
+            .map_err(|_| ServiceError::Coordination("lease settlement lock poisoned"))?;
+        match stop.try_recv() {
+            Ok(()) | Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
         let local = signals.relay(cancellation);
         let deadline =
             Instant::now()
@@ -53,10 +62,9 @@ pub(crate) fn monitor_attempt(
         if let Some(mode) = cancel
             && delivered != Some(mode)
         {
-            // A closed receiver means supervision already ended; no process remains to stop.
-            if cancellation.send(mode).is_err() {
-                return Ok(());
-            }
+            // Runtime cleanup can precede owner finalization. Keep renewing until
+            // the lease owner explicitly stops, even when its runtime has returned.
+            let _ = cancellation.send(mode);
             delivered = Some(mode);
         }
         // Retain the permit through the durable claim and queue submission;
@@ -75,6 +83,7 @@ pub(crate) fn monitor_attempt(
                     ServiceError::Coordination("claimed message could not be submitted")
                 })?;
         }
+        drop(guard);
         match stop.recv_timeout(lease.interval) {
             Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
             Err(mpsc::RecvTimeoutError::Timeout) => {}

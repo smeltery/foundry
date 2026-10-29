@@ -25,6 +25,7 @@ impl Task {
         correlation: CaptureCorrelation,
         runtime: Box<CaptureValidationJob>,
         snapshot: Arc<foundry_store::CaptureSnapshot>,
+        events: Arc<[foundry_store::RestoreEventEvidence]>,
         baseline: Option<Arc<RestoreBaselineSnapshot>>,
         acceptance: Option<ContinueAcceptanceRef>,
     ) -> Result<Self> {
@@ -55,6 +56,7 @@ impl Task {
         let job = Arc::new(NativePublicationJob {
             runtime,
             snapshot,
+            events,
             baseline,
             acceptance,
             registration: configuration.validator.identity,
@@ -92,7 +94,7 @@ impl Task {
         }
         let compared = match self.result.try_recv() {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => return Err(ServiceError::Coordination("native publication rejected")),
+            Ok(Err(error)) => return Err(comparison_failure(error)),
             Err(mpsc::TryRecvError::Empty) => return Ok(None),
             Err(_) => return Err(ServiceError::Coordination("publication worker failed")),
         };
@@ -110,11 +112,55 @@ impl Task {
             .map_err(|_| ServiceError::Coordination("publication input ownership retained"))?;
         Ok(Some((self.correlation.clone(), job, compared)))
     }
+    pub fn join_cancelled(&mut self) -> Result<bool> {
+        self.cancel();
+        if self
+            .worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished())
+        {
+            return Ok(false);
+        }
+        if self
+            .worker
+            .take()
+            .is_some_and(|worker| worker.join().is_err())
+        {
+            return Err(ServiceError::Coordination(
+                "cancelled publication worker panicked",
+            ));
+        }
+        match self.result.try_recv() {
+            Ok(Ok(_))
+            | Ok(Err(
+                NativeValidationFailure::Cancelled
+                | NativeValidationFailure::Deadline
+                | NativeValidationFailure::Invalid
+                | NativeValidationFailure::Policy
+                | NativeValidationFailure::Mapping,
+            )) => Ok(true),
+            _ => Err(ServiceError::Coordination(
+                "cancelled publication cleanup unverified",
+            )),
+        }
+    }
     pub fn cancel(&self) {
         if let Some(job) = &self.job {
             job.cancelled.store(true, Ordering::Release);
         }
     }
+}
+fn comparison_failure(error: NativeValidationFailure) -> ServiceError {
+    ServiceError::Coordination(match error {
+        NativeValidationFailure::Unsupported => "native publication unsupported",
+        NativeValidationFailure::Invalid => "native publication invalid",
+        NativeValidationFailure::Policy => "native publication policy rejected",
+        NativeValidationFailure::Mapping => "native publication mapping rejected",
+        NativeValidationFailure::Cancelled => "native publication cancelled",
+        NativeValidationFailure::Deadline => "native publication deadline",
+        NativeValidationFailure::Cleanup => "native publication cleanup failed",
+        NativeValidationFailure::Internal => "native publication internal failure",
+    })
 }
 impl Drop for Task {
     fn drop(&mut self) {

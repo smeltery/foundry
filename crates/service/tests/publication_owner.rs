@@ -21,6 +21,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "publication_owner/cancellation.rs"]
+mod cancellation;
+#[path = "publication_owner/native_snapshots.rs"]
+mod native_snapshots;
 #[path = "publication_owner/permission_stop.rs"]
 mod permission_stop;
 #[path = "publication_owner/permissions.rs"]
@@ -29,6 +33,9 @@ mod permissions;
 mod restoration_support;
 #[path = "publication_owner/restored_permissions.rs"]
 mod restored_permissions;
+
+#[path = "publication_owner/transition_cancel.rs"]
+mod transition_cancel;
 
 // Synthetic semantic fixture only. The parent separately supplies the real codec.
 struct Comparator;

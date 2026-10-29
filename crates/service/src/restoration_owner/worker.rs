@@ -15,6 +15,7 @@ pub(super) struct Channels {
     pub renew: mpsc::Sender<Option<Instant>>,
 }
 pub(super) struct Actor {
+    snapshot_settings: Option<crate::cancellation_snapshot::SnapshotSettings>,
     options: RestoreOwnerOptions,
     budget: Duration,
     io: Channels,
@@ -31,17 +32,26 @@ struct Reservation {
     continuation: Option<super::continuation::Link>,
     publication: Option<crate::publication::Publication>,
     attempt_finalized: bool,
+    cancellation: Option<RestoredCancellation>,
 }
 
 impl Actor {
     pub fn new(options: RestoreOwnerOptions, budget: Duration, io: Channels) -> Self {
         Self {
+            snapshot_settings: None,
             options,
             budget,
             io,
         }
     }
 
+    pub fn with_snapshot(
+        mut self,
+        settings: Option<crate::cancellation_snapshot::SnapshotSettings>,
+    ) -> Self {
+        self.snapshot_settings = settings;
+        self
+    }
     pub fn run(
         self,
         path: PathBuf,
@@ -87,6 +97,7 @@ impl Actor {
                 continuation: None,
                 publication: None,
                 attempt_finalized: false,
+                cancellation: None,
             });
             let selected = reservation.as_mut().expect("reservation installed");
             selected.snapshot = Some(Arc::new(store.restore_baseline_snapshot(&selected.fence)?));
@@ -113,11 +124,19 @@ impl Actor {
         if let Some(publication) = reservation.as_ref().and_then(|r| r.publication.as_ref()) {
             publication.cancel();
         }
-        let release = match reservation.as_ref() {
+        let release = match reservation.as_mut() {
             Some(reservation) => self.release(&mut store, reservation, operation.is_err()),
             None => Ok(None),
         };
-        self.report(operation, release)
+        let mut report = self.report(operation, release);
+        if !report.expired
+            && report.release.is_ok()
+            && super::settlement::cancelled_operation(&report.operation)
+        {
+            report.cancellation =
+                reservation.and_then(|mut reservation| reservation.cancellation.take());
+        }
+        report
     }
 
     fn report(
@@ -128,6 +147,7 @@ impl Actor {
         self.io.signals.stop_admission();
         let _ = self.io.cancel.send(CancelMode::Hard);
         RestoreOwnerReport {
+            cancellation: None,
             expired: self.io.expired.load(Ordering::Acquire),
             watchdog_panicked: false,
             operation,
@@ -268,13 +288,7 @@ impl Actor {
                     &reservation.fence,
                     reservation.snapshot.as_ref().expect("selected snapshot"),
                     validated,
-                    || {
-                        self.io.expired.load(Ordering::Acquire)
-                            || self.io.stopping.load(Ordering::Acquire)
-                            || self.io.signals.relay(&self.io.cancel).is_some()
-                            || reservation.cleanup.as_ref().map(CleanupObserver::status)
-                                != Some(CleanupStatus::Pending)
-                    },
+                    || self.continuation_authority(reservation.cleanup.as_ref()),
                 )?;
             }
             if let Some(publication) = reservation.publication.as_mut() {
@@ -304,6 +318,26 @@ impl Actor {
                 }
             }
         }
+    }
+
+    fn continuation_authority(&self, cleanup: Option<&CleanupObserver>) -> Result<()> {
+        if self.io.expired.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination(
+                "restoration lease deadline elapsed",
+            ));
+        }
+        if self.io.signals.relay(&self.io.cancel).is_some() {
+            return Err(ServiceError::Coordination("restoration cancelled"));
+        }
+        if self.io.stopping.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination("continuation owner stopped"));
+        }
+        if cleanup.map(CleanupObserver::status) != Some(CleanupStatus::Pending) {
+            return Err(ServiceError::Coordination(
+                "native runtime cleanup already started",
+            ));
+        }
+        Ok(())
     }
 
     fn reply(&self, job_id: ContextReceipt, result: Result<RestoreReply>) -> Result<()> {

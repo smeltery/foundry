@@ -60,6 +60,7 @@ def integration():
         "--bins", "--target-dir", str(ROOT / "target"))
     environment = dict(os.environ, FOUNDRY_TEST_BINARY=str(ROOT / "target/debug/f5y"),
                        FOUNDRY_TEST_TOOLHOST=str(ROOT / "target/debug/f5y-toolhost"),
+                       FOUNDRY_SNAPSHOT_TEST_HELPER=str(ROOT / "target/debug/f5y-toolhost"),
                        FOUNDRY_TEST_BUN=str(Path(bun).resolve()))
     subprocess.run(
         ["cargo", "test", "--locked", "--package", "foundry-runtime", "--test", "configured_ts",
@@ -82,6 +83,18 @@ def integration():
     subprocess.run(
         ["cargo", "test", "--locked", "--package", "f5y", "--test", "granted_execution",
          "--", "--ignored"],
+        cwd=ROOT, env=environment, check=True,
+    )
+    for package, target in (("f5y", "prepared_execution"),
+                            ("foundry-service", "workspace_snapshot_lifecycle"),
+                            ("foundry-service", "publication_owner")):
+        subprocess.run(
+            ["cargo", "test", "--locked", "--package", package, "--test", target,
+             "--", "--ignored"], cwd=ROOT, env=environment, check=True,
+        )
+    subprocess.run(
+        ["cargo", "test", "--locked", "--package", "foundry-service", "--lib",
+         "workspace_snapshot", "--", "--ignored"],
         cwd=ROOT, env=environment, check=True,
     )
 

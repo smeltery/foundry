@@ -9,12 +9,16 @@ use foundry_store::{AttemptFence, CaptureSnapshot, Store};
 /// Retained for the linked validator; digest evidence is not native semantic proof.
 pub(crate) struct CaptureEvidence {
     snapshot: CaptureSnapshot,
+    events: std::sync::Arc<[foundry_store::RestoreEventEvidence]>,
     session_id: String,
     attempt_id: String,
     request_id: String,
     cut_binding: ContextDigest,
 }
 impl CaptureEvidence {
+    pub(crate) fn events(&self) -> std::sync::Arc<[foundry_store::RestoreEventEvidence]> {
+        self.events.clone()
+    }
     pub(crate) fn snapshot(&self) -> &CaptureSnapshot {
         &self.snapshot
     }
@@ -42,7 +46,7 @@ pub(crate) fn prepare_cut(
     request_id: String,
     profile: ProfileBinding,
 ) -> Result<(CaptureCut, CaptureEvidence)> {
-    let snapshot = store.capture_snapshot(fence)?;
+    let (snapshot, events) = store.capture_snapshot_with_events(fence)?;
     let cut = CaptureCut::from_trusted_owner(
         CoreCutIdentity {
             session_id: fence.session_id.clone(),
@@ -69,6 +73,7 @@ pub(crate) fn prepare_cut(
     .map_err(|_| ServiceError::Coordination("invalid capture cut mapping"))?;
     let evidence = CaptureEvidence {
         snapshot,
+        events: events.into(),
         session_id: fence.session_id.clone(),
         attempt_id: fence.attempt_id.clone(),
         request_id,

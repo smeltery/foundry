@@ -34,6 +34,8 @@ if mode.startswith("missing_"):
                          "missing_retention": capabilities[2]}[mode])
 if mode.startswith("continue_capture"):
     capabilities.extend(["context_capture_v1", "context_export_v1"])
+if mode == "continue_capture_steer":
+    capabilities.append("message_ack_v2")
 ready = {"type": "ready", "version": 1, "capabilities": capabilities}
 if mode == "observe_inspect":
     capabilities.remove("context_continue_v2")
@@ -137,6 +139,13 @@ if mode.startswith("continue_"):
     elif mode == "continue_bytes":
         text["text"] = "x" * 262145
         emit(text)
+    elif mode == "continue_capture_steer":
+        message = json.loads(sys.stdin.readline())
+        record(message["type"])
+        assert message["type"] == "message"
+        emit({"type": "message_accepted", "attempt_id": attempt,
+              "message_id": message["message_id"], "receipt": message["receipt"]})
+        time.sleep(30)
     elif mode != "continue_quiet":
         emit(text)
         emit({"type": "tool_call", "attempt_id": attempt, "call_id": "call", "name": "read", "input": {"path": "blocked"}})

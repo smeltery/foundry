@@ -6,6 +6,8 @@ is underway; each page distinguishes tested functionality from planned features.
 ## Using Foundry
 
 - [CLI commands and current availability](user/cli.md)
+- [Configure a local adapter](user/local-adapter.md)
+- [Resume a local session](user/resume.md)
 - [Sessions, attempts and cancellation](user/sessions.md)
 - [Network command interface](user/network.md)
 - [Plugin command surface](user/plugins.md)

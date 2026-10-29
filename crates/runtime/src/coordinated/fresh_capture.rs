@@ -12,7 +12,7 @@ pub struct FreshCaptureOptions {
 pub enum CaptureExit {
     Prepared(Box<PreparedCapture>),
     ActionRequired(Box<CaptureActionRequired>),
-    Cancelled { mode: CancelMode, forced: bool },
+    Cancelled(Box<CaptureCancelled>),
 }
 
 /// The linked owner must require a registered native semantic validator, establish
@@ -49,10 +49,8 @@ pub fn run_fresh_capture(
     )? {
         engine::EngineExit::ActionRequired(stop) => Ok(CaptureExit::ActionRequired(stop)),
         engine::EngineExit::Prepared(prepared) => Ok(CaptureExit::Prepared(prepared)),
-        engine::EngineExit::Ordinary(RunResult::Cancelled { mode, forced }) => {
-            Ok(CaptureExit::Cancelled { mode, forced })
-        }
-        engine::EngineExit::Ordinary(RunResult::Completed { .. }) => Err(RuntimeError::Protocol(
+        engine::EngineExit::Cancelled(stop) => Ok(CaptureExit::Cancelled(stop)),
+        engine::EngineExit::Ordinary(_) => Err(RuntimeError::Protocol(
             "ordinary completion is forbidden during capture",
         )),
     }

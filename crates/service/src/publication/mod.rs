@@ -19,6 +19,8 @@ use std::{
     sync::{Arc, mpsc},
     time::Instant,
 };
+mod cancellation;
+mod delivery;
 mod permission_stop;
 mod validation;
 
@@ -28,6 +30,7 @@ pub(crate) struct Publication {
     capture: CaptureOwnerEndpoint,
     requests: mpsc::Receiver<PersistenceRequest>,
     replies: mpsc::SyncSender<PersistenceReply>,
+    messages: mpsc::SyncSender<foundry_runtime::AdapterMessage>,
     persistence: PersistenceState,
     control: WorkerControl,
     baseline: Option<Arc<RestoreBaselineSnapshot>>,
@@ -65,7 +68,9 @@ impl Publication {
         let (owner, capture) = CaptureOwner::channel();
         let (requests_tx, requests) = mpsc::sync_channel(PERSISTENCE_CAPACITY);
         let (replies, replies_rx) = mpsc::sync_channel(PERSISTENCE_CAPACITY);
+        let (messages, messages_rx) = mpsc::sync_channel(1);
         let ports = CapturePorts {
+            messages: messages_rx,
             session: store.get(&fence.session_id)?,
             attempt_id: fence.attempt_id.clone(),
             profile: copy_profile(&configuration.profile),
@@ -83,6 +88,7 @@ impl Publication {
                 capture,
                 requests,
                 replies,
+                messages,
                 persistence: PersistenceState::default(),
                 control,
                 baseline,
@@ -106,6 +112,7 @@ impl Publication {
             }
             Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => {}
         }
+        self.deliver(store, fence)?;
         if let Some(task) = self.validation.as_mut()
             && let Some((correlation, job, compared)) = task.poll()?
         {
@@ -163,11 +170,15 @@ impl Publication {
         self.capture_id = Some(correlation.capture_id.clone());
         self.jobs.push(correlation.job);
         let reply = match request {
-            CaptureRequest::ActivateAdmission { correlation, .. }
-                if self.stage == 0 && self.baseline.is_none() =>
-            {
+            CaptureRequest::ActivateAdmission {
+                correlation,
+                message_ack,
+            } if self.stage == 0 => {
                 self.stage = 1;
-                // This owner does not introduce another message delivery loop.
+                self.control
+                    .signals
+                    .accepting
+                    .store(message_ack, std::sync::atomic::Ordering::Release);
                 CaptureReply::AdmissionActivated { correlation }
             }
             CaptureRequest::FreezeAdmission { correlation }
@@ -205,6 +216,7 @@ impl Publication {
                     correlation,
                     job,
                     Arc::new(evidence.snapshot().clone()),
+                    evidence.events(),
                     self.baseline.clone(),
                     self.acceptance.clone(),
                 )?);

@@ -3,7 +3,7 @@ use crate::coordinated::{capture::*, capture_owner::*, *};
 use foundry_contracts::{AdapterEvent, Lifecycle, Session, context::ContextFormat};
 use std::{sync::mpsc, thread};
 
-fn profile() -> ProfileBinding {
+pub(super) fn profile() -> ProfileBinding {
     let id = |v| ContextId::new(v).unwrap();
     ProfileBinding {
         stored: StoredFormat {
@@ -132,6 +132,22 @@ fn scenario(mode: &str, mutation: &str) -> bool {
                 },
             )
         });
+        let CaptureRequest::ActivateAdmission {
+            correlation,
+            message_ack,
+        } = endpoint
+            .requests
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(!message_ack);
+        endpoint
+            .replies
+            .send(CaptureReply::AdmissionActivated { correlation })
+            .ok()
+            .unwrap();
         let CaptureRequest::FreezeAdmission { correlation } = endpoint
             .requests
             .recv_timeout(Duration::from_secs(2))

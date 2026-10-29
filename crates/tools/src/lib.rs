@@ -1,6 +1,7 @@
 //! Default-deny workspace tools. This library is not a process or OS sandbox.
 mod filesystem;
 pub mod host;
+pub mod workspace_snapshot;
 
 use cap_std::fs::Dir;
 use serde::Deserialize;

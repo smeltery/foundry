@@ -173,6 +173,7 @@ fn one_store_snapshot_maps_all_facts_and_retains_prior_head_and_digest_evidence(
         prepare_cut(&store, &fence, "initial".into(), profile()).unwrap();
     assert!(initial.identity().expected_head.is_none());
     assert!(initial_evidence.snapshot().head.is_none());
+    assert!(initial_evidence.events().is_empty());
     let prior = store
         .commit_opaque_checkpoint(
             &fence,
@@ -200,6 +201,8 @@ fn one_store_snapshot_maps_all_facts_and_retains_prior_head_and_digest_evidence(
     for (id, text) in [("z-message", "last\0"), ("a-message", "first🦀")] {
         store.enqueue_message(&session.id, id, text).unwrap();
         store.claim_next_message(&fence).unwrap().unwrap();
+        store.append_event(&fence, &format!("message-accepted:{id}"), 0, "message_accepted",
+            serde_json::json!({"type":"message_accepted","attempt_id":fence.attempt_id,"message_id":id,"receipt":"fixture-private-receipt"})).unwrap();
         store.acknowledge_message(&fence, id).unwrap();
     }
     store
@@ -226,6 +229,15 @@ fn one_store_snapshot_maps_all_facts_and_retains_prior_head_and_digest_evidence(
     let snapshot = store.capture_snapshot(&fence).unwrap();
     let (cut, evidence) = prepare_cut(&store, &fence, "mapped".into(), profile()).unwrap();
     assert_eq!(evidence.snapshot(), &snapshot);
+    let events = evidence.events();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].subject, "z-message");
+    assert_eq!(events[1].subject, "a-message");
+    assert!(
+        events
+            .iter()
+            .all(|event| event.sequence <= snapshot.cut.event_seq)
+    );
     assert!(evidence.cut_binding() == cut.binding_digest());
     assert_eq!(cut.identity().session_id, session.id);
     assert_eq!(cut.identity().attempt_id, fence.attempt_id);

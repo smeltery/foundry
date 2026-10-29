@@ -13,6 +13,11 @@ pub const CAPTURE_OWNER_CAPACITY: usize = 2;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CaptureJobId(pub(super) uuid::Uuid);
 impl CaptureJobId {
+    /// Read the exact generated identity without constructing new authority.
+    pub fn as_uuid(&self) -> &uuid::Uuid {
+        &self.0
+    }
+
     /// Each owner exchange must use a fresh ID; never reuse the activation job.
     pub(crate) fn fresh() -> Self {
         Self(uuid::Uuid::new_v4())
@@ -89,8 +94,27 @@ pub struct CaptureOwnerEndpoint {
     pub replies: SyncSender<CaptureReply>,
 }
 
+/// Retains only exact capture-channel identity, not a sender or execution authority.
+pub struct CaptureCancellationMatcher {
+    identity: Arc<CaptureOwnerIdentity>,
+}
+impl CaptureCancellationMatcher {
+    pub fn matches(&self, stop: &super::CaptureCancelled) -> bool {
+        Arc::ptr_eq(&self.identity, &stop.owner_identity)
+    }
+}
+
 impl CaptureOwnerEndpoint {
+    pub fn cancellation_matcher(&self) -> CaptureCancellationMatcher {
+        CaptureCancellationMatcher {
+            identity: Arc::clone(&self.identity),
+        }
+    }
+
     /// Match cleanup authority to the exact channel that owned this capture.
+    pub fn matches_cancelled(&self, stop: &super::CaptureCancelled) -> bool {
+        Arc::ptr_eq(&self.identity, &stop.owner_identity)
+    }
     pub fn matches_action_required(&self, stop: &super::CaptureActionRequired) -> bool {
         Arc::ptr_eq(&self.identity, &stop.owner_identity)
     }

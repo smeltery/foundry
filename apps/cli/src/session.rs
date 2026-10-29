@@ -22,7 +22,7 @@ pub enum SessionCommand {
         provider: Option<Provider>,
         #[arg(long)]
         model: Option<String>,
-        /// Requested effort; unsupported by the local adapter protocol.
+        /// Requested effort; local execution requires explicit adapter configuration.
         #[arg(long, value_enum)]
         effort: Option<Effort>,
     },

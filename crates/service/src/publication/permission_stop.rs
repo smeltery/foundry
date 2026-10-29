@@ -9,11 +9,10 @@ impl Publication {
         fence: &AttemptFence,
         stop: &CaptureActionRequired,
     ) -> Result<()> {
-        let expected_stage = if self.baseline.is_some() { 0 } else { 1 };
         if !self.capture.matches_action_required(stop)
             || stop.session_id() != fence.session_id
             || stop.attempt_id() != fence.attempt_id
-            || self.stage != expected_stage
+            || self.stage != 1
             || !self.persistence.idle()
             || self.evidence.is_some()
             || self.validation.is_some()

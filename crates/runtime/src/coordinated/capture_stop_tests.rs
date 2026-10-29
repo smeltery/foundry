@@ -75,10 +75,7 @@ fn cancellation_and_unsupported_do_not_mint_cleanup_stop() {
         );
         let result = h.finish_owned();
         if cancel {
-            assert!(matches!(
-                result,
-                Ok(EngineExit::Ordinary(crate::RunResult::Cancelled { .. }))
-            ));
+            assert!(matches!(result, Ok(EngineExit::Cancelled(_))));
         } else {
             assert!(matches!(
                 result,

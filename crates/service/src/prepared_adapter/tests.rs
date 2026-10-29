@@ -180,3 +180,53 @@ fn prepared_revocation_handle_survives_moving_the_selection() {
     revoke.invalidate();
     assert!(prepared.tools.permissions.check_policy(&identity).is_err());
 }
+
+#[test]
+fn native_parts_retain_configuration_and_the_original_revocation() {
+    let root = tempfile::tempdir().unwrap();
+    let selected = selection(root.path());
+    let digest = *selected.digest().unwrap().as_bytes();
+    let prepared = PreparedLocalAdapter::new(
+        AdapterSpec::new("/usr/bin/true"),
+        selected,
+        private("key"),
+        tools(),
+    )
+    .unwrap();
+    let revoke = prepared.revocation();
+    let parts = prepared.into_capture_parts().unwrap();
+    assert_eq!(parts.permissions.configuration_digest(), digest);
+    parts
+        .permissions
+        .check_policy(&parts.policy.identity())
+        .unwrap();
+    revoke.invalidate();
+    assert!(
+        parts
+            .permissions
+            .check_policy(&parts.policy.identity())
+            .is_err()
+    );
+}
+
+#[test]
+fn native_transfer_rejects_revoked_or_shared_permissions() {
+    let root = tempfile::tempdir().unwrap();
+    for shared in [false, true] {
+        let prepared = PreparedLocalAdapter::new(
+            AdapterSpec::new("/usr/bin/true"),
+            selection(root.path()),
+            private("key"),
+            tools(),
+        )
+        .unwrap();
+        let retained = if shared {
+            Some(Arc::clone(&prepared.tools.permissions))
+        } else {
+            prepared.revocation().invalidate();
+            None
+        };
+        assert!(prepared.into_capture_parts().is_err());
+        drop(retained);
+    }
+}

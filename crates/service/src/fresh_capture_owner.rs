@@ -7,7 +7,7 @@ use crate::{
     restoration_owner::{RestoreOwnerOptions, RestoreOwnerReport},
 };
 use foundry_contracts::CancelMode;
-use foundry_runtime::coordinated::{CaptureActionRequired, PreparedCapture};
+use foundry_runtime::coordinated::{CaptureActionRequired, CaptureCancelled, PreparedCapture};
 use foundry_store::FinalizedCheckpoint;
 use std::{
     path::PathBuf,
@@ -19,17 +19,20 @@ use std::{
     thread::{self, JoinHandle},
     time::Instant,
 };
+pub(crate) mod snapshot;
 mod worker;
 
 pub enum FreshCaptureReply {
     Ready(Box<CapturePorts>),
     Published(Box<FinalizedCheckpoint>),
     ActionRequired(Box<foundry_contracts::Session>),
+    Cancelled(Box<foundry_contracts::Session>),
 }
 
 enum Job {
-    FinishCapture(Box<PreparedCapture>),
-    FinishActionRequired(CaptureActionRequired),
+    Capture(Box<PreparedCapture>),
+    ActionRequired(CaptureActionRequired),
+    Cancelled(CaptureCancelled),
 }
 
 pub struct FreshCaptureOwner {
@@ -54,7 +57,7 @@ impl FreshCaptureOwner {
         configuration: PublicationConfiguration,
         options: RestoreOwnerOptions,
     ) -> Result<Self> {
-        Self::start_inner(path, session_id, configuration, options, None)
+        Self::start_with_settings(path, session_id, configuration, options, None, None)
     }
 
     /// The runtime must use the matching policy in required authorization mode.
@@ -66,25 +69,31 @@ impl FreshCaptureOwner {
         permissions: crate::permission::ToolPermissions,
     ) -> Result<Self> {
         permissions.check_configuration(&configuration.profile.configuration_digest)?;
-        Self::start_inner(
+        Self::start_with_settings(
             path,
             session_id,
             configuration,
             options,
-            Some(Arc::new(permissions)),
+            Some(permissions),
+            None,
         )
     }
 
-    fn start_inner(
+    /// Snapshot settings are installed before the actor starts; existing constructors omit them.
+    pub fn start_with_settings(
         path: PathBuf,
         session_id: String,
         configuration: PublicationConfiguration,
         options: RestoreOwnerOptions,
-        permissions: Option<Arc<crate::permission::ToolPermissions>>,
+        permissions: Option<crate::permission::ToolPermissions>,
+        snapshot: Option<crate::cancellation_snapshot::SnapshotSettings>,
     ) -> Result<Self> {
+        snapshot::validate(snapshot.as_ref())?;
+        let permissions = permissions.map(Arc::new);
         // Fresh capture is deliberately a first-attempt entry, never restore fallback.
         if path.as_os_str().is_empty()
             || path == std::path::Path::new(":memory:")
+            || options.cleanup_timeout.is_zero()
             || options.lease.poll_interval.is_zero()
             || options.lease.poll_interval >= options.lease.lease_duration / 3
         {
@@ -139,6 +148,7 @@ impl FreshCaptureOwner {
             watchdog: Some(watchdog),
         };
         let actor = worker::Actor {
+            snapshot,
             permissions,
             options,
             budget,
@@ -174,10 +184,13 @@ impl FreshCaptureOwner {
         }
     }
     pub fn finish_capture(&mut self, prepared: PreparedCapture) -> Result<()> {
-        self.submit(Job::FinishCapture(Box::new(prepared)))
+        self.submit(Job::Capture(Box::new(prepared)))
+    }
+    pub fn finish_cancelled(&mut self, stop: CaptureCancelled) -> Result<()> {
+        self.submit(Job::Cancelled(stop))
     }
     pub fn finish_action_required(&mut self, stop: CaptureActionRequired) -> Result<()> {
-        self.submit(Job::FinishActionRequired(stop))
+        self.submit(Job::ActionRequired(stop))
     }
     fn submit(&mut self, job: Job) -> Result<()> {
         if self.pending
@@ -214,12 +227,14 @@ impl FreshCaptureOwner {
         let mut report = match self.actor.take().map(JoinHandle::join) {
             Some(Ok(report)) => report,
             Some(Err(_)) => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired.load(Ordering::Acquire),
                 watchdog_panicked: false,
                 operation: Err(ServiceError::Coordination("fresh owner panicked")),
                 release: Err(ServiceError::Coordination("fresh cleanup unverified")),
             },
             None => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired.load(Ordering::Acquire),
                 watchdog_panicked: false,
                 operation: Ok(()),

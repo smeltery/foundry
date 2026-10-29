@@ -1,5 +1,6 @@
 //! Application operations joining durable storage and isolated adapter supervision.
 mod admission;
+pub mod cancellation_snapshot;
 mod context_commit;
 mod context_cut;
 mod control;
@@ -13,11 +14,13 @@ pub mod native_validation;
 pub mod permission;
 mod permission_gate;
 pub mod prepared_adapter;
+pub mod profile_host;
 mod publication;
 pub mod restoration_owner;
 mod run_lease;
 mod tool_digest;
 mod tool_worker;
+pub mod workspace_snapshot;
 
 use foundry_contracts::{CancelMode, CreateSession, Event, Message, Session};
 use foundry_runtime::RuntimeError;
@@ -76,6 +79,7 @@ pub struct Service {
     store: Store,
     path: PathBuf,
     options: ServiceOptions,
+    snapshots: Option<cancellation_snapshot::SnapshotSettings>,
 }
 impl Service {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -100,7 +104,15 @@ impl Service {
             store,
             path,
             options,
+            snapshots: None,
         })
+    }
+    pub fn with_workspace_snapshots(
+        mut self,
+        settings: cancellation_snapshot::SnapshotSettings,
+    ) -> Self {
+        self.snapshots = Some(settings);
+        self
     }
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
         Ok(self.store.create(request)?)

@@ -1,5 +1,9 @@
 //! Store-owned loading reservations. No native confirmation or execution admission.
 mod binding;
+mod settlement;
+pub use settlement::RestoredCancellation;
+mod cancellation;
+pub use cancellation::RestorationCancellation;
 mod continuation;
 pub(crate) mod validation;
 pub use continuation::ContinueSelection;
@@ -60,6 +64,7 @@ pub struct OwnerReply {
 
 #[derive(Debug)]
 pub struct RestoreOwnerReport {
+    pub cancellation: Option<RestoredCancellation>,
     pub expired: bool,
     pub watchdog_panicked: bool,
     pub operation: Result<()>,
@@ -124,6 +129,25 @@ impl RestorationOwner {
         input: BeginRestoreInput,
         options: RestoreOwnerOptions,
     ) -> Result<Self> {
+        Self::start_inner(path, session_id, input, options, None)
+    }
+    pub fn start_with_snapshot(
+        path: PathBuf,
+        session_id: String,
+        input: BeginRestoreInput,
+        options: RestoreOwnerOptions,
+        snapshot: crate::cancellation_snapshot::SnapshotSettings,
+    ) -> Result<Self> {
+        Self::start_inner(path, session_id, input, options, Some(snapshot))
+    }
+    fn start_inner(
+        path: PathBuf,
+        session_id: String,
+        input: BeginRestoreInput,
+        options: RestoreOwnerOptions,
+        snapshot: Option<crate::cancellation_snapshot::SnapshotSettings>,
+    ) -> Result<Self> {
+        crate::fresh_capture_owner::snapshot::validate(snapshot.as_ref())?;
         if path.as_os_str().is_empty() || path == std::path::Path::new(":memory:") {
             return Err(ServiceError::Invalid(
                 "persistent restoration database required",
@@ -201,7 +225,8 @@ impl RestorationOwner {
                 expired,
                 renew,
             },
-        );
+        )
+        .with_snapshot(snapshot);
         owner.actor = Some(
             thread::Builder::new()
                 .name("foundry-restore-owner".into())
@@ -308,11 +333,7 @@ impl RestorationOwner {
     }
 
     pub fn cancel(&self, mode: CancelMode) {
-        self.requested.fetch_max(
-            if mode == CancelMode::Hard { 2 } else { 1 },
-            Ordering::AcqRel,
-        );
-        self.signals.relay(&self.cancel_tx);
+        self.cancellation_handle().cancel(mode);
     }
 
     pub fn expired(&self) -> bool {
@@ -335,12 +356,14 @@ impl RestorationOwner {
         let mut report = match self.actor.take().map(JoinHandle::join) {
             Some(Ok(report)) => report,
             Some(Err(_)) => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired(),
                 watchdog_panicked: false,
                 operation: Err(ServiceError::Coordination("restore owner panicked")),
                 release: Err(ServiceError::Coordination("restore release unverified")),
             },
             None => RestoreOwnerReport {
+                cancellation: None,
                 expired: self.expired(),
                 watchdog_panicked: false,
                 operation: Ok(()),
@@ -350,6 +373,9 @@ impl RestorationOwner {
         let _ = self.renew.send(None);
         report.watchdog_panicked = self.watchdog.take().is_some_and(|h| h.join().is_err());
         report.expired |= self.expired();
+        if report.expired || report.watchdog_panicked {
+            report.cancellation = None;
+        }
         report
     }
 }
