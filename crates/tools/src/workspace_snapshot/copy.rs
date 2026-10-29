@@ -14,6 +14,24 @@ use std::{
 
 type Result<T> = std::result::Result<T, Failure>;
 
+/// Sync the held directory, including Linux capabilities opened with O_PATH.
+pub fn sync_directory(directory: &Dir) -> std::io::Result<()> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    // Reopen the same directory, never an ambient path or a symlink. O_PATH
+    // supports traversal and metadata on Linux, but cannot be passed to fsync.
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            c".".as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    unsafe { std::fs::File::from_raw_fd(fd) }.sync_all()
+}
+
 /// Open every component without following symlinks; callers select absolute paths.
 pub fn open_absolute(path: &Path) -> Result<Dir> {
     if !path.is_absolute() {
@@ -175,7 +193,7 @@ impl Copy {
         if !unchanged(&before, &source.dir_metadata()?) {
             return Err(Failure::Changed);
         }
-        destination.try_clone()?.into_std_file().sync_all()?;
+        sync_directory(destination)?;
         Ok(())
     }
 }
@@ -201,10 +219,42 @@ pub(super) fn copy(source: &Dir, stage: &Dir, limits: Limits) -> Result<Reply> {
     copy.walk(source, &tree, Path::new(""), 0)?;
     copy.poll()?;
     copy.manifest.sync_all()?;
-    stage.try_clone()?.into_std_file().sync_all()?;
+    sync_directory(stage)?;
     Ok(Reply::Copied {
         bytes: copy.bytes,
         entries: copy.entries,
         manifest_digest: copy.hash.finalize().into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn directory_sync_uses_held_capability_after_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("original");
+        std::fs::create_dir(&original).unwrap();
+        let directory = Dir::open_ambient_dir(&original, cap_std::ambient_authority()).unwrap();
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let flags = unsafe { libc::fcntl(directory.as_raw_fd(), libc::F_GETFL) };
+            assert!(flags >= 0 && flags & libc::O_PATH != 0);
+            assert_eq!(
+                directory
+                    .try_clone()
+                    .unwrap()
+                    .into_std_file()
+                    .sync_all()
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(libc::EBADF)
+            );
+        }
+        std::fs::rename(&original, root.path().join("retained")).unwrap();
+        std::fs::write(&original, b"replacement is not the held directory").unwrap();
+        sync_directory(&directory).unwrap();
+    }
 }

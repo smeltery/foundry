@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 mod copy;
 #[cfg(unix)]
-pub use copy::open_absolute;
+pub use copy::{open_absolute, sync_directory};
 
 pub const MAX_REQUEST_BYTES: usize = 1024;
 pub const MAX_REPLY_BYTES: usize = 1024;

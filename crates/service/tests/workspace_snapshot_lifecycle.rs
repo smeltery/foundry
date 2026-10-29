@@ -146,7 +146,13 @@ fn graceful_cleanup_records_real_artifact_before_suspension() {
     let events = fixture.events(&id);
     assert_eq!(events.len(), 1);
     let event = &events[0];
-    assert_eq!(event["status"], "captured");
+    let code: String = event["code"]
+        .as_str()
+        .unwrap_or("absent")
+        .chars()
+        .take(32)
+        .collect();
+    assert_eq!(event["status"], "captured", "snapshot failure code: {code}");
     assert_eq!(event["atomic"], false);
     let artifact = fixture
         .settings

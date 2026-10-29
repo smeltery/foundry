@@ -94,7 +94,7 @@ pub(super) fn publish(parent: &Dir, stage: &str, final_name: &str) -> Result<()>
     if result != 0 {
         return Err(Failure::Io);
     }
-    parent.try_clone()?.into_std_file().sync_all()?;
+    foundry_tools::workspace_snapshot::sync_directory(parent)?;
     Ok(())
 }
 pub(super) fn discard(parent: &Dir, name: &str) -> Result<()> {
