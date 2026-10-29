@@ -36,7 +36,8 @@ impl WaitRegistry {
             && let Some(waits) = state.connections.get_mut(&id)
         {
             waits.retain(|w| w.upgrade().is_some_and(|w| !w.cancelled()));
-            if waits.len() < 8 {
+            // Eight positive waits plus the connection's one immediate read.
+            if waits.len() < 9 {
                 waits.push(Arc::downgrade(wait));
                 return;
             }
@@ -72,6 +73,12 @@ pub(super) struct ConnectionFence {
     id: ConnectionId,
 }
 impl ConnectionFence {
+    pub fn reader_guard(&self) -> Self {
+        Self {
+            registry: self.registry.clone(),
+            id: self.id,
+        }
+    }
     pub fn registry(&self) -> Arc<WaitRegistry> {
         self.registry.clone()
     }
@@ -113,3 +120,7 @@ impl Future for DaemonTask {
         Pin::new(&mut self.task).poll(cx)
     }
 }
+
+#[cfg(test)]
+#[path = "disconnect_tests.rs"]
+mod disconnect_tests;

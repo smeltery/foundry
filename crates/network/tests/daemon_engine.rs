@@ -253,3 +253,8 @@ mod behavior_tests;
 mod bounds_tests;
 #[path = "../src/daemon_engine/inbox_tests.rs"]
 mod inbox_tests;
+
+#[path = "../src/daemon_engine/output_tests.rs"]
+mod output_tests;
+#[path = "../src/daemon_engine/quota_tests.rs"]
+mod quota_tests;

@@ -57,7 +57,7 @@ fn batch_peek_subset_ack_and_default_read_are_scoped() {
     );
 }
 #[test]
-fn actual_serialized_reply_budget_rejects_batch_before_consumption() {
+fn full_serialized_reply_exceeds_old_budget_without_truncation() {
     let root = Root::new();
     let time = Arc::new(AtomicI64::new(0));
     let mut engine = open(&root, &time);
@@ -69,21 +69,26 @@ fn actual_serialized_reply_budget_rejects_batch_before_consumption() {
             send(&auth, &format!("m{n}"), "a", &"a".repeat(150 * 1024)),
         );
     }
-    for peek in [false, true] {
-        assert!(matches!(
-            handle(
-                &mut engine,
-                1,
-                Request::Inbox {
-                    auth: auth.clone(),
-                    peek,
-                    wait_secs: 0
-                }
-            ),
-            ReplyResult::Error(EngineError::Limit)
-        ));
-        assert_eq!(unread(&mut engine, 1, &auth), 3);
-    }
+    let peek = batch(&mut engine, 1, &auth, true);
+    assert_eq!(peek.len(), 3);
+    assert_eq!(unread(&mut engine, 1, &auth), 3);
+    let outcome = ok(
+        &mut engine,
+        1,
+        Request::Inbox {
+            auth: auth.clone(),
+            peek: false,
+            wait_secs: 0,
+        },
+    );
+    let reply = Reply {
+        id: u64::MAX,
+        result: ReplyResult::Ok(outcome),
+    };
+    let bytes = serde_json::to_vec(&reply).unwrap();
+    assert!(bytes.len() > foundry_network::ipc_codec::MAX_IPC_BYTES);
+    assert!(bytes.len() < MAX_INBOX_REPLY_BYTES);
+    assert_eq!(unread(&mut engine, 1, &auth), 0);
     let raw = rusqlite::Connection::open(root.0.join("mail.sqlite3")).unwrap();
     assert_eq!(
         raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
@@ -91,14 +96,10 @@ fn actual_serialized_reply_budget_rejects_batch_before_consumption() {
             .unwrap(),
         0
     );
-    assert_eq!(
-        raw.query_row("SELECT value FROM sequence", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        0
-    );
 }
+
 #[test]
-fn escaping_and_rendered_text_count_toward_frame_limit() {
+fn escaped_body_and_full_rendering_exceed_old_frame_but_remain_readable() {
     let root = Root::new();
     let time = Arc::new(AtomicI64::new(0));
     let mut engine = open(&root, &time);
@@ -108,17 +109,17 @@ fn escaping_and_rendered_text_count_toward_frame_limit() {
         1,
         send(&auth, "escaped", "a", &"\0".repeat(256 * 1024)),
     );
-    assert!(matches!(
-        handle(
-            &mut engine,
-            1,
-            Request::Inbox {
-                auth: auth.clone(),
-                peek: false,
-                wait_secs: 0
-            }
-        ),
-        ReplyResult::Error(EngineError::Limit)
-    ));
-    assert_eq!(unread(&mut engine, 1, &auth), 1);
+    let outcome = ok(
+        &mut engine,
+        1,
+        Request::Inbox {
+            auth: auth.clone(),
+            peek: false,
+            wait_secs: 0,
+        },
+    );
+    let encoded = serde_json::to_vec(&outcome).unwrap();
+    assert!(encoded.len() > foundry_network::ipc_codec::MAX_IPC_BYTES);
+    assert!(encoded.len() < MAX_INBOX_REPLY_BYTES);
+    assert_eq!(unread(&mut engine, 1, &auth), 0);
 }

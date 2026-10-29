@@ -105,7 +105,7 @@ fn cancellation_at_commit_gate_rolls_back_whole_batch() {
     assert_eq!(store.unread("a").unwrap(), 0);
 }
 #[test]
-fn preparation_failure_and_message_limit_never_truncate_or_allocate_tokens() {
+fn preparation_failure_rolls_back_then_full_batch_exceeds_old_limit() {
     let root = Root::new();
     let mut store = root.open();
     for id in ["one", "two"] {
@@ -133,17 +133,71 @@ fn preparation_failure_and_message_limit_never_truncate_or_allocate_tokens() {
             .insert(&message(&format!("m{n}"), "a"), State::Pending)
             .unwrap();
     }
-    for peek in [false, true] {
-        assert!(matches!(
-            store.poll_batch("a", "s", 0, peek),
-            Err(MailError::Capacity)
-        ));
-        assert_eq!(store.unread("a").unwrap(), 129);
-    }
+    let reads = store.poll_batch("a", "s", 0, true).unwrap();
+    assert_eq!(reads.len(), 129);
+    assert_eq!(store.unread("a").unwrap(), 129);
+    assert_eq!(
+        raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        129
+    );
+    let reads = store.poll_batch("a", "s", 0, false).unwrap();
+    assert_eq!(reads.len(), 129);
+    assert_eq!(store.unread("a").unwrap(), 0);
     assert_eq!(
         raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
             .get::<_, i64>(0))
             .unwrap(),
         0
+    );
+}
+
+#[test]
+fn token_storage_exceeds_old_page_and_global_token_caps_without_stranding_mail() {
+    let root = Root::new();
+    let mut store = root.open();
+    let mut raw = Connection::open(root.0.join("mail.sqlite3")).unwrap();
+    let tx = raw.transaction().unwrap();
+    tx.execute_batch("WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<9999) INSERT INTO mail(id,sender,recipient,body,reply_to,wake,notify,encoding,state) SELECT printf('%0256d',x),'sender','a',x'78',NULL,1,0,0,0 FROM n;
+        WITH RECURSIVE scopes(s) AS (VALUES(0) UNION ALL SELECT s+1 FROM scopes WHERE s<63) INSERT INTO poll_attempt(id,message_id,session,expires) SELECT s*10000+m.rowid,m.id,printf('%0256d',s),9223372036854775807 FROM scopes CROSS JOIN mail m;
+        UPDATE sequence SET value=640000;").unwrap();
+    tx.commit().unwrap();
+    let (pages, page_size): (u64, u64) = (
+        raw.query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap(),
+        raw.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap(),
+    );
+    assert!(pages * page_size > 128 * 1024 * 1024);
+    let reads = store.poll_batch("a", "live", 0, true).unwrap();
+    assert_eq!(reads.len(), MAX_MAIL_ROWS);
+    assert_eq!(store.unread("a").unwrap(), MAX_MAIL_ROWS as u64);
+    assert_eq!(
+        raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
+            .get::<_, usize>(0))
+            .unwrap(),
+        650000
+    );
+    let again = store.poll_batch("a", "live", 0, true).unwrap();
+    assert_eq!(
+        again[0].attempt.as_ref().unwrap().id(),
+        reads[0].attempt.as_ref().unwrap().id()
+    );
+    assert_eq!(
+        raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
+            .get::<_, usize>(0))
+            .unwrap(),
+        650000
+    );
+    store.disconnect("live").unwrap();
+    assert_eq!(
+        raw.query_row("SELECT count(*) FROM poll_attempt", [], |r| r
+            .get::<_, usize>(0))
+            .unwrap(),
+        640000
+    );
+    let size = pages * page_size;
+    eprintln!(
+        "token fixture: 640000 scoped rows; pre-poll database bytes={size}; page size={page_size}"
     );
 }

@@ -8,6 +8,9 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::{path::Path, time::Duration};
 #[path = "mail_store/batch.rs"]
 mod batch;
+#[path = "mail_store/incremental.rs"]
+mod incremental;
+pub(crate) use incremental::InboxBatch;
 #[path = "mail_store/payload.rs"]
 mod payload;
 pub use batch::MAX_INBOX_MESSAGES;
@@ -32,8 +35,10 @@ pub enum MailError {
     Capacity,
     Missing,
     StaleAttempt,
+    WrongRecipient,
     InvalidTransition,
     Schema,
+    Output,
     Storage(rusqlite::Error),
     Protection(PersistenceError),
 }
@@ -47,8 +52,10 @@ impl std::fmt::Display for MailError {
             Self::Conflict => "message ID conflict",
             Self::Capacity => "mail capacity reached",
             Self::Missing => "message missing",
+            Self::WrongRecipient => "attempt belongs to another recipient",
             Self::StaleAttempt => "delivery attempt is stale",
             Self::InvalidTransition => "invalid mail transition",
+            Self::Output => "inbox output failed",
             Self::Schema => "unsupported mail schema",
             Self::Storage(_) => "mail database failure",
             Self::Protection(_) => "mail storage protection failure",
@@ -193,10 +200,16 @@ impl RetryStatus {
         self.attempts >= MAX_DELIVERY_ATTEMPTS
     }
 }
-const MAX_ROWS: i64 = 10_000;
-const MAX_BYTES: i64 = 64 * 1024 * 1024;
+pub const MAX_MAIL_ROWS: usize = 10_000;
+pub const MAX_MAIL_BODY_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_MAIL_BODY: usize = 256 * 1024;
+pub const MAX_MAIL_IDENTIFIER: usize = 256;
+pub const MAX_POLL_SCOPES: usize = 1024;
+const MAX_ROWS: i64 = MAX_MAIL_ROWS as i64;
+const MAX_BYTES: i64 = MAX_MAIL_BODY_BYTES as i64;
 fn identifier(value: &str) -> Result<()> {
-    if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+    if value.is_empty() || value.len() > MAX_MAIL_IDENTIFIER || value.chars().any(char::is_control)
+    {
         return Err(MailError::InvalidInput);
     }
     Ok(())
@@ -246,8 +259,11 @@ impl MailStore {
         )?;
         connection.busy_timeout(Duration::from_secs(5))?;
         protection.check()?;
-        connection.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE; PRAGMA max_page_count=32768;")?;
+        connection.execute_batch(
+            "PRAGMA trusted_schema=OFF; PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;",
+        )?;
         schema::initialize(&mut connection)?;
+        incremental::storage_budget(&connection)?;
         protection.sync()?;
         Ok(Self {
             connection,
@@ -262,7 +278,7 @@ impl MailStore {
         if let Some(reply) = &message.reply_to {
             identifier(reply)?;
         }
-        if message.body.len() > 256 * 1024
+        if message.body.len() > MAX_MAIL_BODY
             || !matches!(initial, State::Pending | State::Held | State::Rejected)
         {
             return Err(MailError::InvalidInput);

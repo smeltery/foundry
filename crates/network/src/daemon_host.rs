@@ -26,6 +26,10 @@ use tokio::{
 mod cancellation;
 #[path = "daemon_host/connection.rs"]
 mod connection;
+#[path = "daemon_host/response.rs"]
+mod response;
+#[path = "daemon_host/spool.rs"]
+mod spool;
 #[path = "daemon_host/waiting.rs"]
 mod waiting;
 pub use cancellation::DaemonTask;
@@ -62,6 +66,8 @@ pub struct Daemon {
 }
 struct OwnedEngine {
     inner: Mutex<Engine>,
+    replies: Arc<Semaphore>,
+    root: Dir,
     // Blocking work cannot be cancelled once started. Its actual Arc lifetime,
     // including initialization, must retain ownership after a host future drops.
     _lease: DaemonLease,
@@ -92,6 +98,8 @@ impl Daemon {
             )?;
             Ok::<_, EngineError>(OwnedEngine {
                 inner: Mutex::new(engine),
+                replies: Arc::new(Semaphore::new(1)),
+                root: directory,
                 _lease: engine_lease,
             })
         })

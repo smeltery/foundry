@@ -13,6 +13,28 @@ pub async fn read_record<T: DeserializeOwned>(
     reader: &mut (impl AsyncBufRead + Unpin),
     timeout: Duration,
 ) -> Result<Option<T>> {
+    read_bounded_record(reader, timeout, MAX_IPC_BYTES).await
+}
+
+/// Decode a complete inbox response. Requests retain their independent 1 MiB
+/// bound; this ceiling derives from the mailbox's admitted rows and body bytes.
+pub async fn read_reply<T: DeserializeOwned>(
+    reader: &mut (impl AsyncBufRead + Unpin),
+    timeout: Duration,
+) -> Result<Option<T>> {
+    read_bounded_record(
+        reader,
+        timeout,
+        crate::daemon_engine::MAX_INBOX_REPLY_BYTES - 1,
+    )
+    .await
+}
+
+async fn read_bounded_record<T: DeserializeOwned>(
+    reader: &mut (impl AsyncBufRead + Unpin),
+    timeout: Duration,
+    maximum: usize,
+) -> Result<Option<T>> {
     if timeout.is_zero() {
         return Err(NetworkError::Invalid("positive IPC timeout required"));
     }
@@ -32,7 +54,7 @@ pub async fn read_record<T: DeserializeOwned>(
             }
             let newline = available.iter().position(|byte| *byte == b'\n');
             let length = newline.unwrap_or(available.len());
-            if length > MAX_IPC_BYTES.saturating_sub(record.len()) {
+            if length > maximum.saturating_sub(record.len()) {
                 return Err(NetworkError::Invalid("IPC record exceeds limit"));
             }
             record.extend_from_slice(&available[..length]);

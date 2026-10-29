@@ -65,8 +65,10 @@ impl From<mail::MailError> for EngineError {
             mail::MailError::Conflict => Self::Conflict,
             mail::MailError::Capacity => Self::Limit,
             mail::MailError::Missing => Self::NotFound,
+            mail::MailError::WrongRecipient => Self::Unauthorized,
             mail::MailError::StaleAttempt => Self::StaleAttempt,
             mail::MailError::InvalidTransition => Self::InvalidTransition,
+            mail::MailError::Output => Self::Output,
             mail::MailError::Schema => Self::Schema,
             mail::MailError::Storage(_) | mail::MailError::Protection(_) => Self::StorageUncertain,
         }

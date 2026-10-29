@@ -21,28 +21,13 @@ impl Engine {
             .connections
             .get_mut(&connection)
             .ok_or(EngineError::Unauthorized)?;
-        let pending = live
-            .attempts
-            .get(&attempt_id)
-            .ok_or(EngineError::StaleAttempt)?;
-        if pending.conversation != auth.conversation {
-            return Err(EngineError::Unauthorized);
-        }
-        let result = if delivered {
-            self.mail.acknowledge(&pending.token, &live.scope, now)
-        } else {
-            self.mail.fail(&pending.token, &live.scope, now)
-        };
-        match result {
-            Ok(()) => {
-                live.attempts.remove(&attempt_id);
-            }
-            Err(mail::MailError::StaleAttempt) => {
-                live.attempts.remove(&attempt_id);
-                return Err(EngineError::StaleAttempt);
-            }
-            Err(error) => return Err(error.into()),
-        }
+        self.mail.finish_issued_peek(
+            attempt_id,
+            &live.scope,
+            &mailbox_address(&auth.conversation),
+            now,
+            delivered,
+        )?;
         Ok(if delivered {
             Outcome::Delivered
         } else {

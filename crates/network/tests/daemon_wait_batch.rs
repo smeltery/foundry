@@ -134,7 +134,7 @@ async fn real_process_malformed_later_payload_preserves_earlier_unread() {
     exited(&mut child).await;
 }
 #[tokio::test]
-async fn real_process_oversized_batch_is_explicit_without_partial_read() {
+async fn real_process_large_batch_peeks_then_consumes_the_complete_snapshot() {
     let state = State::new();
     let mut child = state.start().await;
     let mut client = state.connect().await;
@@ -142,17 +142,34 @@ async fn real_process_oversized_batch_is_explicit_without_partial_read() {
     for n in 0..3 {
         client.request(json!({"id":2,"op":"send","auth":auth,"message_id":format!("m{n}"),"to":{"name":"reader"},"body":"a".repeat(150*1024)})).await;
     }
-    for peek in [false, true] {
+    for peek in [true, false] {
         let reply = client
             .request(json!({"id":3,"op":"inbox","auth":auth,"peek":peek}))
             .await;
-        assert_eq!(reply["result"]["value"], "limit");
+        assert_eq!(reply["result"]["status"], "ok");
+        assert!(serde_json::to_vec(&reply).unwrap().len() > 1024 * 1024);
+        let messages = reply["result"]["value"]["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        for (index, message) in messages.iter().enumerate() {
+            assert_eq!(message["message_id"], format!("m{index}"));
+            assert_eq!(message["state"], if peek { "pending" } else { "consumed" });
+            let body = data_encoding::BASE64
+                .decode(message["body_base64"].as_str().unwrap().as_bytes())
+                .unwrap();
+            assert_eq!(body, vec![b'a'; 150 * 1024]);
+        }
+        assert_eq!(
+            client
+                .request(json!({"id":4,"op":"unread","auth":auth}))
+                .await["result"]["value"]["count"],
+            if peek { 3 } else { 0 }
+        );
     }
     assert_eq!(
         client
             .request(json!({"id":4,"op":"unread","auth":auth}))
             .await["result"]["value"]["count"],
-        3
+        0
     );
     client
         .request(json!({"id":5,"op":"shutdown","auth":auth}))

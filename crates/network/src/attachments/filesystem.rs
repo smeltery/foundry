@@ -56,10 +56,14 @@ pub(super) fn directory(root: &Dir, name: &str, create: bool) -> Result<Dir> {
     Ok(dir)
 }
 pub(super) fn sync(dir: &Dir) -> Result<()> {
-    dir.try_clone()?
-        .into_std_file()
-        .sync_all()
-        .map_err(Into::into)
+    // A capability directory may use O_PATH on Linux, which cannot be fsynced.
+    // Open the same directory relative to its retained descriptor, not its path.
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .follow(FollowSymlinks::No)
+        .custom_flags(libc::O_DIRECTORY);
+    dir.open_with(".", &options)?.sync_all().map_err(Into::into)
 }
 pub(super) fn exists(dir: &Dir, name: &str) -> Result<bool> {
     match dir.symlink_metadata(name) {
@@ -100,3 +104,7 @@ pub(super) fn mark_download(file: &File) -> Result<()> {
     let _ = file;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "filesystem_tests.rs"]
+mod tests;

@@ -58,9 +58,13 @@ Requests and replies are newline-delimited JSON with a numeric `id`. For example
 {"id":1,"op":"who","filter":{"online_only":true}}
 ```
 
-Records are limited to 1 MiB. Reads have a whole-record deadline and writes have a
-bounded wait. Unknown operations return an error with the request ID when it is
-valid. Malformed records close the connection after a bounded error response.
+Requests are limited to 1 MiB. Inbox replies have a separate ceiling derived from
+the mailbox's 10,000-row and 64 MiB stored-body quotas, including JSON escaping
+and the rendered text. Clients must not apply the request limit to these replies;
+Rust clients can use `ipc_codec::read_reply`. Reads have a whole-record deadline
+and writes have a bounded wait. Unknown operations return an error with the
+request ID when it is valid. Malformed records close the connection after a
+bounded error response.
 
 Registration accepts a conversation name, an existing repository directory and
 an optional path-sharing choice. Person and machine come from configuration.
@@ -85,10 +89,16 @@ intents are retained, not evidence of client injection.
 
 An inbox reply contains an ordered `messages` array and a plain sender/body `text`
 rendering; both are empty when no messages are pending. A poll returns the entire
-eligible batch or fails without consuming any message. Batches are limited to 128
-messages and the 1 MiB serialized reply limit, including rendering and JSON
-escaping. Malformed payloads or a batch exceeding either limit leave mail unread;
-the daemon does not silently truncate the batch.
+eligible snapshot in one reply, without pagination or silent truncation. Every
+selected payload and the complete serialized response must validate before any
+message is consumed. Validation or sealing failure leaves mail unread. A commit
+or sync failure requires recovery and cannot promise rollback.
+
+The host prepares the reply in a private file, removes its temporary pathname
+before writing payload bytes, and seals it before committing read state. One
+owned reply slot bounds preparation and queued output across connections. Empty
+long polls release that slot while waiting. Socket output streams the committed
+file without holding the mailbox lock or building another complete JSON buffer.
 
 An ordinary inbox poll consumes read state before replying. Read is distinct from
 reported adapter delivery; a lost reply can therefore leave mail already read.

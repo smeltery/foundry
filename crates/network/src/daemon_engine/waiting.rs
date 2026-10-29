@@ -7,10 +7,11 @@ pub(super) struct WaitState {
 /// Host-owned polling guard, never deserialized or logged. Dropping it restores
 /// push eligibility; waiting holds neither the engine mutex nor a DB transaction.
 pub struct InboxWait {
-    connection: ConnectionId,
-    auth: Auth,
+    pub(super) connection: ConnectionId,
+    pub(super) auth: Auth,
     generation: u64,
     closed: AtomicBool,
+    polling: bool,
     state: Arc<WaitState>,
     changed: Arc<Notify>,
 }
@@ -29,7 +30,9 @@ impl InboxWait {
 }
 impl Drop for InboxWait {
     fn drop(&mut self) {
-        self.state.active.fetch_sub(1, Ordering::Release);
+        if self.polling {
+            self.state.active.fetch_sub(1, Ordering::Release);
+        }
         self.changed.notify_waiters();
     }
 }
@@ -49,19 +52,38 @@ impl Engine {
         connection: ConnectionId,
         auth: &Auth,
     ) -> Result<InboxWait, EngineError> {
+        self.begin_inbox_guard(connection, auth, true)
+    }
+    /// A zero-wait read shares cancellation fencing without suppressing push.
+    pub fn begin_inbox_read(
+        &mut self,
+        connection: ConnectionId,
+        auth: &Auth,
+    ) -> Result<InboxWait, EngineError> {
+        self.begin_inbox_guard(connection, auth, false)
+    }
+    fn begin_inbox_guard(
+        &mut self,
+        connection: ConnectionId,
+        auth: &Auth,
+        polling: bool,
+    ) -> Result<InboxWait, EngineError> {
         self.authorize(connection, auth)?;
         if self.uncertain {
             return Err(EngineError::StorageUncertain);
         }
         let state = self.wait_state(auth);
-        state
-            .active
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < MAX_ATTEMPTS).then_some(n + 1)
-            })
-            .map_err(|_| EngineError::Limit)?;
+        if polling {
+            state
+                .active
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    (n < MAX_ACTIVE_WAITS).then_some(n + 1)
+                })
+                .map_err(|_| EngineError::Limit)?;
+        }
         Ok(InboxWait {
             closed: AtomicBool::new(false),
+            polling,
             connection,
             auth: auth.clone(),
             generation: state.generation.load(Ordering::Acquire),

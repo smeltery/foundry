@@ -1,4 +1,4 @@
-use foundry_network::ipc_codec::{read_record, write_record};
+use foundry_network::ipc_codec::{read_reply, write_record};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -90,7 +90,7 @@ impl Client {
             .unwrap();
     }
     pub(crate) async fn receive(&mut self) -> Value {
-        read_record(&mut self.0, DEADLINE).await.unwrap().unwrap()
+        read_reply(&mut self.0, DEADLINE).await.unwrap().unwrap()
     }
 }
 pub(crate) async fn exited(child: &mut Child) {

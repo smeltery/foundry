@@ -29,13 +29,8 @@ pub struct TrustedIdentity {
     pub person: String,
     pub machine: String,
 }
-struct PendingAttempt {
-    conversation: Conversation,
-    token: mail::Attempt,
-}
 struct Connection {
     scope: String,
-    attempts: BTreeMap<i64, PendingAttempt>,
 }
 pub struct Engine {
     registry: registry::DurableRegistry,
@@ -47,8 +42,8 @@ pub struct Engine {
     changed: Arc<Notify>,
     waits: BTreeMap<String, Arc<WaitState>>,
 }
-const MAX_CONNECTIONS: usize = 1024;
-const MAX_ATTEMPTS: usize = 128;
+const MAX_CONNECTIONS: usize = mail::MAX_POLL_SCOPES;
+const MAX_ACTIVE_WAITS: usize = 128;
 pub const MAX_WAIT_SECS: u64 = 600;
 impl Engine {
     /// The caller holds the state-root daemon lease for the engine's lifetime.
@@ -223,7 +218,6 @@ impl Engine {
                 id,
                 Connection {
                     scope: format!("ipc:{}", data_encoding::HEXLOWER.encode(&nonce)),
-                    attempts: BTreeMap::new(),
                 },
             );
         }
@@ -278,3 +272,7 @@ pub fn mailbox_address(conversation: &Conversation) -> String {
     }
     format!("m1:{}", hasher.finalize().to_hex())
 }
+
+#[path = "daemon_engine/output.rs"]
+mod output;
+pub use output::{InboxOutput, InboxSummary, MAX_INBOX_REPLY_BYTES};

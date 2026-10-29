@@ -1,6 +1,6 @@
 use super::*;
 #[test]
-fn connection_attempt_limit_retains_mail_and_other_connections_can_poll() {
+fn connection_peeks_across_129_conversations_and_other_connections_remain_scoped() {
     let root = Root::new();
     let time = Arc::new(AtomicI64::new(0));
     let mut engine = open(&root, &time);
@@ -25,18 +25,10 @@ fn connection_attempt_limit_retains_mail_and_other_connections_can_poll() {
         );
     }
     let last = &sessions[128];
-    assert!(matches!(
-        handle(
-            &mut engine,
-            2,
-            Request::Inbox {
-                auth: last.clone(),
-                peek: true,
-                wait_secs: 0
-            }
-        ),
-        ReplyResult::Error(EngineError::Limit)
-    ));
+    let earlier = inbox(&mut engine, 2, last, true)
+        .unwrap()
+        .attempt_id
+        .unwrap();
     assert_eq!(unread(&mut engine, 2, last), 1);
     ok(&mut engine, 3, Request::Attach { auth: last.clone() });
     let mail = inbox(&mut engine, 3, last, true).unwrap();
@@ -49,6 +41,17 @@ fn connection_attempt_limit_retains_mail_and_other_connections_can_poll() {
             attempt_id: mail.attempt_id.unwrap(),
         },
     );
+    assert!(matches!(
+        handle(
+            &mut engine,
+            2,
+            Request::Delivered {
+                auth: last.clone(),
+                attempt_id: earlier
+            }
+        ),
+        ReplyResult::Error(EngineError::StaleAttempt)
+    ));
     engine.disconnect(ConnectionId(2)).unwrap();
     ok(
         &mut engine,

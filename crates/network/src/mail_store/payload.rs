@@ -24,7 +24,7 @@ impl PayloadEncoding {
 }
 impl Message {
     fn wire_payload(&self) -> Result<crate::wire::Message> {
-        if self.body.len() > 256 * 1024 {
+        if self.body.len() > MAX_MAIL_BODY {
             return Err(MailError::InvalidPayload);
         }
         let wire: crate::wire::Message =

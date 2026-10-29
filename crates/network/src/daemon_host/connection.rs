@@ -1,5 +1,6 @@
 use super::*;
 use crate::daemon_engine::{Reply, Request};
+use response::Response;
 use tokio::{io::AsyncBufReadExt, sync::mpsc, task::JoinHandle};
 struct ReaderTask(JoinHandle<()>);
 impl Drop for ReaderTask {
@@ -11,6 +12,7 @@ impl Drop for ReaderTask {
 /// consumed record. Its idle wait is governed by the owner; record bytes get 60s.
 fn reader(
     stream: tokio::net::unix::OwnedReadHalf,
+    fence: cancellation::ConnectionFence,
 ) -> (
     ReaderTask,
     mpsc::Receiver<crate::Result<Option<serde_json::Value>>>,
@@ -25,6 +27,11 @@ fn reader(
                 Err(error) => Err(error.into()),
             };
             let end = !matches!(record, Ok(Some(_)));
+            if end {
+                // Publish EOF/errors before queueing: the owner may be blocked
+                // preparing an immediate read or registering its guard.
+                fence.cancel();
+            }
             if send.send(record).await.is_err() || end {
                 break;
             }
@@ -56,10 +63,10 @@ pub(super) async fn run(
 ) -> Result<(), HostError> {
     let mut stopping = shutdown.subscribe();
     let (input, mut writer) = stream.into_split();
-    let (_reader, mut records) = reader(input);
+    let (_reader, mut records) = reader(input, fence.reader_guard());
     struct Work {
         fence: cancellation::ConnectionFence,
-        waits: JoinSet<Result<Reply, HostError>>,
+        waits: JoinSet<Result<Response, HostError>>,
     }
     let mut work = Work {
         fence,
@@ -96,34 +103,36 @@ pub(super) async fn run(
                         break;
                     }
                 };
-                if let Request::Inbox { auth, peek, wait_secs } = &request.request
-                    && *wait_secs > 0 {
-                    if work.waits.len() >= 8 {
-                        Reply { id: request.id, result: ReplyResult::Error(EngineError::Limit) }
+                if let Request::Inbox { auth, peek, wait_secs } = &request.request {
+                    if *wait_secs > 0 && work.waits.len() >= 8 {
+                        Response::Small(Reply { id: request.id, result: ReplyResult::Error(EngineError::Limit) })
                     } else {
-                        match waiting::prepare(engine.clone(), connection, auth.clone(), &work.fence).await {
+                        match waiting::prepare(engine.clone(), connection, auth.clone(), &work.fence, *wait_secs > 0).await {
+                            Ok(wait) if *wait_secs == 0 => {
+                                match waiting::poll(engine.clone(), wait, request.id, *peek, 0).await {
+                                    Ok(reply) => reply,
+                                    Err(error) => { result = Err(error); break; }
+                                }
+                            }
                             Ok(wait) => {
                                 let engine = engine.clone(); let peek = *peek; let seconds = *wait_secs; let id = request.id;
                                 work.waits.spawn(async move { waiting::poll(engine, wait, id, peek, seconds).await });
                                 continue;
                             }
-                            Err(error) => Reply { id: request.id, result: ReplyResult::Error(error) },
+                            Err(error) => Response::Small(Reply { id: request.id, result: ReplyResult::Error(error) }),
                         }
                     }
                 } else {
                     match dispatch(engine.clone(), connection, request).await {
-                        Ok(reply) => reply,
+                        Ok(reply) => Response::Small(reply),
                         Err(error) => { result = Err(error); break; }
                     }
                 }
             }
         };
         let stop = reply.should_shutdown();
-        let uncertain = matches!(
-            reply.result,
-            ReplyResult::Error(EngineError::StorageUncertain)
-        );
-        let written = write_record(&mut writer, &reply, WRITE_TIMEOUT).await;
+        let uncertain = reply.storage_uncertain();
+        let written = reply.write(&mut writer).await;
         if stop || uncertain {
             if uncertain {
                 result = Err(HostError::Storage);

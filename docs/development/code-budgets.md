@@ -45,14 +45,17 @@ features, assertions or notices were removed, and no file exceptions were added.
 
 ## Current network allocation
 
-The independently reviewed network allocation is 29,250 physical Rust lines.
-The integrated snapshot measures 28,907: 13,098 implementation lines and 15,809
-test/helper lines across 168 files. The largest file is 377 lines; the default
+The independently reviewed network allocation is 31,300 physical Rust lines.
+The integrated snapshot measures 31,252: 13,779 implementation lines and 17,473
+test/helper lines across 183 files. The largest file is 378 lines; the default
 400-line file limit is unchanged. All comments and blank lines remain counted.
 
 This snapshot includes the local daemon, atomic inbox batches and cancellation
 fences, durable invitation and JOIN authority, persistent peer primitives and
-attachment storage. It retains 343 lines of correction room. No features or
+attachment storage. The complete-reply and Linux directory-sync corrections add
+665 implementation lines and 1,404 test/helper lines. This allocation retains
+48 lines of correction room after 16 implementation and 260 test lines for
+disconnect fencing and its regressions. No features or
 meaningful tests were removed or compressed. Foreground peer supervision and
 remaining delivery/platform workflows need renewed measurement and review as
 they are implemented; this allowance does not establish their completion.

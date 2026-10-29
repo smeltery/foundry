@@ -164,7 +164,7 @@ pub enum MailState {
     Delivered,
     Consumed,
 }
-/// Base64 keeps arbitrary durable bodies within the 1 MiB IPC record budget.
+/// Display bytes use base64; complete inbox replies use the store-derived budget.
 #[derive(Serialize, Deserialize)]
 pub struct Mail {
     pub message_id: String,
@@ -197,6 +197,7 @@ pub enum EngineError {
     Clock,
     Entropy,
     AsyncRequired,
+    Output,
 }
 impl std::fmt::Display for EngineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

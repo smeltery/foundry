@@ -1,7 +1,6 @@
 use super::*;
-/// All eligible messages are returned or the operation fails without consuming
-/// any. This local bound is explicit; it is not an unbounded-source parity claim.
-pub const MAX_INBOX_MESSAGES: usize = 128;
+/// All eligible messages fit the same row bound used for durable admission.
+pub const MAX_INBOX_MESSAGES: usize = MAX_MAIL_ROWS;
 impl MailStore {
     pub fn poll_batch(
         &mut self,
@@ -42,6 +41,7 @@ impl MailStore {
         if count > MAX_INBOX_MESSAGES {
             return Err(MailError::Capacity);
         }
+        incremental::validate_budget(&tx, now, peek)?;
         let messages = {
             let mut query = tx.prepare("SELECT id,sender,recipient,body,reply_to,wake,notify,encoding FROM mail WHERE recipient=?1 AND state=0 AND read_ms IS NULL AND (attempt IS NULL OR expires<=?2) ORDER BY rowid")?;
             query
@@ -49,12 +49,12 @@ impl MailStore {
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
         for message in &messages {
-            message.validate_payload()?;
+            incremental::validate_message(message)?;
         }
         let mut reads = Vec::with_capacity(messages.len());
         for message in messages {
             let attempt = if peek {
-                Some(peek_token(&tx, &message, session, now)?)
+                Some(peek_token(&tx, &message, session)?)
             } else {
                 None
             };
@@ -64,6 +64,7 @@ impl MailStore {
         if !active() {
             return Ok(None);
         }
+        incremental::validate_budget(&tx, now, peek)?;
         if !peek {
             for read in &reads {
                 tx.execute(
@@ -87,13 +88,11 @@ impl MailStore {
         Ok(Some((reads, prepared)))
     }
 }
-fn peek_token(
+pub(super) fn peek_token(
     tx: &rusqlite::Transaction<'_>,
     message: &Message,
     session: &str,
-    now: i64,
 ) -> Result<Attempt> {
-    tx.execute("DELETE FROM poll_attempt WHERE expires<=?1", [now])?;
     let cached: Option<(i64, i64)> = tx
         .query_row(
             "SELECT id,expires FROM poll_attempt WHERE message_id=?1 AND session=?2",
@@ -104,15 +103,6 @@ fn peek_token(
     let (id, expires) = if let Some(cached) = cached {
         cached
     } else {
-        let total: usize = tx.query_row("SELECT count(*) FROM poll_attempt", [], |r| r.get(0))?;
-        let scoped: usize = tx.query_row(
-            "SELECT count(*) FROM poll_attempt WHERE session=?1",
-            [session],
-            |r| r.get(0),
-        )?;
-        if total >= 16_384 || scoped >= MAX_INBOX_MESSAGES {
-            return Err(MailError::Capacity);
-        }
         let previous: i64 =
             tx.query_row("SELECT value FROM sequence WHERE id=1", [], |r| r.get(0))?;
         let id = previous.checked_add(1).ok_or(MailError::Capacity)?;

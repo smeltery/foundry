@@ -15,43 +15,15 @@ impl Engine {
             .connections
             .get_mut(&connection)
             .ok_or(EngineError::Unauthorized)?;
-        live.attempts
-            .retain(|_, pending| pending.token.expires_ms() > now);
-        let result = self.mail.poll_batch_checked(
-            &recipient,
-            &live.scope,
-            now,
-            peek,
-            |reads| {
-                let additional = reads
-                    .iter()
-                    .filter_map(|r| r.attempt.as_ref())
-                    .filter(|a| !live.attempts.contains_key(&a.id()))
-                    .count();
-                if live.attempts.len() + additional > MAX_ATTEMPTS {
-                    return Err(mail::MailError::Capacity);
-                }
-                prepare(reads)
-            },
-            active,
-        )?;
-        let Some((reads, outcome)) = result else {
+        let result =
+            self.mail
+                .poll_batch_checked(&recipient, &live.scope, now, peek, prepare, active)?;
+        let Some((_reads, outcome)) = result else {
             return Ok(Outcome::Inbox {
                 messages: Vec::new(),
                 text: String::new(),
             });
         };
-        for read in reads {
-            if let Some(token) = read.attempt {
-                live.attempts.insert(
-                    token.id(),
-                    PendingAttempt {
-                        conversation: auth.conversation.clone(),
-                        token,
-                    },
-                );
-            }
-        }
         Ok(outcome)
     }
 }
@@ -67,7 +39,7 @@ fn prepare(reads: &[mail::PollRead]) -> mail::Result<Outcome> {
             .checked_add(body.len())
             .ok_or(mail::MailError::Capacity)?;
         // Base64 alone exceeds the frame if decoded bodies exceed this bound.
-        if display_bytes > crate::ipc_codec::MAX_IPC_BYTES {
+        if display_bytes > MAX_INBOX_REPLY_BYTES {
             return Err(mail::MailError::Capacity);
         }
         let body = std::str::from_utf8(&body).map_err(|_| mail::MailError::InvalidPayload)?;
@@ -95,7 +67,7 @@ fn prepare(reads: &[mail::PollRead]) -> mail::Result<Outcome> {
 struct FrameBudget(usize);
 impl Write for FrameBudget {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if bytes.len() > crate::ipc_codec::MAX_IPC_BYTES.saturating_sub(self.0) {
+        if bytes.len() > MAX_INBOX_REPLY_BYTES.saturating_sub(self.0) {
             return Err(io::Error::other("inbox batch exceeds frame limit"));
         }
         self.0 += bytes.len();
