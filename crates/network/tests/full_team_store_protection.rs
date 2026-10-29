@@ -2,7 +2,7 @@
 #[path = "full_team_store_support/mod.rs"]
 mod support;
 use foundry_network::full_team_store::{
-    FULL_TEAM_DATABASE, FullTeamStore, MAX_CHECKPOINT_BYTES, StoreError,
+    FULL_TEAM_DATABASE, FULL_TEAM_LOCK, FullTeamStore, MAX_CHECKPOINT_BYTES, StoreError,
 };
 use std::{
     fs,
@@ -34,15 +34,65 @@ fn real_concurrent_formation_commits_one_candidate() {
         .collect();
     let outcomes: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
     let outcomes: Vec<_> = outcomes.into_iter().map(Result::unwrap).collect();
-    assert_eq!(outcomes.iter().filter(|r| **r == Ok(1)).count(), 1);
+    assert_eq!(
+        outcomes.iter().filter(|r| **r == Ok(1)).count(),
+        1,
+        "{outcomes:?}"
+    );
     assert_eq!(
         outcomes
             .iter()
-            .filter(|r| **r == Err(StoreError::Conflict))
+            // A bounded lock wait can expire before the stale candidate is read.
+            .filter(|r| matches!(r, Err(StoreError::Conflict | StoreError::Busy)))
             .count(),
-        1
+        1,
+        "{outcomes:?}"
     );
     assert_eq!(f.open().load(NOW).unwrap().revision(), 1);
+}
+#[test]
+fn formation_timeout_leaves_the_waiting_candidate_as_the_only_winner() {
+    let f = Fixture::new();
+    let mut loser = f.create();
+    let mut winner = FullTeamStore::open_existing(
+        &f.base.root,
+        f.identity.clone(),
+        f.policy(),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let base = loser.load(NOW).unwrap();
+    let rejected = loser.prepare_formation(&base, formation(), NOW).unwrap();
+    let stale = loser.prepare_formation(&base, formation(), NOW).unwrap();
+    let base = winner.load(NOW).unwrap();
+    let accepted = winner.prepare_formation(&base, formation(), NOW).unwrap();
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(f.base.root.join(FULL_TEAM_LOCK))
+        .unwrap();
+    lock.try_lock().unwrap();
+    let start = Arc::new(Barrier::new(2));
+    let ready = start.clone();
+    let worker = std::thread::spawn(move || {
+        ready.wait();
+        winner
+            .commit_formation(accepted)
+            .map(|state| state.revision())
+    });
+    start.wait();
+    // Both candidates are prepared; hold admission until the short waiter expires.
+    assert!(matches!(
+        loser.commit_formation(rejected),
+        Err(StoreError::Busy)
+    ));
+    lock.unlock().unwrap();
+    assert_eq!(worker.join().unwrap(), Ok(1));
+    assert!(matches!(
+        loser.commit_formation(stale),
+        Err(StoreError::Conflict)
+    ));
+    assert_eq!(loser.load(NOW).unwrap().revision(), 1);
 }
 #[test]
 fn advisory_contention_is_bounded_and_does_not_mutate() {
