@@ -1,12 +1,17 @@
 """Offline verification of the CI installer's integrity and version boundaries."""
 
+import argparse
+from contextlib import ExitStack, redirect_stderr
 import hashlib
 import importlib.util
 import io
+import runpy
+import sys
 import tarfile
+from types import ModuleType
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SOURCE = Path(__file__).resolve().parents[2] / "scripts/ci/bootstrap.py"
 SPEC = importlib.util.spec_from_file_location("ci_bootstrap", SOURCE)
@@ -66,6 +71,57 @@ class IntegrityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Linux x86_64"):
                 bootstrap.bootstrap("hygiene")
             install.assert_not_called()
+
+
+class FloxBootstrapTests(unittest.TestCase):
+    def run_flox(self, group, failure=None):
+        verifier = ModuleType("flox_verify")
+        verifier.verify = Mock(side_effect=failure)
+        forbidden = {
+            name: Mock(side_effect=AssertionError(f"legacy {name} called"))
+            for name in ("bootstrap", "install", "prepend_path", "output", "require_version")
+        }
+        parse_args = argparse.ArgumentParser.parse_args
+        stderr = io.StringIO()
+        with ExitStack() as stack:
+            def parse_and_guard(parser, *args, **kwargs):
+                # runpy creates fresh globals; guard them after definitions, before dispatch.
+                namespace = sys._getframe(1).f_globals
+                stack.enter_context(patch.dict(namespace, forbidden))
+                return parse_args(parser, *args, **kwargs)
+
+            stack.enter_context(patch.object(argparse.ArgumentParser, "parse_args", parse_and_guard))
+            stack.enter_context(patch.object(sys, "argv", [str(SOURCE), "--group", group, "--flox"]))
+            stack.enter_context(patch.dict(sys.modules, {"flox_verify": verifier}))
+            download = stack.enter_context(patch(
+                "urllib.request.urlopen", side_effect=AssertionError("download called")))
+            process = stack.enter_context(patch(
+                "subprocess.check_output", side_effect=AssertionError("legacy process called")))
+            stack.enter_context(redirect_stderr(stderr))
+            try:
+                runpy.run_path(str(SOURCE), run_name="__main__")
+                status = 0
+            except SystemExit as error:
+                status = error.code
+        verifier.verify.assert_called_once_with()
+        for mock in [*forbidden.values(), download, process]:
+            mock.assert_not_called()
+        return status, stderr.getvalue()
+
+    def test_flox_verifies_without_legacy_setup_for_every_group(self):
+        for group in bootstrap.GROUPS:
+            with self.subTest(group=group):
+                status, stderr = self.run_flox(group)
+                self.assertEqual(status, 0)
+                self.assertEqual(stderr, "")
+
+    def test_flox_verification_failure_exits_without_installer_fallback(self):
+        for failure in (ValueError("fixture version mismatch"), OSError("fixture tool missing")):
+            for group in ("dependencies", "hygiene"):
+                with self.subTest(group=group, failure=type(failure).__name__):
+                    status, stderr = self.run_flox(group, failure)
+                    self.assertEqual(status, 1)
+                    self.assertIn(f"CI bootstrap failed: {failure}", stderr)
 
 
 if __name__ == "__main__":

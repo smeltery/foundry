@@ -35,7 +35,7 @@ jobs:
   preflight:
     if: vars.FOUNDRY_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       contents: read
       actions: read
@@ -58,22 +58,34 @@ jobs:
         run: |
           git ls-files --error-unmatch .flox/env/manifest.lock
           test -s .flox/env/manifest.lock
-      - uses: flox/install-flox-action@5bb9eaaffbeaa699a8251a1ae21ecf4c8e0e37d4 # v2
+      - name: Require a fresh Flox installation
+        run: |
+          if command -v nix >/dev/null || command -v flox >/dev/null; then
+            echo "Expected a fresh runner without Nix or Flox" >&2
+            exit 1
+          fi
+      - uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
         with:
-          version: 1.19.1
+          version: "1.19.1"
           disable-metrics: "true"
+          disable-upgrade-notifications: "false"
+          github-token: ""
+          floxhub-token: ""
+          use-cache: "false"
       - name: Install frozen dependencies and pinned browser
         run: |
-          flox activate -- bun install --frozen-lockfile --ignore-scripts
-          flox activate -- bun run docs:browser
+          bash scripts/ci/flox.sh bun install --frozen-lockfile --ignore-scripts
+          bash scripts/ci/flox.sh bun run docs:browser
+      - name: Permit pinned browser sandbox
+        run: bash scripts/ci/browser-sandbox.sh
       - name: Run shared release checks
         env:
           FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          flox activate -- python3 scripts/checks/all.py
-          flox activate -- python3 scripts/release/github_snapshot.py self-test
-          git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock
+          bash scripts/ci/flox.sh python3 scripts/checks/all.py
+          bash scripts/ci/flox.sh python3 scripts/release/github_snapshot.py self-test
+          git diff --exit-code -- .flox/env/manifest.lock .flox/toolchain/flake.lock Cargo.lock bun.lock
 
   build:
     needs: preflight
@@ -89,7 +101,7 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-15
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
@@ -103,20 +115,30 @@ jobs:
         run: |
           git ls-files --error-unmatch .flox/env/manifest.lock
           test -s .flox/env/manifest.lock
-      - uses: flox/install-flox-action@5bb9eaaffbeaa699a8251a1ae21ecf4c8e0e37d4 # v2
+      - name: Require a fresh Flox installation
+        run: |
+          if command -v nix >/dev/null || command -v flox >/dev/null; then
+            echo "Expected a fresh runner without Nix or Flox" >&2
+            exit 1
+          fi
+      - uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
         with:
-          version: 1.19.1
+          version: "1.19.1"
           disable-metrics: "true"
+          disable-upgrade-notifications: "false"
+          github-token: ""
+          floxhub-token: ""
+          use-cache: "false"
       - name: Test and build on the target architecture
         run: |
-          flox activate -- python3 scripts/checks/all.py --group rust
-          flox activate -- cargo fetch --locked --target "$TARGET"
-          FOUNDRY_BUILD_VERSION="${RELEASE_TAG#v}" flox activate -- cargo build --release --frozen --package f5y --package foundry-tools --bins --target "$TARGET"
-          git diff --exit-code -- .flox/env/manifest.lock Cargo.lock
+          bash scripts/ci/flox.sh python3 scripts/checks/all.py --group rust
+          bash scripts/ci/flox.sh cargo fetch --locked --target "$TARGET"
+          FOUNDRY_BUILD_VERSION="${RELEASE_TAG#v}" bash scripts/ci/flox.sh cargo build --release --frozen --package f5y --package foundry-tools --bins --target "$TARGET"
+          git diff --exit-code -- .flox/env/manifest.lock .flox/toolchain/flake.lock Cargo.lock
       - name: Smoke test and package exact build
         run: |
           "target/$TARGET/release/f5y" --help
-          flox activate -- python3 scripts/release/github_snapshot.py pack \
+          bash scripts/ci/flox.sh python3 scripts/release/github_snapshot.py pack \
             --sha "$CANDIDATE_SHA" --tag "$RELEASE_TAG" --target "$TARGET"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

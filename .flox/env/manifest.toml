@@ -2,19 +2,20 @@ schema-version = "1.19.0"
 minimum-cli-version = "1.19.1"
 
 [install]
-rustc = { pkg-path = "rustc", version = "=1.95.0" }
-cargo = { pkg-path = "cargo", version = "=1.95.0" }
-clippy = { pkg-path = "clippy", version = "=1.95.0" }
-rustfmt = { pkg-path = "rustfmt", version = "=1.95.0" }
-bun = { pkg-path = "bun", version = "=1.3.11" }
-nodejs = { pkg-path = "nodejs_22", version = "=22.23.1" }
-python = { pkg-path = "python313", version = "python3-3.13.13" }
-pre-commit = { pkg-path = "pre-commit", version = "=4.5.1" }
-cargo-deny = { pkg-path = "cargo-deny", version = "=0.19.9" }
-actionlint = { pkg-path = "actionlint", version = "=1.7.12" }
-shellcheck = { pkg-path = "shellcheck", version = "=0.11.0" }
-git.pkg-path = "git"
-pkg-config.pkg-path = "pkg-config"
+rust.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#rust"
+bun.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#bun"
+nodejs.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#nodejs"
+python.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#python"
+pre-commit.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pre-commit"
+cargo-deny.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cargo-deny"
+actionlint.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#actionlint"
+shellcheck.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#shellcheck"
+git.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#git"
+pkg-config.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pkg-config"
+cc.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cc"
+binutils.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#binutils"
+
+toolchain-env.flake = "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#toolchain-env"
 
 [vars]
 RUST_BACKTRACE = "1"

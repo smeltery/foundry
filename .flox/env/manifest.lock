@@ -1,0 +1,1621 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "schema-version": "1.19.0",
+    "minimum-cli-version": "1.19.1",
+    "install": {
+      "actionlint": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#actionlint"
+      },
+      "binutils": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#binutils"
+      },
+      "bun": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#bun"
+      },
+      "cargo-deny": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cargo-deny"
+      },
+      "cc": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cc"
+      },
+      "git": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#git"
+      },
+      "nodejs": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#nodejs"
+      },
+      "pkg-config": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pkg-config"
+      },
+      "pre-commit": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pre-commit"
+      },
+      "python": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#python"
+      },
+      "rust": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#rust"
+      },
+      "shellcheck": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#shellcheck"
+      },
+      "toolchain-env": {
+        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#toolchain-env"
+      }
+    },
+    "vars": {
+      "RUST_BACKTRACE": "1"
+    },
+    "options": {
+      "systems": [
+        "aarch64-darwin",
+        "x86_64-darwin",
+        "aarch64-linux",
+        "x86_64-linux"
+      ]
+    }
+  },
+  "packages": [
+    {
+      "install_id": "actionlint",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.actionlint",
+      "derivation": "/nix/store/rgnmm1as49n486xzjgmv6im2dpx4snwl-actionlint-1.7.12.drv",
+      "outputs": {
+        "out": "/nix/store/586xsfximn37wd6kh7fabcby7dsing6p-actionlint-1.7.12"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "actionlint-1.7.12",
+      "pname": "actionlint",
+      "version": "1.7.12",
+      "description": "Static checker for GitHub Actions workflow files",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "actionlint",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.actionlint",
+      "derivation": "/nix/store/saj0jli0hjr99yaizc4mczs3kp8gaaid-actionlint-1.7.12.drv",
+      "outputs": {
+        "out": "/nix/store/wcnvm8r1r5jksccknmwzibxhm808mad0-actionlint-1.7.12"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "actionlint-1.7.12",
+      "pname": "actionlint",
+      "version": "1.7.12",
+      "description": "Static checker for GitHub Actions workflow files",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "actionlint",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.actionlint",
+      "derivation": "/nix/store/sn8y8rfrhq91dxr1lggdv66n27lkaw1x-actionlint-1.7.12.drv",
+      "outputs": {
+        "out": "/nix/store/cjcpgij5mskw07f6arfsbrdwv48mm6fi-actionlint-1.7.12"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "actionlint-1.7.12",
+      "pname": "actionlint",
+      "version": "1.7.12",
+      "description": "Static checker for GitHub Actions workflow files",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "actionlint",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.actionlint",
+      "derivation": "/nix/store/30wqmz4v5k1jcwy4pdiz33grrm8s0pii-actionlint-1.7.12.drv",
+      "outputs": {
+        "out": "/nix/store/ccpzxcz772sv74ppx01rz6m7hnivi6nn-actionlint-1.7.12"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "actionlint-1.7.12",
+      "pname": "actionlint",
+      "version": "1.7.12",
+      "description": "Static checker for GitHub Actions workflow files",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "binutils",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.binutils",
+      "derivation": "/nix/store/w9ch0db4pssqsk5dkglv9splxk8wc1c6-cctools-binutils-darwin-wrapper-1010.6.drv",
+      "outputs": {
+        "out": "/nix/store/y03k4vs02vif9v9ggf2wsgrzs88hlg67-cctools-binutils-darwin-wrapper-1010.6"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "cctools-binutils-darwin-wrapper-1010.6",
+      "pname": "cctools-binutils-darwin-wrapper",
+      "version": "1010.6",
+      "description": "System binary utilities (wrapper script)",
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "binutils",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.binutils",
+      "derivation": "/nix/store/bd9gpzgdsmlx2gxyf4ybld556y6xgd8f-cctools-binutils-darwin-wrapper-1010.6.drv",
+      "outputs": {
+        "out": "/nix/store/wgdf3s5b2kiwlsmrk6wvpdh19rjp8bfc-cctools-binutils-darwin-wrapper-1010.6"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "cctools-binutils-darwin-wrapper-1010.6",
+      "pname": "cctools-binutils-darwin-wrapper",
+      "version": "1010.6",
+      "description": "System binary utilities (wrapper script)",
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "binutils",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.binutils",
+      "derivation": "/nix/store/8m9ah1jph6sbvgc4jhmvzw7zvf6d4dac-binutils-wrapper-2.46.drv",
+      "outputs": {
+        "info": "/nix/store/sgiddvpsjbpfzmnjhb6kny021rx2z214-binutils-wrapper-2.46-info",
+        "man": "/nix/store/h60nm8bjp6prs7w1rijin1ns54dqnmvp-binutils-wrapper-2.46-man",
+        "out": "/nix/store/m1armxrx1nk768pislz3kzicq2mr4wck-binutils-wrapper-2.46"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "info"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "binutils-wrapper-2.46",
+      "pname": "binutils-wrapper",
+      "version": "2.46",
+      "description": "Tools for manipulating binaries (linker, assembler, etc.) (wrapper script)",
+      "licenses": [
+        "GPL-3.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "binutils",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.binutils",
+      "derivation": "/nix/store/i4bn7208nkimbvsii0kynx5mlwmn38jx-binutils-wrapper-2.46.drv",
+      "outputs": {
+        "info": "/nix/store/hwk4kgfipy9s8yjliddzh5dsyvgnas9p-binutils-wrapper-2.46-info",
+        "man": "/nix/store/5gm35p52dj24rhnjzv5hb38cd3kiqs06-binutils-wrapper-2.46-man",
+        "out": "/nix/store/c1a2l64csn5lrwjqqnaman6hdici70vq-binutils-wrapper-2.46"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "info"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "binutils-wrapper-2.46",
+      "pname": "binutils-wrapper",
+      "version": "2.46",
+      "description": "Tools for manipulating binaries (linker, assembler, etc.) (wrapper script)",
+      "licenses": [
+        "GPL-3.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "bun",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.bun",
+      "derivation": "/nix/store/fah4i5k38xn12ccbcglj1zwg2aczrr5r-bun-1.3.11.drv",
+      "outputs": {
+        "out": "/nix/store/39953pz9sm4xclds7l90wjkig6hkbx5w-bun-1.3.11"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "bun-1.3.11",
+      "pname": "bun",
+      "version": "1.3.11",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "licenses": [
+        "MIT",
+        "LGPL-2.1-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "bun",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.bun",
+      "derivation": "/nix/store/f5db58ppigi38r3id6kgh3amg5jj2xka-bun-1.3.11.drv",
+      "outputs": {
+        "out": "/nix/store/3nv2mibvqqrk5z7gl7kx5zz7fdy0n5rq-bun-1.3.11"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "bun-1.3.11",
+      "pname": "bun",
+      "version": "1.3.11",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "licenses": [
+        "MIT",
+        "LGPL-2.1-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "bun",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.bun",
+      "derivation": "/nix/store/n3v4q8v2prxz1j33qnbxi22gz5hwp7bj-bun-1.3.11.drv",
+      "outputs": {
+        "out": "/nix/store/csw87c9ada3vfqfnbknapi5ji4v5f3dh-bun-1.3.11"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "bun-1.3.11",
+      "pname": "bun",
+      "version": "1.3.11",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "licenses": [
+        "MIT",
+        "LGPL-2.1-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "bun",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.bun",
+      "derivation": "/nix/store/7ly432fhz0kdgnibi4snz0vd7nysnlzy-bun-1.3.11.drv",
+      "outputs": {
+        "out": "/nix/store/vmhlm86h4c9gxzrczqd91hwfz2kkfn25-bun-1.3.11"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "bun-1.3.11",
+      "pname": "bun",
+      "version": "1.3.11",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "licenses": [
+        "MIT",
+        "LGPL-2.1-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "cargo-deny",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.cargo-deny",
+      "derivation": "/nix/store/mcyg3kcx2ly89qvxhjd7ns5fp6vpraxz-cargo-deny-0.19.9.drv",
+      "outputs": {
+        "out": "/nix/store/qnbv31nz0520h2ik1wjvzgjgwzfqh5nr-cargo-deny-0.19.9"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "cargo-deny-0.19.9",
+      "pname": "cargo-deny",
+      "version": "0.19.9",
+      "description": "Cargo plugin for linting your dependencies",
+      "licenses": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "cargo-deny",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.cargo-deny",
+      "derivation": "/nix/store/wmfyhga6a7p928i0k6l9dlwglfbz6p2d-cargo-deny-0.19.9.drv",
+      "outputs": {
+        "out": "/nix/store/lqbmnxy903zyjbr7pfllhsm86jzvvgav-cargo-deny-0.19.9"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "cargo-deny-0.19.9",
+      "pname": "cargo-deny",
+      "version": "0.19.9",
+      "description": "Cargo plugin for linting your dependencies",
+      "licenses": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "cargo-deny",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.cargo-deny",
+      "derivation": "/nix/store/yh00zijiwg0padjsq0ffsghwkj6m2xsn-cargo-deny-0.19.9.drv",
+      "outputs": {
+        "out": "/nix/store/17r19kx289wqgg010y2nj0z6v89cgi9c-cargo-deny-0.19.9"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "cargo-deny-0.19.9",
+      "pname": "cargo-deny",
+      "version": "0.19.9",
+      "description": "Cargo plugin for linting your dependencies",
+      "licenses": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "cargo-deny",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.cargo-deny",
+      "derivation": "/nix/store/a668q2rr3aavq8pb262gab11npnpj4fy-cargo-deny-0.19.9.drv",
+      "outputs": {
+        "out": "/nix/store/0if2gs3ckr14fj154cywb3vjs9xakfpk-cargo-deny-0.19.9"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "cargo-deny-0.19.9",
+      "pname": "cargo-deny",
+      "version": "0.19.9",
+      "description": "Cargo plugin for linting your dependencies",
+      "licenses": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "cc",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.cc",
+      "derivation": "/nix/store/hnp49hr8lz6c130zirr80sw499jmqry6-clang-wrapper-21.1.8.drv",
+      "outputs": {
+        "out": "/nix/store/l47hxqscdsiyrawjljpzx4b8wrqx6xkl-clang-wrapper-21.1.8"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "clang-wrapper-21.1.8",
+      "pname": "clang-wrapper",
+      "version": "21.1.8",
+      "description": "C language family frontend for LLVM (wrapper script)",
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "cc",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.cc",
+      "derivation": "/nix/store/rmw46im59qyq1qf72zii05alw2a64ib1-clang-wrapper-21.1.8.drv",
+      "outputs": {
+        "out": "/nix/store/43hyaqvya2b2rg9rnp1571gv0wwkl2cd-clang-wrapper-21.1.8"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "clang-wrapper-21.1.8",
+      "pname": "clang-wrapper",
+      "version": "21.1.8",
+      "description": "C language family frontend for LLVM (wrapper script)",
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "cc",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.cc",
+      "derivation": "/nix/store/j50f2pfyahhjrsg6xy33zj4wzwahndwk-gcc-wrapper-15.3.0.drv",
+      "outputs": {
+        "info": "/nix/store/vs6la7pmki80m45zsf6xn6jy0kq5mj5y-gcc-wrapper-15.3.0-info",
+        "man": "/nix/store/nk01b4ciyan6rzb4n7hzyp1h9qafw4rl-gcc-wrapper-15.3.0-man",
+        "out": "/nix/store/1m3h2yhx00myw3yblflznibhdb2r6ipx-gcc-wrapper-15.3.0"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "info"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "gcc-wrapper-15.3.0",
+      "pname": "gcc-wrapper",
+      "version": "15.3.0",
+      "description": "GNU Compiler Collection, version 15.3.0 (wrapper script)",
+      "licenses": [
+        "GPL-3.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "cc",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.cc",
+      "derivation": "/nix/store/sxf2064rx5xmhq2x4zj3ffjjgn6239nw-gcc-wrapper-15.3.0.drv",
+      "outputs": {
+        "info": "/nix/store/isn0mjkyp9p9rc40hyyrmd7z3zsn3rb3-gcc-wrapper-15.3.0-info",
+        "man": "/nix/store/s10qc956yx28m08lmyr7vngqgif0y7hp-gcc-wrapper-15.3.0-man",
+        "out": "/nix/store/0592hadxldzhhd3ppc6nskslzd39fwlz-gcc-wrapper-15.3.0"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "info"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "gcc-wrapper-15.3.0",
+      "pname": "gcc-wrapper",
+      "version": "15.3.0",
+      "description": "GNU Compiler Collection, version 15.3.0 (wrapper script)",
+      "licenses": [
+        "GPL-3.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "git",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.git",
+      "derivation": "/nix/store/3bxc88zv6jm6f931ka2g0v6wzkwlqrv2-git-2.54.0.drv",
+      "outputs": {
+        "doc": "/nix/store/sf1c1z3x8h0dp03aw3nmrpzn6v5x4c15-git-2.54.0-doc",
+        "out": "/nix/store/1azrj450s0abrpzjbfs89kmsn7gfhp1k-git-2.54.0"
+      },
+      "output-names": [
+        "out",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "git-2.54.0",
+      "pname": "git",
+      "version": "2.54.0",
+      "description": "Distributed version control system",
+      "licenses": [
+        "GPL-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "git",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.git",
+      "derivation": "/nix/store/5vsvbxh73c8vq7rvpyvyb6jriqmilv4s-git-2.54.0.drv",
+      "outputs": {
+        "doc": "/nix/store/77bnzs1mwyf97c7a3bgsd7yhdg7paz28-git-2.54.0-doc",
+        "out": "/nix/store/0k3myljc4i0mp7h18g65vg971kxgrkcn-git-2.54.0"
+      },
+      "output-names": [
+        "out",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "git-2.54.0",
+      "pname": "git",
+      "version": "2.54.0",
+      "description": "Distributed version control system",
+      "licenses": [
+        "GPL-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "git",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.git",
+      "derivation": "/nix/store/d4rd2ir7rkc2b9z195c4lz8jsm5j4dsa-git-2.54.0.drv",
+      "outputs": {
+        "debug": "/nix/store/mkkdgyrnzp2sasbl9aqy7n971rnb2qxh-git-2.54.0-debug",
+        "doc": "/nix/store/2cr49qbhy8cq9ng8cfrvbdri4iks41wn-git-2.54.0-doc",
+        "out": "/nix/store/9vp048ab6j18vz39yvakb6cmqgy85rhv-git-2.54.0"
+      },
+      "output-names": [
+        "out",
+        "doc",
+        "debug"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "git-2.54.0",
+      "pname": "git",
+      "version": "2.54.0",
+      "description": "Distributed version control system",
+      "licenses": [
+        "GPL-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "git",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.git",
+      "derivation": "/nix/store/xklwki1yih8p421zi4v2frribpprly5r-git-2.54.0.drv",
+      "outputs": {
+        "debug": "/nix/store/ihw68iqpaqhs16wshpndm4sphppcym81-git-2.54.0-debug",
+        "doc": "/nix/store/3g5g4m6skr13yz6b9q8cjj535hk38fzx-git-2.54.0-doc",
+        "out": "/nix/store/gy266y3ax8xvblz36m6an7h8mi485mf1-git-2.54.0"
+      },
+      "output-names": [
+        "out",
+        "doc",
+        "debug"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "git-2.54.0",
+      "pname": "git",
+      "version": "2.54.0",
+      "description": "Distributed version control system",
+      "licenses": [
+        "GPL-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "nodejs",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.nodejs",
+      "derivation": "/nix/store/nzl8gxk999l5bv45gr3v8wly0hsjanlw-nodejs-22.23.1.drv",
+      "outputs": {
+        "out": "/nix/store/f55lyyhyw96nlf982m3wak2ylddz4pvh-nodejs-22.23.1"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "nodejs-22.23.1",
+      "pname": "nodejs",
+      "version": "22.23.1",
+      "description": "JavaScript runtime with its distributed command-line tools",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "nodejs",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.nodejs",
+      "derivation": "/nix/store/q78b6baiwar340nchrxdvq66qdp89iin-nodejs-22.23.1.drv",
+      "outputs": {
+        "out": "/nix/store/5zr0hknjs2dnmxaw748pdkv2jgf1vwc7-nodejs-22.23.1"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "nodejs-22.23.1",
+      "pname": "nodejs",
+      "version": "22.23.1",
+      "description": "JavaScript runtime with its distributed command-line tools",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "nodejs",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.nodejs",
+      "derivation": "/nix/store/gjpc98c5zm2h7lz0vcfjs9cs9yssg7w9-nodejs-22.23.1.drv",
+      "outputs": {
+        "out": "/nix/store/sb98zifyia48rs1yn97f85ss47irnj6r-nodejs-22.23.1"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "nodejs-22.23.1",
+      "pname": "nodejs",
+      "version": "22.23.1",
+      "description": "JavaScript runtime with its distributed command-line tools",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "nodejs",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.nodejs",
+      "derivation": "/nix/store/hck6d5r5px23vpq95bh3zpwjlqcr80ma-nodejs-22.23.1.drv",
+      "outputs": {
+        "out": "/nix/store/8f29jr9mhb16vb5lr5chppv5p6y697zf-nodejs-22.23.1"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "nodejs-22.23.1",
+      "pname": "nodejs",
+      "version": "22.23.1",
+      "description": "JavaScript runtime with its distributed command-line tools",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "pkg-config",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.pkg-config",
+      "derivation": "/nix/store/68bnv2qfgidg0rpg8yzcndj68s07fi1k-pkg-config-wrapper-0.29.2.drv",
+      "outputs": {
+        "doc": "/nix/store/d6fly59r41pfnscgkjahc5x9m6wd2fg7-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/g8sj0ym0z57jvd0323syssch3176a86k-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/0ysblx9y9v3i93j04i3m61hvxxwbyw1c-pkg-config-wrapper-0.29.2"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config-wrapper",
+      "version": "0.29.2",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "licenses": [
+        "GPL-2.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "pkg-config",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.pkg-config",
+      "derivation": "/nix/store/pwg1ab97dpyy0fpywni2h74hanxxiw83-pkg-config-wrapper-0.29.2.drv",
+      "outputs": {
+        "doc": "/nix/store/38bqgn6w6k620qp47lsgp07ni3avnc78-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/6652wbws4j810yaq8migvfzjksi1rbaw-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/yafvrbw7vm75mrbgm3p2pdvx1wkjc65a-pkg-config-wrapper-0.29.2"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config-wrapper",
+      "version": "0.29.2",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "licenses": [
+        "GPL-2.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "pkg-config",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.pkg-config",
+      "derivation": "/nix/store/zk2hylz7zndvw139zlp328cxfb06wm6n-pkg-config-wrapper-0.29.2.drv",
+      "outputs": {
+        "doc": "/nix/store/z6s79z2nlh7jmnmxykxpxvs73nhkz18d-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/iqbr5vzkmskqb2cwj4d30drr36lm839x-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/c51sd2p4l6scnmqrw6jb9b7jsvzg0qcw-pkg-config-wrapper-0.29.2"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config-wrapper",
+      "version": "0.29.2",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "licenses": [
+        "GPL-2.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "pkg-config",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.pkg-config",
+      "derivation": "/nix/store/6bh2y41c1b70015alvgrdsr01hls783h-pkg-config-wrapper-0.29.2.drv",
+      "outputs": {
+        "doc": "/nix/store/w3vyksq1cmsj5kqpla8nprw7nsbb9xdk-pkg-config-wrapper-0.29.2-doc",
+        "man": "/nix/store/ha81xfi36d7akw7hg36b0ygzis3d76lp-pkg-config-wrapper-0.29.2-man",
+        "out": "/nix/store/ilc04wmg2xh5jncdbc4v5zc0jdzag4mz-pkg-config-wrapper-0.29.2"
+      },
+      "output-names": [
+        "out",
+        "man",
+        "doc"
+      ],
+      "outputs-to-install": [
+        "man",
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "pkg-config-wrapper-0.29.2",
+      "pname": "pkg-config-wrapper",
+      "version": "0.29.2",
+      "description": "Tool that allows packages to find out information about other packages (wrapper script)",
+      "licenses": [
+        "GPL-2.0-or-later"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 10
+    },
+    {
+      "install_id": "pre-commit",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.pre-commit",
+      "derivation": "/nix/store/56kbaflfayc76mygq4m3pcv0k73l5wdi-pre-commit-4.5.1.drv",
+      "outputs": {
+        "dist": "/nix/store/93pci74s78ys6kl0wkngbya11lc8w0wk-pre-commit-4.5.1-dist",
+        "out": "/nix/store/yagix71f4isji0myf607lg6fnp2v8pzd-pre-commit-4.5.1"
+      },
+      "output-names": [
+        "out",
+        "dist"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "pre-commit-4.5.1",
+      "pname": "pre-commit",
+      "version": "4.5.1",
+      "description": "Framework for managing and maintaining multi-language pre-commit hooks",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "pre-commit",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.pre-commit",
+      "derivation": "/nix/store/9l18169bly7n3578ryxqcg0n2wsdsv8a-pre-commit-4.5.1.drv",
+      "outputs": {
+        "dist": "/nix/store/8wqpnr6yvlzas2yssl4icvsyslk82b78-pre-commit-4.5.1-dist",
+        "out": "/nix/store/7dxds9ch0bnmadp07ppzyrlw0wxmihsl-pre-commit-4.5.1"
+      },
+      "output-names": [
+        "out",
+        "dist"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "pre-commit-4.5.1",
+      "pname": "pre-commit",
+      "version": "4.5.1",
+      "description": "Framework for managing and maintaining multi-language pre-commit hooks",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "pre-commit",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.pre-commit",
+      "derivation": "/nix/store/bggp5jp8ffw3rmkmhwhzq8pkyj02phii-pre-commit-4.5.1.drv",
+      "outputs": {
+        "dist": "/nix/store/kfy8345gm5xcc5dlygg2zfyd0w462242-pre-commit-4.5.1-dist",
+        "out": "/nix/store/ilrpcyddb85m5gy62l4rvsfb7s7dhrd7-pre-commit-4.5.1"
+      },
+      "output-names": [
+        "out",
+        "dist"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "pre-commit-4.5.1",
+      "pname": "pre-commit",
+      "version": "4.5.1",
+      "description": "Framework for managing and maintaining multi-language pre-commit hooks",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "pre-commit",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.pre-commit",
+      "derivation": "/nix/store/c9099ib1ycx9jd7i9iqizf181sjg2aqz-pre-commit-4.5.1.drv",
+      "outputs": {
+        "dist": "/nix/store/1bljyj2nkv05jm4q84rj6fbr4zc1q26p-pre-commit-4.5.1-dist",
+        "out": "/nix/store/nq4n5yd6paaqc8hm1f54g9lsz87zpwzm-pre-commit-4.5.1"
+      },
+      "output-names": [
+        "out",
+        "dist"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "pre-commit-4.5.1",
+      "pname": "pre-commit",
+      "version": "4.5.1",
+      "description": "Framework for managing and maintaining multi-language pre-commit hooks",
+      "licenses": [
+        "MIT"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "python",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.python",
+      "derivation": "/nix/store/w3ipi4931sms4xngdfqiw848yv721316-python3-3.13.13.drv",
+      "outputs": {
+        "out": "/nix/store/72nnzfds2jnq904id2qsfnsq8qsg35x0-python3-3.13.13"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "version": "3.13.13",
+      "description": "High-level dynamically-typed programming language",
+      "licenses": [
+        "Python-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "python",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.python",
+      "derivation": "/nix/store/kcqbpmx1l82xpg70b1705xx1cdc9gm76-python3-3.13.13.drv",
+      "outputs": {
+        "out": "/nix/store/wlpscf6pvz6x84ywkj7wwfl16qbmql0b-python3-3.13.13"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "version": "3.13.13",
+      "description": "High-level dynamically-typed programming language",
+      "licenses": [
+        "Python-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "python",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.python",
+      "derivation": "/nix/store/c0mzldlfx93kws02rqa48sy4ldlh7z91-python3-3.13.13.drv",
+      "outputs": {
+        "debug": "/nix/store/l8vry50i4vfzfwf41v5zv3xwya2154iq-python3-3.13.13-debug",
+        "out": "/nix/store/h8xc387124b14ffqdydf08b4d8nwh36v-python3-3.13.13"
+      },
+      "output-names": [
+        "out",
+        "debug"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "version": "3.13.13",
+      "description": "High-level dynamically-typed programming language",
+      "licenses": [
+        "Python-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "python",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.python",
+      "derivation": "/nix/store/74sf06y9qhpxqxzdww2g9nxr4d5xnxnj-python3-3.13.13.drv",
+      "outputs": {
+        "debug": "/nix/store/ac2ak0h3xw37xvp7sp5hvd352w7shhx6-python3-3.13.13-debug",
+        "out": "/nix/store/ckykabdm28hh86gjgwbf92qnvf9h5v38-python3-3.13.13"
+      },
+      "output-names": [
+        "out",
+        "debug"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "python3-3.13.13",
+      "pname": "python3",
+      "version": "3.13.13",
+      "description": "High-level dynamically-typed programming language",
+      "licenses": [
+        "Python-2.0"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "rust",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.rust",
+      "derivation": "/nix/store/98q3l2wlp4s2kvfcmh3yj7pdz022h1hj-rust-minimal-1.95.0.drv",
+      "outputs": {
+        "out": "/nix/store/f8dziad2dj799dgb38adq5xqzq6ml0yc-rust-minimal-1.95.0"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "rust-minimal-1.95.0",
+      "pname": "rust-minimal",
+      "version": "1.95.0",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "rust",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.rust",
+      "derivation": "/nix/store/j0nwczsj098w5ysh2fyn1lih8zwpz6pv-rust-minimal-1.95.0.drv",
+      "outputs": {
+        "out": "/nix/store/4dyn80426sliafvpss68madqbdivhg6k-rust-minimal-1.95.0"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "rust-minimal-1.95.0",
+      "pname": "rust-minimal",
+      "version": "1.95.0",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "rust",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.rust",
+      "derivation": "/nix/store/k68cppa85y61f5f5sv6iq098bxv5kq95-rust-minimal-1.95.0.drv",
+      "outputs": {
+        "out": "/nix/store/xdymp4g2a1d1nhfj84iagdmz45vb963h-rust-minimal-1.95.0"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "rust-minimal-1.95.0",
+      "pname": "rust-minimal",
+      "version": "1.95.0",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "rust",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.rust",
+      "derivation": "/nix/store/lz3ghc7ghwizq4qi74ppdgzcw6i78r4w-rust-minimal-1.95.0.drv",
+      "outputs": {
+        "out": "/nix/store/xhwbbfz6xsq09xh3hrngxjsg9alkg5sy-rust-minimal-1.95.0"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "rust-minimal-1.95.0",
+      "pname": "rust-minimal",
+      "version": "1.95.0",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "shellcheck",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.shellcheck",
+      "derivation": "/nix/store/dns7a42cs8hp66rlm6xai3b0i6610qna-shellcheck-0.11.0.drv",
+      "outputs": {
+        "bin": "/nix/store/x2dykzkf17cnbw8nxb4zkmvaqamcagbx-shellcheck-0.11.0-bin",
+        "doc": "/nix/store/f52ylw77psw8x00fn0l9i456m0ab58vg-shellcheck-0.11.0-doc",
+        "man": "/nix/store/36vai76fpw8zz3y68c9fb9f33a6c4him-shellcheck-0.11.0-man",
+        "out": "/nix/store/z0wc8f52plc2agna6km22pk3qkm4ahd6-shellcheck-0.11.0"
+      },
+      "output-names": [
+        "bin",
+        "man",
+        "doc",
+        "out"
+      ],
+      "outputs-to-install": [
+        "bin",
+        "doc",
+        "man"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "shellcheck-0.11.0",
+      "pname": "ShellCheck",
+      "version": "0.11.0",
+      "description": "Shell script analysis tool",
+      "licenses": [
+        "GPL-3.0-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "shellcheck",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.shellcheck",
+      "derivation": "/nix/store/jmz9dsz64fzafjr9h0r64wq6pl87fl4z-shellcheck-0.11.0.drv",
+      "outputs": {
+        "bin": "/nix/store/9p2lzcfk2m657ya4l2a08d0m0hn5lskh-shellcheck-0.11.0-bin",
+        "doc": "/nix/store/mwcfwjm3kjb5yx7hy2y3p0r1dgggzqjk-shellcheck-0.11.0-doc",
+        "man": "/nix/store/w4pis6jcvgr5vjfpbz8hrwbiq6r8caim-shellcheck-0.11.0-man",
+        "out": "/nix/store/9af2f97ihdwl981xajlq0kgh3blz8bbj-shellcheck-0.11.0"
+      },
+      "output-names": [
+        "bin",
+        "man",
+        "doc",
+        "out"
+      ],
+      "outputs-to-install": [
+        "bin",
+        "doc",
+        "man"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "shellcheck-0.11.0",
+      "pname": "ShellCheck",
+      "version": "0.11.0",
+      "description": "Shell script analysis tool",
+      "licenses": [
+        "GPL-3.0-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "shellcheck",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.shellcheck",
+      "derivation": "/nix/store/q8baih50g4f03xxbhkfcg6hql3rgy6lv-shellcheck-0.11.0.drv",
+      "outputs": {
+        "bin": "/nix/store/z71cv5qjdl2z0w6rv92axj3rmj7xg735-shellcheck-0.11.0-bin",
+        "doc": "/nix/store/fypxwh32n8y92spr76gx7idfyszbhfyj-shellcheck-0.11.0-doc",
+        "man": "/nix/store/sq1g5r7gykjr530sg1sgdsd2ks12i0ga-shellcheck-0.11.0-man",
+        "out": "/nix/store/mqisyzxbxdqyr0lsq2wpya7ipagdxgds-shellcheck-0.11.0"
+      },
+      "output-names": [
+        "bin",
+        "man",
+        "doc",
+        "out"
+      ],
+      "outputs-to-install": [
+        "bin",
+        "doc",
+        "man"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "shellcheck-0.11.0",
+      "pname": "ShellCheck",
+      "version": "0.11.0",
+      "description": "Shell script analysis tool",
+      "licenses": [
+        "GPL-3.0-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "shellcheck",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.shellcheck",
+      "derivation": "/nix/store/ndhksp356pj968g91ihkqhlm47q99mal-shellcheck-0.11.0.drv",
+      "outputs": {
+        "bin": "/nix/store/gds6snrqlmi2kwgamyqcjr1i4kvdqn15-shellcheck-0.11.0-bin",
+        "doc": "/nix/store/j9s9qy43vw6s4a3dwjzzy2hxmglmlsw2-shellcheck-0.11.0-doc",
+        "man": "/nix/store/ybbrfng3gksvk4maddhnb3q1svlqh0qv-shellcheck-0.11.0-man",
+        "out": "/nix/store/jr0nz0is02cinks8mpks3crcp5ggfsg9-shellcheck-0.11.0"
+      },
+      "output-names": [
+        "bin",
+        "man",
+        "doc",
+        "out"
+      ],
+      "outputs-to-install": [
+        "bin",
+        "doc",
+        "man"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "shellcheck-0.11.0",
+      "pname": "ShellCheck",
+      "version": "0.11.0",
+      "description": "Shell script analysis tool",
+      "licenses": [
+        "GPL-3.0-only"
+      ],
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "toolchain-env",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-darwin.toolchain-env",
+      "derivation": "/nix/store/p711x8bbd6sldpbr02f03yljaqq6njxp-toolchain.sh.drv",
+      "outputs": {
+        "out": "/nix/store/6pms3j5hqckafm9g9rrc0ciqlc37cca3-toolchain.sh"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-darwin",
+      "system": "aarch64-darwin",
+      "name": "toolchain.sh",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "toolchain-env",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-darwin.toolchain-env",
+      "derivation": "/nix/store/a053nsx49v2wx02y66c8hr14cm5iw7d9-toolchain.sh.drv",
+      "outputs": {
+        "out": "/nix/store/61w5czym8db2hb4jqmcbzd74bivry3xp-toolchain.sh"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-darwin",
+      "system": "x86_64-darwin",
+      "name": "toolchain.sh",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "toolchain-env",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.aarch64-linux.toolchain-env",
+      "derivation": "/nix/store/49dr1lvms9pcwyzs7x95bg6i3fd56l79-toolchain.sh.drv",
+      "outputs": {
+        "out": "/nix/store/sv85y8xs2iz3h33bgl3a5wfipy5xgyyr-toolchain.sh"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "aarch64-linux",
+      "system": "aarch64-linux",
+      "name": "toolchain.sh",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    },
+    {
+      "install_id": "toolchain-env",
+      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "flake-description": "Foundry development toolchain",
+      "locked-flake-attr-path": "packages.x86_64-linux.toolchain-env",
+      "derivation": "/nix/store/mivp7pkfi31c3kmi1l6rrzpwfn15m3w2-toolchain.sh.drv",
+      "outputs": {
+        "out": "/nix/store/cl1lh843dssnkgnk1ic5v2cdnv5sj37r-toolchain.sh"
+      },
+      "output-names": [
+        "out"
+      ],
+      "outputs-to-install": [
+        "out"
+      ],
+      "requested-outputs-to-install": [],
+      "package-system": "x86_64-linux",
+      "system": "x86_64-linux",
+      "name": "toolchain.sh",
+      "broken": false,
+      "unfree": false,
+      "priority": 5
+    }
+  ]
+}

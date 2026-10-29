@@ -121,8 +121,14 @@ def bootstrap(group):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--group", choices=GROUPS, required=True)
+    parser.add_argument("--flox", action="store_true", help="verify activated tools without installing")
     try:
-        bootstrap(parser.parse_args().group)
+        arguments = parser.parse_args()
+        if arguments.flox:
+            from flox_verify import verify
+            verify()
+        else:
+            bootstrap(arguments.group)
     except (OSError, ValueError, tarfile.TarError, subprocess.CalledProcessError) as error:
         print(f"CI bootstrap failed: {error}", file=sys.stderr)
         sys.exit(1)
