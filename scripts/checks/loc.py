@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 
-EXTENSIONS = {".rs", ".ts", ".tsx", ".js", ".mjs", ".py", ".sh"}
+EXTENSIONS = {".rs", ".ts", ".tsx", ".js", ".mjs", ".py", ".sh", ".nix"}
 
 
 def check(root, policy, paths):

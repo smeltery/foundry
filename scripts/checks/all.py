@@ -125,7 +125,7 @@ def hygiene():
         run(sys.executable, "scripts/checks/naming.py", "--policy-json-env",
             "FOUNDRY_NAMING_POLICY", "--mode", mode, *limits)
     run("actionlint")
-    run("shellcheck", "scripts/ci/browser-sandbox.sh")
+    run("shellcheck", *(str(path.relative_to(ROOT)) for path in sorted((ROOT / "scripts/ci").glob("*.sh"))))
 
 
 def main():

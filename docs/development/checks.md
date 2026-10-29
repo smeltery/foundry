@@ -1,11 +1,11 @@
 # Development checks
 
-Local hooks and CI execute the same Python orchestration script. CI installs pinned tools directly; local checks use your prepared environment. JavaScript documentation tooling uses Bun; Rust uses Cargo. Cargo and Bun lockfiles must be current before CI can pass. A resolved Flox environment is an optional local setup; see [environment setup](environment.md).
+Local hooks and CI execute the same Python orchestration script. Both enter the locked Flox environment through `scripts/ci/flox.sh`. JavaScript documentation tooling uses Bun; Rust uses Cargo. Cargo and Bun lockfiles must be current before CI can pass. For the canonical toolchain, see see [environment setup](environment.md).
 
 ```sh
-bun install --frozen-lockfile --ignore-scripts
-bun run docs:browser
-python3 scripts/checks/all.py
+bash scripts/ci/flox.sh bun install --frozen-lockfile --ignore-scripts
+bash scripts/ci/flox.sh bun run docs:browser
+bash scripts/ci/flox.sh python3 scripts/checks/all.py
 ```
 
 ## Check groups
@@ -41,8 +41,8 @@ flowchart LR
 Install hooks explicitly after preparing the environment:
 
 ```sh
-pre-commit install --hook-type pre-commit --hook-type pre-push
-pre-commit run --all-files
+bash scripts/ci/flox.sh pre-commit install --hook-type pre-commit --hook-type pre-push
+bash scripts/ci/flox.sh pre-commit run --all-files
 ```
 
 Pre-commit runs the fast suite; pre-push runs the full suite. Main-branch pushes
@@ -50,7 +50,10 @@ and manual CI runs execute all eight groups on Linux x64 and additionally requir
 the integration group on Linux
 arm64 and macOS arm64. Those integration jobs build both executables and run the
 real-helper tests that the ordinary Rust suite skips. The aggregate gate requires
-every matrix job to succeed. Release packaging remains a separate check; local
+every matrix job to succeed. Four additional fresh native activation jobs require
+the complete pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon.
+These jobs also compile application dependencies and reject changed locks.
+Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
 
 ## Pull request scope

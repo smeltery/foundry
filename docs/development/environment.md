@@ -6,23 +6,23 @@ they are not requirements for users of a compiled binary.
 
 ## Set up the environment
 
-Required CI installs explicitly pinned tools and runs `scripts/checks/all.py`
-directly. It does not require a Flox account. Local hooks run that same checker
-in the current environment, so activate your chosen toolchain before committing.
-The Cargo and Bun lockfiles remain required and frozen in CI.
+CI and local hooks enter the checked-in Flox environment through
+`scripts/ci/flox.sh`. Use Flox 1.19.1; the wrapper rejects other CLI versions,
+missing locks, unexpected tool origins and lock changes. The public immutable
+flake inputs avoid Catalog resolution and require no FloxHub login.
 
-Flox is an alternative local environment. Its manifest declares the development
-tools, but the repository does not yet include a resolved Flox lockfile. Do not
-treat the manifest alone as a reproducible environment.
-
-Install Flox 1.19.1 through its official installation instructions. From the
-repository root:
+From the repository root:
 
 ```sh
-flox activate
-bun install --frozen-lockfile --ignore-scripts
-bun run docs:browser
+bash scripts/ci/flox.sh bun install --frozen-lockfile --ignore-scripts
+bash scripts/ci/flox.sh bun run docs:browser
+bash scripts/ci/flox.sh python3 scripts/checks/all.py
 ```
+
+If Flox 1.19.1 is installed outside PATH, set `FOUNDRY_FLOX` to its absolute
+executable path. The wrapper selects this executable without changing a global
+installation. Initial activation downloads public dependencies or builds missing
+outputs; allow network access and time for source builds.
 
 The browser command downloads the Chrome headless shell revision selected by the locked
 Puppeteer dependency into `.flox/cache/puppeteer`. It does not install a global
@@ -33,31 +33,27 @@ Ubuntu CI installs an AppArmor profile permitting user namespaces only for the
 downloaded headless browser executable. This lets Chromium retain its sandbox
 while rendering diagrams; the profile is confined to the ephemeral runner.
 
-The environment declares Rust 1.95.0, Bun 1.3.11 and Node 22.23.1. A complete
-Flox lockfile is required before the environment can be treated as reproducible.
-Catalog-based resolution requires authentication. If you choose that setup,
-authenticate with `flox auth login`, then run `flox activate`. Commit the generated
-`.flox/env/manifest.lock` with its manifest after verifying the toolchain. Do not
-substitute an empty lockfile. Revision-pinned flake packages support resolution
-without Catalog authentication, but a matching environment for the declared
-versions and platforms has not yet been validated here.
-An up-to-date lockfile allows ordinary activation without catalog authentication.
+The environment pins Rust 1.95.0 with Clippy and rustfmt, Bun 1.3.11,
+Node 22.23.1, Python 3.13.13 and the repository validation tools. Its original
+recipes and Nix-generated input lock live in `.flox/toolchain/`. The environment
+manifest references a public immutable recipe commit; its Flox-generated lock
+records selected outputs for Apple silicon, Intel macOS, Linux x86_64 and Linux
+ARM64. Native Windows is not supported.
 
-The declared platforms are Apple silicon, Intel macOS, Linux x86_64 and Linux
-ARM64. Package declarations alone do not establish build or browser compatibility
-on every platform. CI must verify each supported target. This environment does
-not provide native Windows support.
+Four native CI activation jobs check actual tool origins and versions and compile
+application dependencies. Package evaluation alone does not establish execution
+on another platform. These checks remain required alongside the existing
+integration tests; release packaging has separate acceptance gates.
 
 ## Verify the selected compiler
 
-Check `command -v cargo`, `command -v rustc`, `cargo --version` and
-`rustc --version` after activation. Cargo launches the compiler selected by its
-process environment; a different compiler earlier in PATH can defeat an intended
-toolchain selection. In a mixed Homebrew/rustup setup, `rustup run 1.95.0 cargo`
-alone has not reliably selected the matching compiler. For an external fallback,
-prefix PATH with the actual installed 1.95.0 toolchain's `bin` directory for both
-commands and verify their versions. Do not treat that fallback as a resolved
-Flox environment or a cross-platform verification.
+```sh
+bash scripts/ci/flox.sh python3 scripts/ci/flox_verify.py --smoke
+```
+
+The verifier checks the activated executable paths against locked package outputs.
+A matching version from an ambient installation is insufficient. Avoid overriding
+compiler or linker selection when running the canonical checks.
 
 ## Check documentation
 
@@ -96,18 +92,11 @@ Use the same commands in CI and local hooks. The fast command is suitable for a
 pre-commit check; full documentation validation and tests belong in pre-push and
 CI checks. Formatting is never applied implicitly.
 
-With tools already on PATH, run the shared checks directly:
+Run the shared checks through the wrapper:
 
 ```sh
-python3 scripts/checks/all.py --fast
-python3 scripts/checks/all.py
-```
-
-For noninteractive execution in a resolved Flox environment:
-
-```sh
-flox activate -- bun run docs:fast
-flox activate -- bun run docs:check
+bash scripts/ci/flox.sh python3 scripts/checks/all.py --fast
+bash scripts/ci/flox.sh python3 scripts/checks/all.py
 ```
 
 Provision the browser before full checks. Cache `.flox/cache/puppeteer` by
@@ -119,6 +108,8 @@ native libraries required by Chrome; a missing library must fail visibly.
 
 Update exact versions in `package.json`, regenerate `bun.lock` with the pinned
 Bun version, and run both documentation checks and tests. Update Flox packages
-and its lockfile together through an authenticated maintenance session. Check the
+and its lockfile together using public immutable recipe inputs. Generate the Nix
+input lock before publishing a new recipe commit, then resolve the Flox lock
+against that commit with the pinned CLI. Never edit generated lock records. Check the
 Rust minimum version against the workspace before upgrading or downgrading.
 Do not run package upgrades from activation hooks or validation commands.
