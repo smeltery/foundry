@@ -1,5 +1,6 @@
 {
   "name": "foundry",
+  "description": "Local Foundry task workflows and durable session coordination.",
   "owner": {
     "name": "smeltery"
   },

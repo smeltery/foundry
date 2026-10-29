@@ -19,7 +19,10 @@ def discovery(root):
     for name in DISCOVERY:
         document = read_json(contained(root, name))
         required = ('name', 'plugins') if name.startswith('.agents/') else ('name', 'owner', 'plugins')
-        fields(document, required)
+        optional = ('description',) if name.startswith('.claude-plugin/') else ()
+        fields(document, required, optional)
+        if 'description' in document:
+            text_value(document['description'])
         require(document['name'] == 'foundry', 'marketplace identity')
         if 'owner' in document:
             fields(document['owner'], ('name',))
@@ -54,11 +57,11 @@ def descriptors(package, prepared):
     documents = [portable]
     for client in ('claude', 'codex', 'cursor'):
         document = read_json(contained(package, f'.{client}-plugin/plugin.json'))
-        fields(document, common, ('skills', 'commands', 'rules', 'mcpServers',
+        fields(document, common, ('skills', 'rules', 'mcpServers',
                                  'logo', 'icon'))
         require(document['version'] == version, 'client version mismatch')
         if client == 'cursor':
-            for key in ('commands', 'skills', 'rules'):
+            for key in ('skills', 'rules'):
                 require(key in document, 'missing client component')
                 component(package, document[key], f'./{key}/')
             if prepared:

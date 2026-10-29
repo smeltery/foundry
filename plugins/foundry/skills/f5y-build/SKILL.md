@@ -1,10 +1,11 @@
 ---
+name: f5y-build
 description: Turn a requested change into a concrete Foundry task with acceptance checks.
 ---
 
 # Build with Foundry
 
-Apply the [Foundry coordination skill](../skills/foundry/SKILL.md).
+Apply the [Foundry coordination skill](../foundry/SKILL.md).
 
 Extract the intended behavior, workspace, affected interfaces and acceptance
 checks from the request. Read available project instructions and existing design

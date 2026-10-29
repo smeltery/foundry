@@ -1,10 +1,11 @@
 ---
+name: f5y-review
 description: Scope an evidence-based review of supplied changes without implying a hosted review service.
 ---
 
 # Review with Foundry
 
-Apply the [Foundry coordination skill](../skills/foundry/SKILL.md).
+Apply the [Foundry coordination skill](../foundry/SKILL.md).
 
 Identify the exact changes to review: local diff, explicit revision range or
 user-supplied PR context. Preserve the base and head identifiers. A PR URL alone
