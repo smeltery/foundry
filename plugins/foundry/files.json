@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "files": [
+    ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+    "LICENSE",
+    "assets/README.md",
+    "assets/logo-dark.svg",
+    "assets/logo-light.svg",
+    "assets/skill-dark.svg",
+    "assets/skill-light.svg",
+    "commands/f5y-ask.md",
+    "commands/f5y-build.md",
+    "commands/f5y-fix-ci.md",
+    "commands/f5y-fix.md",
+    "commands/f5y-review.md",
+    "commands/f5y-status.md",
+    "files.json",
+    "plugin.json",
+    "rules/foundry-handoff.mdc",
+    "skills/foundry/SKILL.md",
+    "skills/foundry/agents/openai.yaml"
+  ]
+}

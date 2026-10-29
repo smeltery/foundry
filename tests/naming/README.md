@@ -45,6 +45,14 @@ links, corrupt archives, and other coverage gaps. SVG text is scanned, but no
 image recognition or OCR is performed. A separate asset inspection process is
 required; this checker provides no implicit visual clearance.
 
+An optional external `svg_reviews` array records completed visual review. Each
+entry has exactly `sha256` (64 lowercase hexadecimal characters) and `evidence`
+(an external identifier of 1–128 letters, digits, dots, underscores or hyphens).
+Digests must be unique. Only identical SVG bytes receive that visual clearance;
+their text and paths are still scanned. Binary or undecodable content remains
+uninspected, and these entries never clear other image formats. Keep the actual
+inspection evidence outside the repository with the policy.
+
 Exit codes:
 
 - `0`: all selected content inspected, no matches.

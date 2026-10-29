@@ -1,0 +1,12 @@
+{
+  "name": "foundry",
+  "owner": {
+    "name": "smeltery"
+  },
+  "plugins": [
+    {
+      "name": "foundry",
+      "source": "./plugins/foundry"
+    }
+  ]
+}

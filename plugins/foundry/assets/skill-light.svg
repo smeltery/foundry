@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"
+     viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Foundry workflow — light background</title>
+  <desc id="description">A square grid connects two nodes around a warm central tile.</desc>
+  <metadata>Copyright (c) 2026 smeltery. Covered by the repository root LICENSE.</metadata>
+  <rect width="128" height="128" fill="#F5F2EA"/>
+  <path fill="none" stroke="#172C35" stroke-width="8" stroke-linejoin="round"
+        d="M36 36h56v56H36zM36 64h56M64 36v56"/>
+  <path fill="#B94B22" d="M64 51l13 13-13 13-13-13z"/>
+  <circle cx="36" cy="36" r="9" fill="#172C35"/>
+  <circle cx="92" cy="92" r="9" fill="#172C35"/>
+</svg>

@@ -1,0 +1,11 @@
+{
+  "name": "foundry",
+  "version": "0.1.0",
+  "description": "Foundry workflow content; prepare a local distribution to enable MCP.",
+  "author": {
+    "name": "smeltery"
+  },
+  "commands": "./commands/",
+  "skills": "./skills/",
+  "rules": "./rules/"
+}
