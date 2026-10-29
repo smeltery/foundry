@@ -28,6 +28,13 @@ class PackageTests(unittest.TestCase):
         # Never skipped: the standard Python check gates the delivered real tree.
         validate(repository())
 
+    def test_shared_skill_fits_native_utf8_byte_limit(self):
+        path = repository() / PACKAGE / 'skills/foundry/SKILL.md'
+        content = path.read_bytes()
+        content.decode('utf-8')
+        self.assertLessEqual(len(content), 8000,
+                             'Keep the complete shared skill within the native byte limit')
+
     def test_isolated_packaged_root_and_hidden_archive_inventory(self):
         validate(self.source)
         expected = inventory(self.source)
