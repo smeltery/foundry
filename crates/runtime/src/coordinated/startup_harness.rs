@@ -103,6 +103,7 @@ impl Harness {
                 },
             );
             let outcome = outcome.map(|exit| match exit {
+                CaptureExit::ActionRequired(stop) => engine::EngineExit::ActionRequired(stop),
                 CaptureExit::Prepared(prepared) => engine::EngineExit::Prepared(prepared),
                 CaptureExit::Cancelled { mode, forced } => {
                     engine::EngineExit::Ordinary(RunResult::Cancelled { mode, forced })
@@ -183,6 +184,9 @@ impl Harness {
     pub fn finish(&mut self) -> Result<RunResult, RuntimeError> {
         match self.finish_owned()? {
             engine::EngineExit::Ordinary(result) => Ok(result),
+            engine::EngineExit::ActionRequired(_) => {
+                Err(RuntimeError::Invalid("private capture permission stop"))
+            }
             engine::EngineExit::Prepared(_) => {
                 Err(RuntimeError::Invalid("private capture prepared"))
             }

@@ -4,9 +4,10 @@ use foundry_store::{AttemptFence, Store};
 use std::time::Duration;
 
 pub(super) struct Actor {
+    pub permissions: Option<Arc<crate::permission::ToolPermissions>>,
     pub options: RestoreOwnerOptions,
     pub budget: Duration,
-    pub requests: mpsc::Receiver<PreparedCapture>,
+    pub requests: mpsc::Receiver<Job>,
     pub reply: mpsc::SyncSender<Result<FreshCaptureReply>>,
     pub cancel: mpsc::Sender<CancelMode>,
     pub signals: RunControl,
@@ -26,6 +27,9 @@ impl Actor {
         let initial = (|| {
             let mut store = Store::open_with_lease(path, self.options.lease.lease_duration)?;
             self.live()?;
+            if let Some(permissions) = &self.permissions {
+                permissions.check_configuration(&configuration.profile.configuration_digest)?;
+            }
             let version = store.get(&session)?.version;
             let (fence, admitted_session) =
                 store.begin_fresh_attempt(&session, version)?.into_parts();
@@ -33,6 +37,7 @@ impl Actor {
             owned = Some((store, fence, None));
             let (store, fence, publication) = owned.as_mut().expect("fresh owner installed");
             let control = WorkerControl {
+                permissions: self.permissions.clone(),
                 signals: self.signals.clone(),
                 activate_on_ready: false,
                 expired: Arc::clone(&self.expired),
@@ -50,16 +55,16 @@ impl Actor {
         if ready && sent {
             exposed = true;
         }
-        let mut prepared_cleanup = false;
-        let mut published = false;
+        let mut runtime_cleanup_verified = false;
+        let mut attempt_finalized = false;
         let operation = if ready && sent {
             let (store, fence, publication) = owned.as_mut().expect("fresh owner installed");
             self.serve(
                 store,
                 fence,
                 publication.as_mut().expect("publication installed"),
-                &mut prepared_cleanup,
-                &mut published,
+                &mut runtime_cleanup_verified,
+                &mut attempt_finalized,
             )
         } else {
             Err(ServiceError::Coordination(
@@ -72,9 +77,9 @@ impl Actor {
             if let Some(publication) = publication {
                 publication.cancel();
             }
-            if published {
+            if attempt_finalized {
                 Ok(None)
-            } else if !exposed || prepared_cleanup {
+            } else if !exposed || runtime_cleanup_verified {
                 (|| {
                     if let Some(mode) = self.signals.relay(&self.cancel) {
                         store.request_cancel(&session, mode)?;
@@ -107,8 +112,8 @@ impl Actor {
         store: &mut Store,
         fence: &AttemptFence,
         publication: &mut Publication,
-        prepared_cleanup: &mut bool,
-        published: &mut bool,
+        runtime_cleanup_verified: &mut bool,
+        attempt_finalized: &mut bool,
     ) -> Result<()> {
         let mut heartbeat = Instant::now();
         loop {
@@ -128,14 +133,28 @@ impl Actor {
             }
             publication.poll(store, fence)?;
             match self.requests.try_recv() {
-                Ok(prepared) => {
-                    publication.check_prepared(fence, &prepared)?;
-                    *prepared_cleanup = true;
-                    self.live()?;
-                    let result = publication.finish(store, fence, prepared)?;
-                    *published = true;
+                Ok(job) => {
+                    let reply = match job {
+                        Job::FinishCapture(prepared) => {
+                            publication.check_prepared(fence, &prepared)?;
+                            *runtime_cleanup_verified = true;
+                            self.live()?;
+                            FreshCaptureReply::Published(Box::new(
+                                publication.finish(store, fence, *prepared)?,
+                            ))
+                        }
+                        Job::FinishActionRequired(stop) => {
+                            publication.check_action_required(fence, &stop)?;
+                            *runtime_cleanup_verified = true;
+                            self.live()?;
+                            FreshCaptureReply::ActionRequired(Box::new(
+                                publication.finish_action_required(store, fence, stop)?,
+                            ))
+                        }
+                    };
+                    *attempt_finalized = true;
                     self.reply
-                        .try_send(Ok(FreshCaptureReply::Published(Box::new(result))))
+                        .try_send(Ok(reply))
                         .map_err(|_| ServiceError::Coordination("fresh publication reply lost"))?;
                     return Ok(());
                 }

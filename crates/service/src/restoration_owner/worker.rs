@@ -1,8 +1,9 @@
 use super::*;
 mod jobs;
+mod release;
 use super::validation::NativeState;
 use foundry_runtime::coordinated::loading::CleanupStatus;
-use foundry_store::{BeginRestoreResult, RestoreClose, RestoreFence, Store};
+use foundry_store::{BeginRestoreResult, RestoreFence, Store};
 
 pub(super) struct Channels {
     pub jobs: Receiver<Job>,
@@ -29,7 +30,7 @@ struct Reservation {
     native: Option<NativeState>,
     continuation: Option<super::continuation::Link>,
     publication: Option<crate::publication::Publication>,
-    published: bool,
+    attempt_finalized: bool,
 }
 
 impl Actor {
@@ -85,7 +86,7 @@ impl Actor {
                 native: None,
                 continuation: None,
                 publication: None,
-                published: false,
+                attempt_finalized: false,
             });
             let selected = reservation.as_mut().expect("reservation installed");
             selected.snapshot = Some(Arc::new(store.restore_baseline_snapshot(&selected.fence)?));
@@ -135,6 +136,14 @@ impl Actor {
     }
 
     fn live(&self, store: &mut Store, session: &str) -> Result<()> {
+        self.live_authority(store, session)?;
+        if self.io.stopping.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination("restoration shutdown requested"));
+        }
+        Ok(())
+    }
+
+    fn live_authority(&self, store: &mut Store, session: &str) -> Result<()> {
         // Relay before SQL; the watchdog also observes this same sticky control.
         if let Some(mode) = self.io.signals.relay(&self.io.cancel) {
             store.request_cancel(session, mode)?;
@@ -144,9 +153,6 @@ impl Actor {
             return Err(ServiceError::Coordination(
                 "restoration lease deadline elapsed",
             ));
-        }
-        if self.io.stopping.load(Ordering::Acquire) {
-            return Err(ServiceError::Coordination("restoration shutdown requested"));
         }
         Ok(())
     }
@@ -178,12 +184,28 @@ impl Actor {
     }
 
     fn serve(&self, store: &mut Store, reservation: &mut Reservation) -> Result<()> {
+        let result = self.serve_active(store, reservation);
+        self.finish_serving(store, &reservation.session, result)
+    }
+
+    fn finish_serving(&self, store: &mut Store, session: &str, result: Result<()>) -> Result<()> {
+        match result {
+            // Shutdown can arrive at any live check after the loop's initial check.
+            // Only this local control outcome is normal; authority failures survive.
+            Err(ServiceError::Coordination("restoration shutdown requested")) => {
+                self.live_authority(store, session)
+            }
+            other => other,
+        }
+    }
+
+    fn serve_active(&self, store: &mut Store, reservation: &mut Reservation) -> Result<()> {
         let mut next_heartbeat = Instant::now();
         loop {
             if self.io.stopping.load(Ordering::Acquire) {
-                return Ok(());
+                return self.live_authority(store, &reservation.session);
             }
-            if reservation.published {
+            if reservation.attempt_finalized {
                 return Ok(());
             }
             self.live(store, &reservation.session)?;
@@ -290,75 +312,7 @@ impl Actor {
             .try_send(OwnerReply { job_id, result })
             .map_err(|_| ServiceError::Coordination("restore reply unavailable"))
     }
-
-    fn release(
-        &self,
-        store: &mut Store,
-        reservation: &Reservation,
-        failed: bool,
-    ) -> Result<Option<RestoreRef>> {
-        if reservation.published {
-            return Ok(None);
-        }
-        if reservation.exposed {
-            let observer = reservation
-                .cleanup
-                .as_ref()
-                .ok_or(ServiceError::Coordination(
-                    "runtime cleanup unverified; restore retained",
-                ))?;
-            let deadline = Instant::now() + self.options.cleanup_timeout;
-            let mut heartbeat = Instant::now();
-            loop {
-                match observer.status() {
-                    CleanupStatus::Complete => break,
-                    CleanupStatus::Failed => {
-                        return Err(ServiceError::Coordination(
-                            "runtime cleanup failed; restore retained",
-                        ));
-                    }
-                    CleanupStatus::Pending => {}
-                }
-                if Instant::now() >= deadline || self.io.expired.load(Ordering::Acquire) {
-                    return Err(ServiceError::Coordination(
-                        "runtime cleanup incomplete; restore retained",
-                    ));
-                }
-                if Instant::now() >= heartbeat {
-                    self.heartbeat(store, reservation)?;
-                    heartbeat = Instant::now() + self.options.lease.poll_interval;
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-        }
-        if self.io.expired.load(Ordering::Acquire) {
-            return Err(ServiceError::Coordination(
-                "restore deadline elapsed; expiry recovery required",
-            ));
-        }
-        if let Some(mode) = self.io.signals.relay(&self.io.cancel) {
-            store.request_cancel(&reservation.session, mode)?;
-        }
-        if let Some(grant) = reservation
-            .continuation
-            .as_ref()
-            .and_then(|link| link.grant.as_ref())
-        {
-            let lifecycle = if store.cancellation(&grant.fence)?.is_some() {
-                foundry_contracts::Lifecycle::Suspended
-            } else {
-                foundry_contracts::Lifecycle::Error
-            };
-            store.finish_attempt(&grant.fence, lifecycle, None, None)?;
-            return Ok(None);
-        }
-        Ok(Some(store.close_restore(
-            &reservation.fence,
-            if failed {
-                RestoreClose::Failed
-            } else {
-                RestoreClose::Closed
-            },
-        )?))
-    }
 }
+
+#[cfg(test)]
+mod shutdown_tests;

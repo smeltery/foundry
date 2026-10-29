@@ -71,6 +71,9 @@ impl From<ContextReceipt> for String {
 #[serde(try_from = "String", into = "String")]
 pub struct ContextDigest([u8; 32]);
 impl ContextDigest {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
     pub fn of(bytes: &[u8]) -> Self {
         Self(Sha256::digest(bytes).into())
     }

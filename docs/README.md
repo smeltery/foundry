@@ -19,6 +19,7 @@ is underway; each page distinguishes tested functionality from planned features.
 - [Durable storage and recovery](architecture/storage.md)
 - [Checkpoint restoration and continuation ownership](architecture/restoration.md)
 - [Local adapter supervision](architecture/runtime.md)
+- [Explicit adapter configuration and permissions](architecture/adapter-configuration.md)
 - [Runtime architecture decision](architecture/runtime-decision.md)
 - [Application service and receipt delivery](architecture/service.md)
 - [MCP transport and tool contracts](architecture/mcp.md)

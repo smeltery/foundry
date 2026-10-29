@@ -2,6 +2,7 @@
 //! Existing runtime entrypoints remain default-deny.
 pub mod capture;
 pub mod capture_owner;
+mod capture_stop;
 mod engine;
 mod fresh_capture;
 pub mod loading;
@@ -12,8 +13,13 @@ mod policy;
 mod shared_reply;
 mod startup;
 mod tool;
-pub use engine::{CleanupReceipt, PreparedCapture};
+pub mod tool_permission;
+pub use engine::{CaptureActionRequired, CleanupReceipt, PreparedCapture};
+pub use foundry_contracts::permission::PermissionDisposition;
 pub use shared_reply::SharedToolReply;
+pub use tool_permission::{
+    ToolAdmissionFailure, ToolDispatchAuthorization, ToolDispatchGrant, ToolPolicyIdentity,
+};
 
 use crate::{AdapterMessage, AdapterSpec, RunResult, RuntimeError};
 use cap_std::fs::Dir;
@@ -83,10 +89,17 @@ pub enum PersistenceFailure {
     Storage,
     OwnershipLost,
 }
-#[derive(Debug)]
 pub enum PersistenceReply {
     EventCommitted {
         checkpoint: CheckpointId,
+    },
+    ToolAuthorized {
+        checkpoint: CheckpointId,
+        authorization: Box<dyn ToolDispatchAuthorization>,
+    },
+    ToolBlocked {
+        checkpoint: CheckpointId,
+        disposition: PermissionDisposition,
     },
     ToolClaimed {
         checkpoint: CheckpointId,
@@ -106,6 +119,20 @@ pub enum PersistenceReply {
     },
 }
 
+impl std::fmt::Debug for PersistenceReply {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::EventCommitted { .. } => "EventCommitted",
+            Self::ToolClaimed { .. } => "ToolClaimed",
+            Self::ToolAuthorized { .. } => "ToolAuthorized",
+            Self::ToolBlocked { .. } => "ToolBlocked",
+            Self::ToolFinished { .. } => "ToolFinished",
+            Self::ToolFinishedEvidence { .. } => "ToolFinishedEvidence",
+            Self::Rejected { .. } => "Rejected",
+        })
+    }
+}
+
 /// Use bounded channels of PERSISTENCE_CAPACITY. The service owns and joins its
 /// persistence worker after runtime cleanup, including on cancellation/errors.
 pub struct RuntimePersistence {
@@ -115,6 +142,8 @@ pub struct RuntimePersistence {
 
 /// Trusted configuration, never deserialized from an adapter request.
 pub struct TrustedToolPolicy {
+    identity: ToolPolicyIdentity,
+    authorization_required: bool,
     helper: PathBuf,
     directory: Dir,
     grants: Vec<host::Grant>,

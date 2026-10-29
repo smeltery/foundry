@@ -3,6 +3,8 @@ use crate::{
     pipe_workers::{self, POLL_INTERVAL, Pipe, Workers},
 };
 use foundry_contracts::{AdapterCommand, AdapterEvent, MAX_FRAME_BYTES, Session};
+#[path = "process_bootstrap.rs"]
+mod bootstrap;
 #[path = "process_cleanup.rs"]
 mod cleanup;
 #[path = "process_context.rs"]
@@ -88,9 +90,10 @@ impl Process {
     fn spawn_inner(
         spec: &AdapterSpec,
         directory: &std::path::Path,
-        mut identity: SpawnIdentity,
+        identity: SpawnIdentity,
         context: Option<SyncSender<ContextOutput>>,
     ) -> Result<Self, RuntimeError> {
+        let (prelude, gate) = bootstrap::prepare(spec)?;
         let context_attempt = identity.attempt().map(str::to_owned);
         let loading_scope = identity.loading_scope().cloned();
         let latch = identity.latch();
@@ -102,7 +105,7 @@ impl Process {
         let mut command = Command::new(executable);
         command.args(&spec.args).current_dir(directory).env_clear();
         // No HOME, credential, model-provider or user configuration variables.
-        // Callers needing secrets must add a separately reviewed credential channel.
+        // Explicit private preparation uses the first stdin frame, never environment.
         for key in ["PATH", "LANG", "LC_ALL", "TZ"] {
             if let Some(value) = std::env::var_os(key) {
                 command.env(key, value);
@@ -150,40 +153,18 @@ impl Process {
         pipe_workers::nonblocking(&stderr)?;
         let errors = output.clone();
         process.workers.spawn("adapter-input", move |stop| {
-            let mut stdin = Pipe::new(stdin, Arc::clone(&stop));
-            while !pipe_workers::stopped(&stop) {
-                let frame = match input.recv_timeout(POLL_INTERVAL) {
-                    Ok(frame) => frame,
-                    Err(RecvTimeoutError::Timeout) => continue,
-                    Err(RecvTimeoutError::Disconnected) => break,
-                };
-                if let Err(error) = stdin.write_all(&frame.bytes).and_then(|()| stdin.flush()) {
-                    errors.send(
-                        ContextOutput::Ordinary(WireEvent::Error(error.into())),
-                        &stop,
-                    );
-                    break;
-                }
-            }
+            bootstrap::input(stdin, input, prelude, errors, stop);
         })?;
         process.workers.spawn("adapter-output", move |stop| {
-            let mut reader = BufReader::new(Pipe::new(stdout, Arc::clone(&stop)));
-            while !pipe_workers::stopped(&stop) {
-                let item = match read_frame(&mut reader, reader_cleanup.as_deref()) {
-                    Ok(Some(bytes)) => identity.decode(&bytes, &reader_receipts),
-                    Ok(None) => ContextOutput::Ordinary(WireEvent::Closed),
-                    Err(error) => ContextOutput::Ordinary(WireEvent::Error(error)),
-                };
-                let terminal = item.terminal();
-                if !output.send(item, &stop) || terminal {
-                    break;
-                }
-            }
-            if !reader.buffer().is_empty()
-                && let Some(cleanup) = &reader_cleanup
-            {
-                cleanup.discarded();
-            }
+            bootstrap::output(
+                stdout,
+                identity,
+                gate,
+                reader_receipts,
+                output,
+                reader_cleanup,
+                stop,
+            );
         })?;
         process.workers.spawn("adapter-stderr", move |stop| {
             // Fixed-memory drain; secret-bearing stderr is never forwarded.
@@ -284,9 +265,10 @@ impl Drop for Process {
     }
 }
 
-fn read_frame(
+fn read_frame_limit(
     reader: &mut impl BufRead,
     cleanup: Option<&cleanup::CaptureCleanup>,
+    limit: usize,
 ) -> Result<Option<Vec<u8>>, RuntimeError> {
     let mut frame = Vec::new();
     loop {
@@ -306,7 +288,7 @@ fn read_frame(
         }
         let newline = buffer.iter().position(|byte| *byte == b'\n');
         let length = newline.unwrap_or(buffer.len());
-        if frame.len() + length > MAX_FRAME_BYTES {
+        if frame.len() + length > limit {
             return Err(RuntimeError::FrameTooLarge);
         }
         frame.extend_from_slice(&buffer[..length]);
@@ -394,3 +376,7 @@ mod worker_tests;
 #[cfg(all(test, unix))]
 #[path = "process_context_tests.rs"]
 mod context_tests;
+
+#[cfg(all(test, unix))]
+#[path = "process_bootstrap_tests.rs"]
+mod bootstrap_tests;

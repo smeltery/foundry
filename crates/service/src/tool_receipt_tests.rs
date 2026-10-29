@@ -238,6 +238,7 @@ fn evidence_receipt_matches_committed_ledger_for_every_completion_kind() {
             requests_rx,
             replies_tx,
             WorkerControl {
+                permissions: None,
                 signals: RunControl::new(Arc::new(AtomicU8::new(0))),
                 activate_on_ready: false,
                 expired: Arc::new(AtomicBool::new(false)),
@@ -319,6 +320,7 @@ fn capture_ready_persists_without_opening_message_admission() {
             requests_rx,
             replies_tx,
             WorkerControl {
+                permissions: None,
                 signals: signals.clone(),
                 activate_on_ready,
                 expired: Arc::new(AtomicBool::new(false)),

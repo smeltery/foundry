@@ -157,6 +157,18 @@ impl Startup {
         self.enter(Phase::StartPending);
         Ok(())
     }
+    pub(super) fn check_permission_stop(
+        &self,
+    ) -> Result<std::sync::Arc<CaptureOwnerIdentity>, RuntimeError> {
+        if !self.active() || self.pending.is_some() || self.terminal.is_some() {
+            return Err(protocol("capture permission stop outside active phase"));
+        }
+        // Active execution is bounded by the run deadline, not the startup timer.
+        match self.owner.replies.try_recv() {
+            Err(TryRecvError::Empty) => Ok(std::sync::Arc::clone(&self.owner.identity)),
+            _ => Err(protocol("late or disconnected capture owner reply")),
+        }
+    }
     pub fn active(&self) -> bool {
         self.phase == Phase::Active
     }
@@ -284,3 +296,7 @@ mod trace_integration_tests;
 #[cfg(all(test, unix))]
 #[path = "terminal_failure_tests.rs"]
 mod terminal_failure_tests;
+
+#[cfg(all(test, unix))]
+#[path = "capture_stop_tests.rs"]
+mod stop_tests;

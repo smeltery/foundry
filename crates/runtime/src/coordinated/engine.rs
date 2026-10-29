@@ -17,7 +17,7 @@ use crate::{
 };
 pub(super) use exit::EngineExit;
 use exit::Proposal;
-pub use exit::{CleanupReceipt, PreparedCapture};
+pub use exit::{CaptureActionRequired, CleanupReceipt, PreparedCapture};
 use foundry_contracts::{AdapterCommand, MESSAGE_ACK_CAPABILITY, PROTOCOL_VERSION};
 pub(super) use restored::{RestoredParts, run_restored};
 use std::{
@@ -82,6 +82,9 @@ pub(super) fn run(
         options,
     )? {
         EngineExit::Ordinary(result) => Ok(result),
+        EngineExit::ActionRequired(_) => Err(RuntimeError::Invalid(
+            "capture stop requires private finalization",
+        )),
         EngineExit::Prepared(prepared) => {
             drop(prepared);
             Err(RuntimeError::Invalid(
@@ -139,7 +142,14 @@ pub(super) fn run_owned(
     if let Some(helper) = state.job.as_mut().and_then(|job| job.helper.as_mut()) {
         helper.request_stop();
     }
-    let adapter_cleanup = if matches!(result, Ok(Proposal::Validated(_))) {
+    let adapter_cleanup = if matches!(result, Ok(Proposal::Validated(_)))
+        || (state.startup.is_some()
+            && matches!(
+                result,
+                Ok(Proposal::PermissionStop(
+                    PermissionDisposition::ActionRequired
+                ))
+            )) {
         match &state.ingress {
             Ingress::Context(events) | Ingress::Restored { events, .. } => {
                 state.process.stop_context_checked(events)

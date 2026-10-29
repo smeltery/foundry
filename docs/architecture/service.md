@@ -3,7 +3,8 @@
 `foundry-service` joins [session storage](storage.md) with
 [subprocess supervision](runtime.md). It provides a synchronous library operation
 for running an attempt and persisting its terminal state. It supplies no model
-provider, credential channel or enabled tool executor.
+provider. Explicit configuration and consuming tool authority are available through
+the [prepared adapter library path](adapter-configuration.md).
 
 ## Opening and running
 

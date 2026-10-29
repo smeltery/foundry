@@ -148,8 +148,13 @@ impl Harness {
         let RestoreReply::NativePrepared(observation) = receive(&mut owner).result.unwrap() else {
             panic!()
         };
+        let directory = foundry_store::Store::open(&fixture.path)
+            .unwrap()
+            .get(&fixture.session)
+            .unwrap()
+            .directory;
         let plan = LoadingPlan::new(
-            fixture.directory.path().to_path_buf(),
+            directory.into(),
             scope,
             *descriptor,
             payload,

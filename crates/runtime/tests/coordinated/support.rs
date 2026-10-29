@@ -39,6 +39,19 @@ impl Fixture {
         self.start_with_capacity(adapter, enabled, PERSISTENCE_CAPACITY)
     }
     pub fn start_with_capacity(&self, adapter: &str, enabled: bool, capacity: usize) -> Harness {
+        self.start_configured(adapter, enabled, capacity, false, vec![host::Grant::Read])
+    }
+    pub fn start_permissions(&self, grants: Vec<host::Grant>) -> Harness {
+        self.start_configured("normal", true, PERSISTENCE_CAPACITY, true, grants)
+    }
+    fn start_configured(
+        &self,
+        adapter: &str,
+        enabled: bool,
+        capacity: usize,
+        required: bool,
+        grants: Vec<host::Grant>,
+    ) -> Harness {
         let mut spec = AdapterSpec::new(&self.python);
         spec.args = ["-u", "-c", include_str!("adapter.py"), adapter]
             .into_iter()
@@ -62,7 +75,7 @@ impl Fixture {
             TrustedToolPolicy::new(
                 self.root.join("helper"),
                 Dir::open_ambient_dir(&self.root, cap_std::ambient_authority()).unwrap(),
-                vec![host::Grant::Read],
+                grants,
                 host::HostLimits {
                     request_bytes: host::MAX_REQUEST_BYTES,
                     read_bytes: 262144,
@@ -74,6 +87,14 @@ impl Fixture {
             )
             .unwrap()
         });
+        let policy = policy.map(|policy| {
+            if required {
+                policy.require_authorization()
+            } else {
+                policy
+            }
+        });
+        let identity = policy.as_ref().map(TrustedToolPolicy::identity);
         let (requests, receive) = mpsc::sync_channel(capacity);
         let (replies, reply_rx) = mpsc::sync_channel(PERSISTENCE_CAPACITY);
         let (cancel, cancellation) = mpsc::channel();
@@ -95,6 +116,7 @@ impl Fixture {
             result.send(outcome).unwrap();
         });
         Harness {
+            identity,
             receive,
             replies,
             cancel,
@@ -110,6 +132,7 @@ impl Drop for Fixture {
 }
 
 pub struct Harness {
+    pub identity: Option<ToolPolicyIdentity>,
     pub receive: Receiver<PersistenceRequest>,
     pub replies: SyncSender<PersistenceReply>,
     pub cancel: Sender<CancelMode>,

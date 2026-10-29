@@ -30,10 +30,13 @@ else: emit(ready)
 start=read()
 assert start['type']=='start' and start['attempt_id']=='attempt'
 assert set(start)=={'type','version','attempt_id','session'}
-if mode in ('tool','tool_terminal'):
+if mode in ('tool','tool_terminal','tool_partial'):
     emit({'type':'tool_call','attempt_id':'attempt','call_id':'call','name':'read','input':{'path':'file'}})
 else:
     emit({'type':'text','attempt_id':'attempt','text':'started'})
+if mode=='tool_partial':
+    sys.stdout.write('{');sys.stdout.flush()
+    (root/'partial').write_text('sent')
 if mode.startswith('terminal'):
     emit({'type':'settled','attempt_id':'attempt','outcome':'success','result':'private-final'})
 while True:

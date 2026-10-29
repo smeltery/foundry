@@ -5,7 +5,7 @@ impl Coordinator<'_> {
     pub(super) fn persisted(
         &mut self,
         reply: PersistenceReply,
-    ) -> Result<Option<RunResult>, RuntimeError> {
+    ) -> Result<Option<Proposal>, RuntimeError> {
         match reply {
             PersistenceReply::Rejected { .. } => {
                 return Err(protocol("persistence rejected checkpoint"));
@@ -54,36 +54,9 @@ impl Coordinator<'_> {
                         })
                     }
                     Action::Denied(call_id, code) => {
-                        let result = serde_json::json!({"status":"denied","code":code});
-                        if let Some(trace) = self
-                            .startup
-                            .as_mut()
-                            .map(|s| &mut s.trace)
-                            .or(self.restored.as_mut())
-                        {
-                            let reservation = trace
-                                .reserve_result(
-                                    self.attempt,
-                                    &call_id,
-                                    super::super::capture::ResultProvenance::Denied,
-                                    &result,
-                                )
-                                .map_err(|_| protocol("denial trace rejected"))?;
-                            self.process.send_reserved_result(
-                                self.attempt,
-                                &call_id,
-                                &reservation,
-                            )?;
-                            reservation.commit_enqueued();
-                            return Ok(None);
-                        }
-                        self.process.send(&AdapterCommand::ToolResult {
-                            attempt_id: self.attempt.into(),
-                            call_id,
-                            result,
-                        })?
+                        self.deliver_denied(call_id, code)?;
                     }
-                    Action::Terminal(result) => return Ok(Some(result)),
+                    Action::Terminal(result) => return Ok(Some(result.into())),
                     Action::Failed => return Err(RuntimeError::AdapterFailed),
                 }
             }
@@ -96,10 +69,53 @@ impl Coordinator<'_> {
                     .policy
                     .as_ref()
                     .ok_or_else(|| protocol("tool policy unavailable"))?;
-                job.reply(reply, policy, Arc::clone(&self.stop))?;
+                if let Some(disposition) = job.reply(reply, policy, Arc::clone(&self.stop))? {
+                    let call_id = job.call_id().to_owned();
+                    self.job.take();
+                    match disposition {
+                        PermissionDisposition::Denied => self.deliver_denied(call_id, "denied")?,
+                        PermissionDisposition::ActionRequired => {
+                            self.delivery.enabled = false;
+                            return Ok(Some(Proposal::PermissionStop(disposition)));
+                        }
+                        PermissionDisposition::Unsupported => {
+                            self.delivery.enabled = false;
+                            return Ok(Some(Proposal::PermissionStop(disposition)));
+                        }
+                        _ => return Err(protocol("invalid blocked tool disposition")),
+                    }
+                }
             }
         }
         Ok(None)
+    }
+
+    fn deliver_denied(&mut self, call_id: String, code: &'static str) -> Result<(), RuntimeError> {
+        let result = serde_json::json!({"status":"denied","code":code});
+        if let Some(trace) = self
+            .startup
+            .as_mut()
+            .map(|s| &mut s.trace)
+            .or(self.restored.as_mut())
+        {
+            let reservation = trace
+                .reserve_result(
+                    self.attempt,
+                    &call_id,
+                    super::super::capture::ResultProvenance::Denied,
+                    &result,
+                )
+                .map_err(|_| protocol("denial trace rejected"))?;
+            self.process
+                .send_reserved_result(self.attempt, &call_id, &reservation)?;
+            reservation.commit_enqueued();
+            return Ok(());
+        }
+        self.process.send(&AdapterCommand::ToolResult {
+            attempt_id: self.attempt.into(),
+            call_id,
+            result,
+        })
     }
 
     pub(super) fn event(&mut self, mut event: AdapterEvent) -> Result<(), RuntimeError> {

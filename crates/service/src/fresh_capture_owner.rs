@@ -7,7 +7,7 @@ use crate::{
     restoration_owner::{RestoreOwnerOptions, RestoreOwnerReport},
 };
 use foundry_contracts::CancelMode;
-use foundry_runtime::coordinated::PreparedCapture;
+use foundry_runtime::coordinated::{CaptureActionRequired, PreparedCapture};
 use foundry_store::FinalizedCheckpoint;
 use std::{
     path::PathBuf,
@@ -24,10 +24,16 @@ mod worker;
 pub enum FreshCaptureReply {
     Ready(Box<CapturePorts>),
     Published(Box<FinalizedCheckpoint>),
+    ActionRequired(Box<foundry_contracts::Session>),
+}
+
+enum Job {
+    FinishCapture(Box<PreparedCapture>),
+    FinishActionRequired(CaptureActionRequired),
 }
 
 pub struct FreshCaptureOwner {
-    jobs: mpsc::SyncSender<PreparedCapture>,
+    jobs: mpsc::SyncSender<Job>,
     replies: mpsc::Receiver<Result<FreshCaptureReply>>,
     pending: bool,
     submitted: bool,
@@ -47,6 +53,34 @@ impl FreshCaptureOwner {
         session_id: String,
         configuration: PublicationConfiguration,
         options: RestoreOwnerOptions,
+    ) -> Result<Self> {
+        Self::start_inner(path, session_id, configuration, options, None)
+    }
+
+    /// The runtime must use the matching policy in required authorization mode.
+    pub fn start_with_permissions(
+        path: PathBuf,
+        session_id: String,
+        configuration: PublicationConfiguration,
+        options: RestoreOwnerOptions,
+        permissions: crate::permission::ToolPermissions,
+    ) -> Result<Self> {
+        permissions.check_configuration(&configuration.profile.configuration_digest)?;
+        Self::start_inner(
+            path,
+            session_id,
+            configuration,
+            options,
+            Some(Arc::new(permissions)),
+        )
+    }
+
+    fn start_inner(
+        path: PathBuf,
+        session_id: String,
+        configuration: PublicationConfiguration,
+        options: RestoreOwnerOptions,
+        permissions: Option<Arc<crate::permission::ToolPermissions>>,
     ) -> Result<Self> {
         // Fresh capture is deliberately a first-attempt entry, never restore fallback.
         if path.as_os_str().is_empty()
@@ -72,6 +106,7 @@ impl FreshCaptureOwner {
         let (renew, renewed) = mpsc::channel();
         let requested = Arc::new(AtomicU8::new(0));
         let signals = RunControl::new(Arc::clone(&requested));
+        signals.permissions.initialize(deadline);
         let stopping = Arc::new(AtomicBool::new(false));
         let expired = Arc::new(AtomicBool::new(false));
         let (watch_expired, watch_cancel, watch_signals) =
@@ -104,6 +139,7 @@ impl FreshCaptureOwner {
             watchdog: Some(watchdog),
         };
         let actor = worker::Actor {
+            permissions,
             options,
             budget,
             requests,
@@ -138,6 +174,12 @@ impl FreshCaptureOwner {
         }
     }
     pub fn finish_capture(&mut self, prepared: PreparedCapture) -> Result<()> {
+        self.submit(Job::FinishCapture(Box::new(prepared)))
+    }
+    pub fn finish_action_required(&mut self, stop: CaptureActionRequired) -> Result<()> {
+        self.submit(Job::FinishActionRequired(stop))
+    }
+    fn submit(&mut self, job: Job) -> Result<()> {
         if self.pending
             || self.submitted
             || self.expired.load(Ordering::Acquire)
@@ -146,7 +188,7 @@ impl FreshCaptureOwner {
             return Err(ServiceError::Coordination("fresh finalization unavailable"));
         }
         self.jobs
-            .try_send(prepared)
+            .try_send(job)
             .map_err(|_| ServiceError::Coordination("fresh finalization queue unavailable"))?;
         self.pending = true;
         self.submitted = true;

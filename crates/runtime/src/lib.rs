@@ -1,5 +1,6 @@
 //! Synchronous, isolated subprocess supervision. No model or tool execution is built in.
 
+pub mod bootstrap;
 pub mod coordinated;
 mod delivery;
 mod pipe_workers;
@@ -21,6 +22,7 @@ use std::time::{Duration, Instant};
 /// before changing to the session directory; arguments never pass through a shell.
 #[derive(Debug, Clone)]
 pub struct AdapterSpec {
+    bootstrap: bootstrap::BootstrapSlot,
     pub executable: PathBuf,
     pub args: Vec<OsString>,
     pub ready_timeout: Duration,
@@ -31,6 +33,7 @@ pub struct AdapterSpec {
 impl AdapterSpec {
     pub fn new(executable: impl Into<PathBuf>) -> Self {
         Self {
+            bootstrap: bootstrap::BootstrapSlot::default(),
             executable: executable.into(),
             args: Vec::new(),
             ready_timeout: Duration::from_secs(10),

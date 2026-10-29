@@ -89,6 +89,7 @@ pub(crate) fn watch_lease(
     cancellation: mpsc::Sender<CancelMode>,
     signals: RunControl,
 ) {
+    signals.permissions.initialize(deadline);
     loop {
         signals.relay(&cancellation);
         // Once the old budget expires, even a late successful renewal cannot revive it.
@@ -98,7 +99,9 @@ pub(crate) fn watch_lease(
         }
         match updates.recv_timeout((deadline - now).min(Duration::from_millis(5))) {
             Ok(None) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
-            Ok(Some(next)) if Instant::now() < deadline => deadline = next,
+            Ok(Some(next)) if signals.permissions.renew(deadline, next) => {
+                deadline = next;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             _ => break,
         }

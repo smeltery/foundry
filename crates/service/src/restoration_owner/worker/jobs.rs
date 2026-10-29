@@ -7,7 +7,10 @@ impl Actor {
         kind: JobKind,
     ) -> Result<RestoreReply> {
         match kind {
-            JobKind::OpenCapture(configuration) => {
+            JobKind::OpenCapture(configuration, permissions) => {
+                if let Some(permissions) = &permissions {
+                    permissions.check_configuration(&configuration.profile.configuration_digest)?;
+                }
                 if reservation.publication.is_some() {
                     return Err(ServiceError::Coordination("capture already opened"));
                 }
@@ -33,6 +36,7 @@ impl Actor {
                     ));
                 }
                 let control = crate::tool_worker::WorkerControl {
+                    permissions,
                     signals: self.io.signals.clone(),
                     activate_on_ready: false,
                     expired: Arc::clone(&self.io.expired),
@@ -49,6 +53,27 @@ impl Actor {
                 reservation.publication = Some(publication);
                 Ok(RestoreReply::CaptureReady(Box::new(ports)))
             }
+            JobKind::FinishActionRequired(stop) => {
+                if reservation.cleanup.as_ref().map(CleanupObserver::status)
+                    != Some(CleanupStatus::Complete)
+                {
+                    return Err(ServiceError::Coordination(
+                        "capture runtime cleanup unverified",
+                    ));
+                }
+                let grant = reservation
+                    .continuation
+                    .as_ref()
+                    .and_then(|link| link.grant.as_ref())
+                    .ok_or(ServiceError::Coordination("capture attempt absent"))?;
+                let publication = reservation
+                    .publication
+                    .as_mut()
+                    .ok_or(ServiceError::Coordination("capture owner absent"))?;
+                let result = publication.finish_action_required(store, &grant.fence, *stop)?;
+                reservation.attempt_finalized = true;
+                Ok(RestoreReply::ActionRequired(Box::new(result)))
+            }
             JobKind::FinishCapture(prepared) => {
                 let grant = reservation
                     .continuation
@@ -60,7 +85,7 @@ impl Actor {
                     .as_mut()
                     .ok_or(ServiceError::Coordination("capture owner absent"))?;
                 let result = publication.finish(store, &grant.fence, *prepared)?;
-                reservation.published = true;
+                reservation.attempt_finalized = true;
                 Ok(RestoreReply::Published(Box::new(result)))
             }
             JobKind::OpenContinuation(selection) => {
