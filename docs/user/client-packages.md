@@ -72,7 +72,8 @@ Paths in this table are relative to the distribution root.
 | `plugins/foundry/.claude-plugin/plugin.json` | Claude descriptor |
 | `plugins/foundry/.codex-plugin/plugin.json` | Codex compatibility descriptor |
 | `plugins/foundry/.cursor-plugin/plugin.json` | Cursor descriptor |
-| `plugins/foundry/commands/` | Ask, build, fix, fix-ci, review and status workflows |
+| `plugins/foundry/README.md` | Package setup and operation boundaries |
+| `plugins/foundry/skills/f5y-*/SKILL.md` | Ask, build, fix, fix-ci, review and status workflows |
 | `plugins/foundry/skills/foundry/SKILL.md` | Shared orchestration guidance |
 | `plugins/foundry/skills/foundry/agents/openai.yaml` | Skill display metadata |
 | `plugins/foundry/rules/foundry-handoff.mdc` | Opt-in handoff guidance |
@@ -101,9 +102,21 @@ connections use the fixed absolute bundled path.
 
 Keep the complete distribution, including hidden directories, license and
 notices. Give the client the package or discovery root supported by its local
-plugin interface. Exact installation commands and settings locations are not
-certified here: this baseline does not establish a tested installed version of
-Claude, Codex, Cursor or Grok.
+plugin interface. The following bounded native checks were observed on
+2026-10-29; they do not certify a complete installed workflow or a version range.
+
+| Client | Observed result | Remaining checks |
+| --- | --- | --- |
+| Claude Code 2.1.312 | Package validation; six commands and shared skill discovered; five real tools called; descriptor-only reconnect, idempotency, errors and session-local unload verified | CLI execution/continuation and persistent marketplace installation/removal |
+| Cursor Agent 2026.10.01-e373342 | Private server approval and native enumeration of all five tools | Invocation probe required authentication; package workflows and Cursor IDE remain separate |
+| Codex CLI 0.165.0 | Restricted Linux container completed a credential-free local protocol-fixture turn | Prepared plugin discovery and real Foundry MCP/runtime checks |
+| Grok Build 1.0.70 | Scoped local installation, six commands and skill discovered; native MCP handshake and five-tool enumeration | Headless and ACP invocation probes required authentication; workflow execution remains unverified |
+| Cursor IDE | No installed-client result | Isolated provisioning, discovery and runtime checks |
+
+These probes kept existing user configuration and credentials inaccessible.
+The Claude fixture selected deterministic tool calls over loopback; the native
+client, Foundry executable and durable database were real. It did not test a
+model's interpretation of workflow instructions or contact a paid provider.
 
 Claude, Codex and Cursor have separate descriptors. Grok remains an explicit
 shared-layout compatibility target; the Cursor layout alone does not prove Grok
@@ -129,7 +142,7 @@ The current [MCP interface](../architecture/mcp.md) exposes five local tools:
 
 | Tool | Current effect |
 | --- | --- |
-| `session_create` | Creates a queued local session |
+| `session_create` | Creates a queued local session or returns the existing idempotent match |
 | `session_list` | Lists stored local sessions |
 | `session_get` | Reads a stored session |
 | `session_send` | Queues an instruction with an explicit message identity |
@@ -140,6 +153,10 @@ even if adapter configuration exists in the environment. Queue acceptance,
 delivery acknowledgment and completed work are different states. A cancellation
 request is not proof that the process stopped. Inspect the stored state and
 actual owner outcome before reporting completion or suspension.
+
+An idempotent create retry can return a session that has since run or stopped.
+Report its returned lifecycle and outcome; the create call's `execution` field
+describes that call's lack of execution, not the session's entire history.
 
 For configured local execution, use the actual [CLI workflows](cli.md),
 [local adapter setup](local-adapter.md) and [resume flow](resume.md). Workflow

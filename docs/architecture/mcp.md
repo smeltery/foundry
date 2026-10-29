@@ -9,10 +9,15 @@ tested against the executable; GUI editor setup is not yet verified.
 
 ## Connection lifecycle
 
-The supported protocol version is `2025-11-25`. Initialization requires client
-name, client version and capabilities; the client then sends its initialized
-notification. Unsupported versions are rejected. Ping is available during the
-handshake. Notifications do not dispatch tools or receive responses.
+The supported protocol versions are `2025-06-18` and `2025-11-25`. Initialization
+requires a string protocol version, client name, client version and capabilities.
+The server echoes a supported requested version; otherwise it selects its latest
+supported version, `2025-11-25`. A client unable to use that selection should
+disconnect. An accepting client sends its initialized notification before tools
+are available. Missing or non-string versions are invalid parameters. Both
+versions use the same advertised tools, schemas, metadata and result encoding.
+Ping is available during the handshake. Notifications do not dispatch tools or
+receive responses.
 
 ```mermaid
 sequenceDiagram

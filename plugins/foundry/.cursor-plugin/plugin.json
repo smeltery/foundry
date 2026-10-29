@@ -5,7 +5,6 @@
   "author": {
     "name": "smeltery"
   },
-  "commands": "./commands/",
   "skills": "./skills/",
   "rules": "./rules/"
 }

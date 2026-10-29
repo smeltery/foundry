@@ -182,7 +182,7 @@ fn reject_invalid_json_ids_envelopes_and_version() {
         );
     }
     let mut params = initialize();
-    params["protocolVersion"] = json!("unsupported");
+    params["protocolVersion"] = json!(42);
     assert_eq!(
         request(&mut server, &mut backend, "initialize", params)["error"]["code"],
         -32602

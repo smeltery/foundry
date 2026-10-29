@@ -1,10 +1,11 @@
 ---
+name: f5y-ask
 description: Answer a scoped question using available evidence or queue an explicit Foundry investigation.
 ---
 
 # Ask Foundry
 
-Apply the [Foundry coordination skill](../skills/foundry/SKILL.md).
+Apply the [Foundry coordination skill](../foundry/SKILL.md).
 
 Identify the question and the evidence needed to answer it. Use supplied files,
 logs and session IDs before asking for more context. For a question about ongoing

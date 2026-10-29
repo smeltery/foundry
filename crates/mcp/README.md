@@ -32,9 +32,14 @@ error. Successful values are serialized into MCP text content; backend failures
 produce `isError: true` with a JSON text object containing `code` and `message`.
 Backend messages must not contain credentials or other sensitive diagnostics.
 
-A connection must initialize with protocol version `2025-11-25`, capabilities,
-and client name/version, then send `notifications/initialized`. Unsupported
-versions are explicitly rejected. Ping is available during the handshake.
+A connection must initialize with a string protocol version, capabilities,
+and client name/version, then send `notifications/initialized`. The server echoes
+supported versions `2025-06-18` and `2025-11-25`; for other version strings it
+selects its latest supported version, `2025-11-25`. A client that cannot use the
+selected version should disconnect without completing the handshake. Missing or
+non-string versions are invalid parameters. Both revisions expose the same five
+tools, argument schemas, text results and metadata handling. Ping is available
+during the handshake.
 Unknown methods return -32601; invalid tool names or arguments return -32602.
 Notifications produce no response and cannot dispatch a tool. Batch messages,
 client responses, null/fractional request IDs, and invalid envelopes are rejected.

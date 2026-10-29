@@ -50,8 +50,12 @@ by their actual ID and selected database, not a hosted dashboard link.
 
 ## Submission, delivery and execution
 
-`session_create` queues a record; it starts no adapter or model, even when an
-adapter is configured. Report it as queued with execution not started.
+`session_create` queues a new record; this call starts no adapter or model, even
+when an adapter is configured. An idempotent retry returns the existing session,
+which may since have run or stopped. Preserve its ID and report the returned
+lifecycle and outcome. `execution: "not_started"` describes this call's behavior,
+not the session's history. Fetch current state when needed; do not replace the
+idempotency key to obtain a new task.
 `session_send` queues an instruction; it neither starts nor resumes execution.
 A running service can deliver instructions only with negotiated receipt support.
 
