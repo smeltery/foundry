@@ -26,6 +26,9 @@
           python = import inputs.python { inherit system; };
           utilities = import inputs.utilities { inherit system; };
           hooks = import inputs.hooks { inherit system; };
+          target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+          cargoTarget = builtins.replaceStrings [ "-" ] [ "_" ]
+            (pkgs.lib.toUpper target);
         in {
           rust = pkgs.rust-bin.stable."1.95.0".minimal.override {
             extensions = [ "clippy" "rustfmt" ];
@@ -39,6 +42,19 @@
           inherit (pkgs) shellcheck git pkg-config;
           cc = pkgs.stdenv.cc;
           binutils = pkgs.stdenv.cc.bintools;
+          toolchain-env = pkgs.writeTextDir "share/foundry/toolchain.sh" ''
+            export CC=${pkgs.stdenv.cc}/bin/cc
+            export CXX=${pkgs.stdenv.cc}/bin/c++
+            export AR=${pkgs.stdenv.cc.bintools}/bin/ar
+            export RANLIB=${pkgs.stdenv.cc.bintools}/bin/ranlib
+            export CARGO_TARGET_${cargoTarget}_LINKER="$CC"
+            ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+              export DEVELOPER_DIR=${pkgs.apple-sdk}
+              export SDKROOT="$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+              export MACOSX_DEPLOYMENT_TARGET=14.0
+              export CARGO_TARGET_${cargoTarget}_RUSTFLAGS="-L native=${pkgs.libiconv}/lib"
+            ''}
+          '';
         };
     in {
       packages = inputs.nixpkgs.lib.genAttrs systems forSystem;
