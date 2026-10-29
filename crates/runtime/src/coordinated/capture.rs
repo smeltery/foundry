@@ -1,10 +1,12 @@
 //! Private capture data and trusted-owner attestations, never native semantic proof.
 mod bounds;
 mod cut;
+mod restored;
 mod terminal;
 mod trace;
 mod validation;
 pub use cut::*;
+pub use restored::RestoredCaptureOrigin;
 pub use terminal::*;
 pub use trace::*;
 pub use validation::*;

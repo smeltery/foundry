@@ -28,8 +28,9 @@ impl Coordinator<'_> {
                     Action::MessageReceipt(id) => {
                         self.startup
                             .as_mut()
-                            .ok_or_else(|| protocol("capture receipt outside capture"))?
-                            .trace
+                            .map(|s| &mut s.trace)
+                            .or(self.restored.as_mut())
+                            .ok_or_else(|| protocol("receipt outside traced execution"))?
                             .confirm_instruction_persisted(self.attempt, &id, checkpoint)
                             .map_err(|_| protocol("instruction persistence mismatch"))?;
                     }
@@ -46,7 +47,7 @@ impl Coordinator<'_> {
                         })?;
                     }
                     Action::Tool(request) => {
-                        self.job = Some(if self.startup.is_some() {
+                        self.job = Some(if self.startup.is_some() || self.restored.is_some() {
                             Job::new_capture(request)
                         } else {
                             Job::new(request)
@@ -54,9 +55,13 @@ impl Coordinator<'_> {
                     }
                     Action::Denied(call_id, code) => {
                         let result = serde_json::json!({"status":"denied","code":code});
-                        if let Some(startup) = self.startup.as_mut() {
-                            let reservation = startup
-                                .trace
+                        if let Some(trace) = self
+                            .startup
+                            .as_mut()
+                            .map(|s| &mut s.trace)
+                            .or(self.restored.as_mut())
+                        {
+                            let reservation = trace
                                 .reserve_result(
                                     self.attempt,
                                     &call_id,
@@ -142,9 +147,13 @@ impl Coordinator<'_> {
             match &event {
                 AdapterEvent::MessageAccepted { message_id, .. } => {
                     self.delivery.validate_ack(message_id)?;
-                    if let Some(startup) = self.startup.as_mut() {
-                        startup
-                            .trace
+                    if let Some(trace) = self
+                        .startup
+                        .as_mut()
+                        .map(|s| &mut s.trace)
+                        .or(self.restored.as_mut())
+                    {
+                        trace
                             .observe_instruction_receipt(self.attempt, message_id, checkpoint)
                             .map_err(|_| protocol("instruction receipt mismatch"))?;
                         Action::MessageReceipt(message_id.clone())

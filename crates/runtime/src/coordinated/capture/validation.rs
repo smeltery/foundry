@@ -1,9 +1,10 @@
 use super::{
-    CaptureCut, CaptureError, CaptureTerminal, DeliveredTrace,
+    CaptureCut, CaptureError, CaptureTerminal, DeliveredTrace, RestoredCaptureOrigin,
     bounds::{self, Encoding},
 };
 use crate::coordinated::capture_owner::CaptureCorrelation;
 use foundry_contracts::context::*;
+use std::sync::Arc;
 
 pub struct CaptureCandidate {
     format: ContextFormat,
@@ -30,14 +31,17 @@ pub struct OwnerValidationAttestation {
 
 /// Holding this job is not proof of native semantics. Only the trusted owner validates.
 pub struct CaptureValidationJob {
+    correlation: CaptureCorrelation,
     cut: CaptureCut,
     candidate: CaptureCandidate,
     trace: DeliveredTrace,
     binding: ContextDigest,
     terminal: CaptureTerminal,
+    restored: Option<Arc<RestoredCaptureOrigin>>,
 }
 
 impl CaptureValidationJob {
+    #[cfg(test)]
     pub(crate) fn new(
         correlation: &CaptureCorrelation,
         cut: CaptureCut,
@@ -45,6 +49,17 @@ impl CaptureValidationJob {
         challenge: &ContextReceipt,
         trace: DeliveredTrace,
         terminal: CaptureTerminal,
+    ) -> Result<Self, CaptureError> {
+        Self::with_origin(correlation, cut, event, challenge, trace, terminal, None)
+    }
+    pub(crate) fn with_origin(
+        correlation: &CaptureCorrelation,
+        cut: CaptureCut,
+        event: ContextEvent,
+        challenge: &ContextReceipt,
+        trace: DeliveredTrace,
+        terminal: CaptureTerminal,
+        restored: Option<Arc<RestoredCaptureOrigin>>,
     ) -> Result<Self, CaptureError> {
         let ContextEvent::Candidate {
             attempt_id,
@@ -68,10 +83,17 @@ impl CaptureValidationJob {
         if !trace.is_quiescent() {
             return Err(CaptureError::Pending);
         }
-        let opening = &trace.entries()[0];
-        if opening.id() != cut.identity().session_id || opening.attempt_id() != attempt_id.as_str()
-        {
-            return Err(CaptureError::Binding);
+        if let Some(origin) = &restored {
+            origin.check_cut(&cut)?;
+            origin.check_trace(&trace)?;
+        } else {
+            let opening = &trace.entries()[0];
+            if !matches!(opening.kind(), super::TraceKind::OpeningPrompt)
+                || opening.id() != cut.identity().session_id
+                || opening.attempt_id() != attempt_id.as_str()
+            {
+                return Err(CaptureError::Binding);
+            }
         }
         if coverage.inputs.len() > 1024
             || coverage.results.len() > 1024
@@ -87,7 +109,12 @@ impl CaptureValidationJob {
             return Err(CaptureError::Limit);
         }
         let metadata = bounds::json(&coverage, MAX_COVERAGE_BYTES)?;
-        let mut binding = Encoding::new(b"foundry.capture.validation.v2", 4096)?;
+        let domain: &[u8] = if restored.is_some() {
+            b"foundry.capture.validation.v3"
+        } else {
+            b"foundry.capture.validation.v2"
+        };
+        let mut binding = Encoding::new(domain, if restored.is_some() { 16384 } else { 4096 })?;
         binding.field(correlation.job.0.as_bytes())?;
         binding.field(correlation.attempt_id.as_str().as_bytes())?;
         binding.field(correlation.capture_id.as_str().as_bytes())?;
@@ -97,7 +124,11 @@ impl CaptureValidationJob {
         binding.field(ContextDigest::of(&metadata).to_hex().as_bytes())?;
         binding.field(trace.digest()?.to_hex().as_bytes())?;
         binding.field(terminal.binding_digest().to_hex().as_bytes())?;
+        if let Some(origin) = &restored {
+            origin.encode_binding(&mut binding)?;
+        }
         Ok(Self {
+            correlation: correlation.clone(),
             cut,
             candidate: CaptureCandidate {
                 format,
@@ -107,7 +138,15 @@ impl CaptureValidationJob {
             trace,
             binding: binding.digest(),
             terminal,
+            restored,
         })
+    }
+    /// Exact runtime-generated correlation checked against the candidate at construction.
+    pub fn correlation(&self) -> &CaptureCorrelation {
+        &self.correlation
+    }
+    pub fn restored_origin(&self) -> Option<&RestoredCaptureOrigin> {
+        self.restored.as_deref()
     }
     pub fn cut(&self) -> &CaptureCut {
         &self.cut
@@ -140,6 +179,7 @@ impl CaptureValidationJob {
             attestation,
             binding: self.binding,
             terminal: self.terminal,
+            restored: self.restored,
         })
     }
 }
@@ -159,8 +199,12 @@ pub struct VerifiedCapture {
     attestation: OwnerValidationAttestation,
     binding: ContextDigest,
     terminal: CaptureTerminal,
+    restored: Option<Arc<RestoredCaptureOrigin>>,
 }
 impl VerifiedCapture {
+    pub fn restored_origin(&self) -> Option<&RestoredCaptureOrigin> {
+        self.restored.as_deref()
+    }
     pub fn cut(&self) -> &CaptureCut {
         &self.cut
     }

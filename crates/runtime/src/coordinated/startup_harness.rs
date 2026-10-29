@@ -122,7 +122,17 @@ impl Harness {
         }
     }
     pub fn event(&self) -> (CheckpointId, AdapterEvent) {
-        match self.requests.recv_timeout(Duration::from_secs(2)).unwrap() {
+        let request = self
+            .requests
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_else(|failure| {
+                let detail = match self.result.try_recv() {
+                    Ok(Err(error)) => format!("{error:?}"),
+                    _ => "no runtime failure available".into(),
+                };
+                panic!("expected persistence event: {failure:?}; {detail}");
+            });
+        match request {
             PersistenceRequest::Event { checkpoint, event } => (checkpoint, event),
             _ => panic!("unexpected tool authority"),
         }

@@ -1,10 +1,17 @@
 //! Application operations joining durable storage and isolated adapter supervision.
 mod admission;
+mod context_commit;
+mod context_cut;
 mod control;
 mod coordinated;
 mod events;
 mod execution;
+pub mod fresh_capture_owner;
 mod lease;
+pub mod native_publication;
+pub mod native_validation;
+mod publication;
+pub mod restoration_owner;
 mod run_lease;
 mod tool_digest;
 mod tool_worker;

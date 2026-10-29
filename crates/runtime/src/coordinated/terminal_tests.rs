@@ -258,13 +258,15 @@ fn queued_claim_cancel_and_owner_timeout_never_prepare() {
 #[test]
 fn cancellation_and_deadline_during_native_owner_wait_suppress_verified_authority() {
     for cancel in [true, false] {
-        let mut h = Harness::new("terminal", Duration::from_millis(400));
+        // The same phase budget covers subprocess startup before validation.
+        let timeout = Duration::from_secs(2);
+        let mut h = Harness::new("terminal", timeout);
         let (terminal, frozen) = freeze(&h);
         let (correlation, job) = validation(&h, terminal, frozen);
         if cancel {
             h.cancel.send(CancelMode::Hard).unwrap();
         } else {
-            std::thread::sleep(Duration::from_millis(450));
+            std::thread::sleep(timeout + Duration::from_millis(50));
         }
         let verified = job.accept_from_trusted_owner(attestation()).unwrap();
         let _ = h.owner.replies.try_send(CaptureReply::CandidateVerified {
@@ -278,7 +280,10 @@ fn cancellation_and_deadline_during_native_owner_wait_suppress_verified_authorit
                 Ok(EngineExit::Ordinary(crate::RunResult::Cancelled { .. }))
             ));
         } else {
-            assert!(result.is_err());
+            assert!(matches!(
+                result,
+                Err(RuntimeError::Protocol("capture terminal deadline exceeded"))
+            ));
         }
     }
 }

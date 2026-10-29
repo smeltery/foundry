@@ -1,6 +1,7 @@
 //! Shared, versioned session and subprocess interfaces.
 pub mod capability;
 pub mod context;
+pub mod context_observation;
 pub mod context_v2;
 pub mod permission;
 

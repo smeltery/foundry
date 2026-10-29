@@ -50,6 +50,7 @@ impl CaptureCleanup {
                         event,
                         ContextOutput::Context(_)
                             | ContextOutput::Loading(_)
+                            | ContextOutput::Observation(_)
                             | ContextOutput::Ordinary(WireEvent::Event(_))
                     ) {
                         self.discarded();

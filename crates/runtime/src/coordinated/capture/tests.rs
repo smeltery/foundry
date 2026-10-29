@@ -310,8 +310,9 @@ pub(super) fn attestation(turn: &str) -> OwnerValidationAttestation {
 fn consuming_owner_attestation_preserves_exact_payload_without_claiming_native_proof() {
     let payload = ContextPayload::new(b"opaque-private-fixture".to_vec()).unwrap();
     let pointer = payload.as_bytes().as_ptr();
+    let expected_correlation = correlation();
     let job = CaptureValidationJob::new(
-        &correlation(),
+        &expected_correlation,
         cut(),
         candidate(payload),
         &challenge(),
@@ -319,6 +320,7 @@ fn consuming_owner_attestation_preserves_exact_payload_without_claiming_native_p
         terminal(),
     )
     .unwrap();
+    assert!(job.correlation() == &expected_correlation);
     let binding = job.binding_digest();
     assert_eq!(job.candidate().payload().as_ptr(), pointer);
     // This is intentionally an owner assertion over an opaque fixture, not a validator.

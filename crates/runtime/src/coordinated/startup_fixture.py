@@ -9,6 +9,7 @@ def read():
         (root/'result-body').write_text(raw.split('"result":',1)[1][:-2])
     with (root/'commands').open('a') as output: output.write(json.dumps(value)+'\n')
     return value
+if mode=='delayed_ready': time.sleep(0.4)
 caps=['context_capture_v1','context_export_v1','message_ack_v2']
 if mode=='missing': caps.remove('context_capture_v1')
 if mode=='missing_export': caps.remove('context_export_v1')

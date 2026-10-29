@@ -7,6 +7,8 @@ use foundry_contracts::{AdapterCommand, AdapterEvent, MAX_FRAME_BYTES, Session};
 mod cleanup;
 #[path = "process_context.rs"]
 mod context;
+#[path = "process_continuation.rs"]
+mod continuation;
 #[path = "process_loading.rs"]
 mod loading;
 #[path = "process_messages.rs"]
@@ -14,6 +16,7 @@ mod messages;
 pub(crate) use context::ContextOutput;
 use context::Output;
 use loading::SpawnIdentity;
+pub(crate) use loading::{LoadingCommand, LoadingProcessSpec, LoadingSendError};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
@@ -41,11 +44,15 @@ pub(crate) struct Process {
     stopped: bool,
     context_attempt: Option<String>,
     loading_scope: Option<foundry_contracts::context_v2::LoadingScope>,
+    latch: Option<Arc<Mutex<continuation::Latch>>>,
     receipts: Arc<Mutex<HashMap<(String, String), String>>>,
     cleanup: Option<Arc<cleanup::CaptureCleanup>>,
 }
 
 impl Process {
+    pub(crate) fn process_id(&self) -> u32 {
+        self.child.id()
+    }
     pub fn spawn(spec: &AdapterSpec, session: &Session) -> Result<Self, RuntimeError> {
         Self::spawn_inner(
             spec,
@@ -86,6 +93,7 @@ impl Process {
     ) -> Result<Self, RuntimeError> {
         let context_attempt = identity.attempt().map(str::to_owned);
         let loading_scope = identity.loading_scope().cloned();
+        let latch = identity.latch();
         let capacity = if context.is_some() { 2 } else { 16 };
         if !cfg!(unix) {
             return Err(RuntimeError::UnsupportedPlatform);
@@ -133,6 +141,7 @@ impl Process {
             stopped: false,
             context_attempt,
             loading_scope,
+            latch,
             receipts,
             cleanup,
         };

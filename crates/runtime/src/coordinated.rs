@@ -4,6 +4,7 @@ pub mod capture;
 pub mod capture_owner;
 mod engine;
 mod fresh_capture;
+pub mod loading;
 pub mod origin;
 pub use fresh_capture::{CaptureExit, FreshCaptureOptions, run_fresh_capture};
 mod ingress;

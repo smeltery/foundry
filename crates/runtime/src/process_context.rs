@@ -17,6 +17,7 @@ pub(crate) enum ContextOutput {
     Ordinary(WireEvent),
     Context(ContextEvent),
     Loading(foundry_contracts::context_v2::LoadingFrame),
+    Observation(foundry_contracts::context_observation::ObservationFrame),
 }
 impl ContextOutput {
     pub(super) fn terminal(&self) -> bool {
@@ -41,6 +42,7 @@ impl Output {
                     item,
                     ContextOutput::Context(_)
                         | ContextOutput::Loading(_)
+                        | ContextOutput::Observation(_)
                         | ContextOutput::Ordinary(WireEvent::Event(_))
                 );
                 let sent = pipe_workers::send(sender, item, stop);
@@ -52,7 +54,9 @@ impl Output {
             Self::Legacy(sender) => {
                 let event = match item {
                     ContextOutput::Ordinary(event) => event,
-                    ContextOutput::Context(_) | ContextOutput::Loading(_) => {
+                    ContextOutput::Context(_)
+                    | ContextOutput::Loading(_)
+                    | ContextOutput::Observation(_) => {
                         WireEvent::Error(RuntimeError::Protocol("unsolicited context frame"))
                     }
                 };
