@@ -107,8 +107,10 @@ def hygiene():
     run("git", "diff", "--cached", "--check")
     run(sys.executable, "scripts/checks/loc.py")
     for mode in ("tracked", "history"):
+        # History visits every path in every commit, including unchanged blobs.
+        limits = ("--max-files", "100000") if mode == "history" else ()
         run(sys.executable, "scripts/checks/naming.py", "--policy-json-env",
-            "FOUNDRY_NAMING_POLICY", "--mode", mode)
+            "FOUNDRY_NAMING_POLICY", "--mode", mode, *limits)
     run("actionlint")
     run("shellcheck", "scripts/ci/browser-sandbox.sh")
 
