@@ -2,7 +2,7 @@ use super::*;
 use std::cell::Cell;
 
 #[path = "../../../store/tests/support_acceptance/mod.rs"]
-mod support;
+pub(in crate::restoration_owner) mod support;
 
 #[test]
 fn actual_s2_is_retained_when_inner_checks_observe_cancellation() {

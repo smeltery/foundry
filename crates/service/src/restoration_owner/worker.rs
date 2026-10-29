@@ -288,27 +288,7 @@ impl Actor {
                     &reservation.fence,
                     reservation.snapshot.as_ref().expect("selected snapshot"),
                     validated,
-                    || {
-                        if self.io.expired.load(Ordering::Acquire) {
-                            return Err(ServiceError::Coordination(
-                                "restoration lease deadline elapsed",
-                            ));
-                        }
-                        if self.io.stopping.load(Ordering::Acquire) {
-                            return Err(ServiceError::Coordination("continuation owner stopped"));
-                        }
-                        if self.io.signals.relay(&self.io.cancel).is_some() {
-                            return Err(ServiceError::Coordination("restoration cancelled"));
-                        }
-                        if reservation.cleanup.as_ref().map(CleanupObserver::status)
-                            != Some(CleanupStatus::Pending)
-                        {
-                            return Err(ServiceError::Coordination(
-                                "native runtime cleanup already started",
-                            ));
-                        }
-                        Ok(())
-                    },
+                    || self.continuation_authority(reservation.cleanup.as_ref()),
                 )?;
             }
             if let Some(publication) = reservation.publication.as_mut() {
@@ -338,6 +318,26 @@ impl Actor {
                 }
             }
         }
+    }
+
+    fn continuation_authority(&self, cleanup: Option<&CleanupObserver>) -> Result<()> {
+        if self.io.expired.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination(
+                "restoration lease deadline elapsed",
+            ));
+        }
+        if self.io.signals.relay(&self.io.cancel).is_some() {
+            return Err(ServiceError::Coordination("restoration cancelled"));
+        }
+        if self.io.stopping.load(Ordering::Acquire) {
+            return Err(ServiceError::Coordination("continuation owner stopped"));
+        }
+        if cleanup.map(CleanupObserver::status) != Some(CleanupStatus::Pending) {
+            return Err(ServiceError::Coordination(
+                "native runtime cleanup already started",
+            ));
+        }
+        Ok(())
     }
 
     fn reply(&self, job_id: ContextReceipt, result: Result<RestoreReply>) -> Result<()> {

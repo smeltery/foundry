@@ -92,3 +92,72 @@ fn shutdown_does_not_hide_expiry_cancellation_or_other_failures() {
         Err(ServiceError::Invalid("storage unavailable"))
     ));
 }
+
+use super::super::continuation::acceptance_tests::support as acceptance_support;
+
+#[test]
+fn inner_accept_checks_actual_cancel_before_shutdown_but_preserves_expiry() {
+    for (cancelled, expired) in [(true, false), (false, false), (true, true)] {
+        let mut f = acceptance_support::Fixture::new();
+        let (actor, requested) = actor();
+        let path = f.dir.path().join("db");
+        let session = f.fence.session_id.clone();
+        let mut acceptance = None;
+        let mut accepted = false;
+        let result = super::super::continuation::commit_acceptance(
+            &mut f.store,
+            &f.fence,
+            f.input.clone(),
+            &mut acceptance,
+            &mut accepted,
+            &|| {
+                let mut observed = Store::open(&path)?;
+                assert_eq!(
+                    observed.messages(&session, 0, 1)?[0].state,
+                    foundry_contracts::MessageState::Delivered
+                );
+                // The CLI can finish runtime cleanup and request shutdown while
+                // S2 SQL is returning, before this production callback runs.
+                if cancelled {
+                    requested.store(1, Ordering::Release);
+                    observed.request_cancel(&session, CancelMode::Graceful)?;
+                }
+                actor.io.stopping.store(true, Ordering::Release);
+                actor.io.expired.store(expired, Ordering::Release);
+                actor.continuation_authority(None)
+            },
+        );
+        let expected = if expired {
+            "restoration lease deadline elapsed"
+        } else if cancelled {
+            "restoration cancelled"
+        } else {
+            "continuation owner stopped"
+        };
+        assert!(matches!(&result, Err(ServiceError::Coordination(actual)) if *actual == expected));
+        assert_eq!(
+            super::super::settlement::cancelled_operation(&result),
+            cancelled && !expired
+        );
+        assert!(accepted);
+        assert_eq!(f.lookup().unwrap(), acceptance);
+        if cancelled {
+            assert!(
+                f.accept().is_err(),
+                "cancellation still blocks acceptance retry"
+            );
+        } else {
+            assert_eq!(Some(f.accept().unwrap()), acceptance);
+        }
+        assert_eq!(
+            f.db()
+                .query_row(
+                    "SELECT count(*) FROM context_continue_acceptances",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+}

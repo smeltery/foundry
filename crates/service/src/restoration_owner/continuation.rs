@@ -299,7 +299,7 @@ fn check_stored_cancellation(store: &mut Store, fence: &AttemptFence) -> Result<
 }
 
 // Preserve the committed acceptance before any authority check can stop activation.
-fn commit_acceptance(
+pub(super) fn commit_acceptance(
     store: &mut Store,
     fence: &AttemptFence,
     input: ContinueAcceptanceInput,
@@ -318,4 +318,4 @@ fn commit_acceptance(
 
 #[cfg(test)]
 #[path = "continuation_accept_tests.rs"]
-mod acceptance_tests;
+pub(super) mod acceptance_tests;
