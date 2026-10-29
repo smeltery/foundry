@@ -1,6 +1,7 @@
 """Hermetic naming-policy checks: no remote repositories or provider services."""
 
 import io
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -243,6 +244,52 @@ class NamingTests(unittest.TestCase):
         self.assertNotIn("violet", output)
         self.assertNotIn("letwidget", output)
         self.assertEqual(report["findings"][0]["path"], "[redacted].txt")
+
+
+    def svg_review(self, content):
+        policy = json.loads(self.policy.read_text())
+        policy['svg_reviews'] = [{'sha256': hashlib.sha256(content).hexdigest(),
+                                  'evidence': 'visual-review-fixture'}]
+        self.policy.write_text(json.dumps(policy))
+
+    def test_exact_external_svg_review_keeps_text_and_path_scanning(self):
+        content = b'<svg xmlns="http://www.w3.org/2000/svg"><title>ordinary</title></svg>'
+        path = self.release / 'mark.svg'
+        path.write_bytes(content)
+        self.assertEqual(self.scan_release()[0], 2)
+        self.svg_review(content)
+        self.assertEqual(self.scan_release()[0], 0)
+        path.write_bytes(content + b' ')
+        self.assertEqual(self.scan_release()[0], 2)
+        content = content.replace(b'ordinary', b'violetwidget')
+        path.write_bytes(content)
+        self.svg_review(content)
+        code, report, _ = self.scan_release()
+        self.assertEqual(code, 1)
+        self.assertEqual(report['match_count'], 1)
+        path.rename(self.release / 'amber-unit.svg')
+        self.assertEqual(self.scan_release()[1]['match_count'], 2)
+
+    def test_svg_review_cannot_clear_binary_or_other_asset_formats(self):
+        for name, content in [('mark.svg', b'<svg>\x00</svg>'),
+                              ('mark.png', b'not a decoded image')]:
+            with self.subTest(name=name):
+                path = self.release / name
+                path.write_bytes(content)
+                self.svg_review(content)
+                self.assertEqual(self.scan_release()[0], 2)
+                path.unlink()
+
+    def test_svg_review_requires_unique_digest_and_external_evidence_id(self):
+        for reviews in ([{'sha256': '0' * 64, 'evidence': ''}],
+                        [{'sha256': 'invalid', 'evidence': 'fixture'}],
+                        [{'sha256': '0' * 64, 'evidence': 'fixture'}] * 2):
+            policy = json.loads(self.policy.read_text())
+            policy['svg_reviews'] = reviews
+            self.policy.write_text(json.dumps(policy))
+            code, report, _ = self.scan_release()
+            self.assertEqual(code, 2)
+            self.assertIn('policy_svg_review_invalid', report['errors'])
 
 
 if __name__ == "__main__":

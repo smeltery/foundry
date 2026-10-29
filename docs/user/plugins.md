@@ -5,6 +5,10 @@ removal, catalog discovery and client registration are not implemented by the
 local backend. A parsed command does not install a package or authenticate a
 connector.
 
+The [client package guide](client-packages.md) covers the separate distribution
+files and client configuration. Those files do not implement the management
+commands described here.
+
 ## Inspect command help
 
 From a development checkout with the CLI built:

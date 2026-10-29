@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"
+     viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">Foundry — light background</title>
+  <desc id="description">Stacked bars form an F above a warm base.</desc>
+  <metadata>Copyright (c) 2026 smeltery. Covered by the repository root LICENSE.</metadata>
+  <rect width="128" height="128" fill="#F5F2EA"/>
+  <path fill="#172C35" d="M28 28h72v16H48v16h40v16H48v24H28z"/>
+  <path fill="#B94B22" d="M64 88h36v12H64z"/>
+</svg>

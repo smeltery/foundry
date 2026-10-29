@@ -87,6 +87,12 @@ The maintained naming policy is distributed outside this repository. Load the ap
 
 Git history validation needs a complete clone. Binary or otherwise uninspected assets require additional review; incomplete inspection is not a clean result. Keep externally held evidence in the assigned project ticket.
 
+For visually inspected SVGs, the external policy can carry `svg_reviews` entries
+with the exact `sha256` and an external `evidence` identifier. Changed bytes need
+a new review. These entries cover visual inspection only: text, paths and
+encoding still pass through the scanner. They cannot clear binary image formats
+or executable contents.
+
 ## Completion evidence
 
 After the final push, monitor all applicable checks until they pass. Record the final commit SHA and run links in the ticket. A green earlier commit, missing required package lockfile, cancelled job or unverified release artifact does not satisfy completion.

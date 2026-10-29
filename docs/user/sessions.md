@@ -74,7 +74,9 @@ The event-watch library replays durable events after a cursor and polls for a
 terminal session. Text progress uses stderr and the final result uses stdout;
 JSON mode emits JSONL event records followed by a result record. Its tests cover
 both library and executable behavior. Interrupting watch returns 130 without
-cancelling execution. There is no verified resume workflow. For persistence guarantees and limitations,
+cancelling execution. Explicit CLI continuation through a configured native
+binding is described in [resume a local session](resume.md). Queue submission
+alone does not continue a session. For persistence guarantees and limitations,
 see [storage](../architecture/storage.md).
 
 ## Stored instructions

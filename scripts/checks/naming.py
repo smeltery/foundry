@@ -10,6 +10,7 @@ No network requests are made. Binary/undecodable assets require separate inspect
 import argparse
 import bz2
 import gzip
+import hashlib
 import lzma
 import io
 import json
@@ -41,6 +42,19 @@ def policy_rules(args):
         policy = json.loads(raw)
         if not isinstance(policy, dict) or type(policy.get("version")) is not int or policy["version"] != 1:
             raise ScanError("policy_schema_invalid")
+        reviews = policy.get("svg_reviews", [])
+        if not isinstance(reviews, list) or len(reviews) > 1000:
+            raise ScanError("policy_svg_reviews_invalid")
+        args.svg_reviews = set()
+        for review in reviews:
+            if (not isinstance(review, dict) or set(review) != {"sha256", "evidence"}
+                    or not isinstance(review["sha256"], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", review["sha256"])
+                    or not isinstance(review["evidence"], str)
+                    or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", review["evidence"])
+                    or review["sha256"] in args.svg_reviews):
+                raise ScanError("policy_svg_review_invalid")
+            args.svg_reviews.add(review["sha256"])
         rules = policy.get("rules")
         if not isinstance(rules, list) or not 1 <= len(rules) <= 100:
             raise ScanError("policy_rules_invalid")
@@ -145,7 +159,10 @@ class Scanner:
             self.archive(data, location, depth + 1)
             return
         if location.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".icns", ".svg", ".pdf")):
-            self.skip(location, "visual_asset_requires_external_inspection")
+            reviewed_svg = (location.lower().endswith(".svg")
+                            and hashlib.sha256(data).hexdigest() in self.args.svg_reviews)
+            if not reviewed_svg:
+                self.skip(location, "visual_asset_requires_external_inspection")
             # Textual vector assets still receive a text scan, without claiming visual coverage.
         if b"\0" in data:
             self.skip(location, "binary_requires_external_inspection")

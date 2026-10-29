@@ -1,0 +1,4 @@
+interface:
+  display_name: "Foundry"
+  short_description: "Coordinate local tasks and verify session state"
+  default_prompt: "Use $foundry to carry out the requested session operation and distinguish queued instructions from verified results."

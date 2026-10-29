@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "foundry",
+  "version": "0.1.0",
+  "description": "Foundry workflow content; prepare a local distribution to enable MCP.",
+  "author": {
+    "name": "smeltery"
+  }
+}

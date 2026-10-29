@@ -1,0 +1,12 @@
+{
+  "name": "foundry",
+  "plugins": [
+    {
+      "name": "foundry",
+      "source": {
+        "source": "local",
+        "path": "./plugins/foundry"
+      }
+    }
+  ]
+}
