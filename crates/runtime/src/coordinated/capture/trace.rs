@@ -61,6 +61,7 @@ impl TraceEntry {
 pub struct DeliveredTrace {
     entries: Vec<TraceEntry>,
     used: usize,
+    restored: bool,
 }
 impl Default for DeliveredTrace {
     fn default() -> Self {
@@ -72,7 +73,26 @@ impl DeliveredTrace {
         Self {
             entries: Vec::new(),
             used: 0,
+            restored: false,
         }
+    }
+    pub(crate) fn restored_instruction(
+        identity: &foundry_contracts::context_v2::ContinuationIdentity,
+        text: &str,
+    ) -> Result<Self, CaptureError> {
+        let mut trace = Self::new();
+        trace.restored = true;
+        trace
+            .reserve_instruction(
+                identity.attempt_id.as_str(),
+                identity.input_id.as_str(),
+                text,
+            )?
+            .commit_enqueued();
+        Ok(trace)
+    }
+    pub(crate) fn confirm_continuation(&mut self) {
+        self.entries[0].acknowledgment = Acknowledgment::Durable;
     }
     pub fn entries(&self) -> &[TraceEntry] {
         &self.entries
@@ -112,7 +132,7 @@ impl DeliveredTrace {
         Ok(charge)
     }
     fn require_opening(&self) -> Result<(), CaptureError> {
-        if self.entries.is_empty() {
+        if self.entries.is_empty() && !self.restored {
             return Err(CaptureError::Pending);
         }
         Ok(())
@@ -123,7 +143,7 @@ impl DeliveredTrace {
         attempt: &str,
         text: &str,
     ) -> Result<TraceReservation<'_>, CaptureError> {
-        if !self.entries.is_empty() {
+        if self.restored || !self.entries.is_empty() {
             return Err(CaptureError::Invalid);
         }
         self.reserve_text(TraceKind::OpeningPrompt, attempt, session, text)

@@ -26,6 +26,10 @@ pub(super) enum ExecutionMode {
 pub(super) enum Ingress {
     Legacy,
     Context(Receiver<ContextOutput>),
+    Restored {
+        events: Receiver<ContextOutput>,
+        buffered: std::cell::RefCell<std::collections::VecDeque<ContextOutput>>,
+    },
 }
 
 impl ExecutionMode {
@@ -58,13 +62,17 @@ impl Ingress {
         match self {
             Self::Legacy => legacy.try_recv().map(ContextOutput::Ordinary),
             Self::Context(events) => events.try_recv(),
+            Self::Restored { events, buffered } => buffered
+                .borrow_mut()
+                .pop_front()
+                .map_or_else(|| events.try_recv(), Ok),
         }
     }
 
     /// Reject context transport without a capture controller; never fall back to Start.
     pub fn require_execution_support(&self) -> Result<(), RuntimeError> {
         match self {
-            Self::Legacy => Ok(()),
+            Self::Legacy | Self::Restored { .. } => Ok(()),
             Self::Context(_) => Err(RuntimeError::Invalid("capture supervision is unavailable")),
         }
     }

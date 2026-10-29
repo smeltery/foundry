@@ -72,7 +72,7 @@ fn missing_capabilities_wrong_bindings_and_premature_output_never_start() {
         "restored",
         "timeout",
     ] {
-        let mut h = Harness::new(mode, Duration::from_millis(160));
+        let mut h = Harness::new(mode, Duration::from_secs(1));
         if !mode.starts_with("missing") {
             h.ready();
         }
@@ -117,7 +117,7 @@ fn cancellation_during_activation_wins_over_queued_owner_permission() {
 #[test]
 fn activation_timeout_wrong_correlation_and_rejection_cannot_admit_output() {
     for mode in ["timeout", "attempt", "capture", "job", "rejected"] {
-        let mut h = Harness::new("normal", Duration::from_millis(160));
+        let mut h = Harness::new("normal", Duration::from_secs(1));
         h.ready();
         let (mut correlation, _) = h.activation();
         match mode {
@@ -270,4 +270,16 @@ fn startup_timeout_must_be_positive_and_bounded() {
             .is_err()
         );
     }
+}
+
+#[test]
+fn slow_fixture_readiness_exhausts_phase_budget_before_persistence() {
+    let mut h = Harness::new("delayed_ready", Duration::from_millis(80));
+    assert!(matches!(
+        h.finish(),
+        Err(RuntimeError::Protocol("capture startup deadline exceeded"))
+    ));
+    assert!(h.requests.try_recv().is_err());
+    assert!(h.commands().is_empty());
+    assert!(h.owner.requests.try_recv().is_err());
 }

@@ -37,9 +37,30 @@ pub(crate) fn run(
     replies: mpsc::SyncSender<PersistenceReply>,
     control: WorkerControl,
 ) -> Result<()> {
-    let mut active: Option<(CheckpointId, ToolRecord)> = None;
-    let mut count = 0;
+    let mut state = PersistenceState::default();
     for request in requests {
+        state.handle(store, fence, request, &replies, &control)?;
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+pub(crate) struct PersistenceState {
+    active: Option<(CheckpointId, ToolRecord)>,
+    count: usize,
+}
+impl PersistenceState {
+    pub(crate) fn idle(&self) -> bool {
+        self.active.is_none()
+    }
+    pub(crate) fn handle(
+        &mut self,
+        store: &mut Store,
+        fence: &AttemptFence,
+        request: PersistenceRequest,
+        replies: &mpsc::SyncSender<PersistenceReply>,
+        control: &WorkerControl,
+    ) -> Result<()> {
         let checkpoint = match &request {
             PersistenceRequest::Event { checkpoint, .. }
             | PersistenceRequest::ClaimTool { checkpoint, .. }
@@ -48,13 +69,13 @@ pub(crate) fn run(
         };
         if control.revoked() {
             send(
-                &replies,
+                replies,
                 PersistenceReply::Rejected {
                     checkpoint,
                     code: PersistenceFailure::OwnershipLost,
                 },
             )?;
-            continue;
+            return Ok(());
         }
         if matches!(
             &request,
@@ -81,29 +102,31 @@ pub(crate) fn run(
                 .and_then(|()| persist_event(store, fence, &event))
                 .map(|()| PersistenceReply::EventCommitted { checkpoint }),
             PersistenceRequest::ClaimTool { intent, .. } => {
-                claim(store, fence, &intent, active.is_some(), count).map(|record| {
-                    active = Some((checkpoint, record));
-                    count += 1;
+                claim(store, fence, &intent, self.active.is_some(), self.count).map(|record| {
+                    self.active = Some((checkpoint, record));
+                    self.count += 1;
                     PersistenceReply::ToolClaimed { checkpoint }
                 })
             }
             PersistenceRequest::FinishTool { evidence, .. }
             | PersistenceRequest::FinishToolWithEvidence { evidence, .. } => {
-                finish(store, fence, checkpoint, &active, evidence).map(|(disposition, digest)| {
-                    active = None;
-                    if include_evidence {
-                        PersistenceReply::ToolFinishedEvidence {
-                            checkpoint,
-                            disposition,
-                            output_digest: digest,
+                finish(store, fence, checkpoint, &self.active, evidence).map(
+                    |(disposition, digest)| {
+                        self.active = None;
+                        if include_evidence {
+                            PersistenceReply::ToolFinishedEvidence {
+                                checkpoint,
+                                disposition,
+                                output_digest: digest,
+                            }
+                        } else {
+                            PersistenceReply::ToolFinished {
+                                checkpoint,
+                                disposition,
+                            }
                         }
-                    } else {
-                        PersistenceReply::ToolFinished {
-                            checkpoint,
-                            disposition,
-                        }
-                    }
-                })
+                    },
+                )
             }
         };
         let reply = match result {
@@ -114,7 +137,7 @@ pub(crate) fn run(
             },
             Err(error) => {
                 let _ = send(
-                    &replies,
+                    replies,
                     PersistenceReply::Rejected {
                         checkpoint,
                         code: failure(&error),
@@ -131,13 +154,13 @@ pub(crate) fn run(
                 control.signals.stop_admission();
             }
         }
-        if let Err(error) = send(&replies, reply) {
+        if let Err(error) = send(replies, reply) {
             control.signals.stop_admission();
             let _ = control.cancellation.send(CancelMode::Hard);
             return Err(error);
         }
+        Ok(())
     }
-    Ok(())
 }
 
 fn send(replies: &mpsc::SyncSender<PersistenceReply>, reply: PersistenceReply) -> Result<()> {

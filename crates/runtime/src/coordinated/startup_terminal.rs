@@ -95,7 +95,7 @@ impl Startup {
             return Err(protocol("unexpected terminal context phase"));
         }
         self.correlation.job = CaptureJobId::fresh();
-        let job = CaptureValidationJob::new(
+        let job = CaptureValidationJob::with_origin(
             &self.correlation,
             terminal
                 .cut
@@ -108,6 +108,7 @@ impl Startup {
                 .proposal
                 .take()
                 .ok_or_else(|| protocol("missing terminal proposal"))?,
+            self.restored_origin.clone(),
         )
         .map_err(|_| protocol("capture candidate binding rejected"))?;
         terminal.expected = Some(job.binding_digest());
@@ -150,7 +151,11 @@ impl Startup {
             CaptureReply::CutPrepared { correlation, cut }
                 if correlation == self.correlation && terminal.phase == TerminalPhase::Cutting =>
             {
-                if cut.identity().expected_head.is_some() {
+                if let Some(origin) = &self.restored_origin {
+                    origin
+                        .check_cut(&cut)
+                        .map_err(|_| protocol("restored capture parent mismatch"))?;
+                } else if cut.identity().expected_head.is_some() {
                     return Err(protocol("restored capture baseline is unsupported"));
                 }
                 if cut.identity().session_id != session.id

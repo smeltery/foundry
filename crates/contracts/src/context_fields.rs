@@ -128,10 +128,10 @@ impl ContextPayload {
     pub fn digest(&self) -> ContextDigest {
         ContextDigest::of(&self.0)
     }
-    pub(super) fn encoded(&self) -> String {
+    pub(crate) fn encoded(&self) -> String {
         STANDARD.encode(&self.0)
     }
-    pub(super) fn decode(encoded: &str) -> Result<Self, ContextError> {
+    pub(crate) fn decode(encoded: &str) -> Result<Self, ContextError> {
         if encoded.is_empty() || encoded.len() > MAX_BASE64_BYTES {
             return Err(ContextError::Limit);
         }

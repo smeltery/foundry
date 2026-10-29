@@ -14,7 +14,38 @@ A file exception must include its exact path, a numeric `limit`, an `owner` and 
 
 Prefer cohesive modules and shared implementations. Do not delete features, meaningful tests or required notices to meet a budget. Do not minify code or split functions across arbitrary files merely to make the count pass. If a preserved implementation needs a larger baseline, document the measured scope and review it before integration.
 
-The runtime component budget is 9,700 lines after reviewing private context
+## Restoration integration allocation
+
+The reviewed restoration integration uses these component allocations. Counts
+include tests, fixtures, comments and blank lines; the 400-line file limit remains.
+
+| Component | Previous measured baseline | Current measured lines | Ceiling |
+| --- | ---: | ---: | ---: |
+| Contracts | 3,432 | 3,800 | 3,900 |
+| Runtime | 9,598 | 12,741 | 13,000 |
+| Service | 4,609 | 8,439 | 8,600 |
+
+Contracts add 197 implementation lines and 171 test lines for the private live
+observation exchange, reusing existing bounded payload and identity codecs.
+Runtime adds 1,629 implementation lines and 1,514 test/support lines for retained
+loading, observation, one-use continuation and restored capture. Restored execution
+uses the existing Coordinator and publication handshake; the extracted supervision
+loop is shared rather than duplicated.
+
+Service adds 2,612 implementation lines and 1,218 test/fixture lines for loading
+ownership, registered native comparison, actual grant and acceptance, fresh
+admission and witnessed publication. Fresh and restored owners share publication
+and persistence handlers. Their separate entry paths retain different store
+credentials and cleanup obligations. The earlier cut and commit mapping helpers
+are now consumed by these owners.
+
+These allocations cover the reviewed behavior and failure tests, with narrow
+correction headroom. They do not exempt tests or permit unrelated expansion. No
+features, assertions or notices were removed, and no file exceptions were added.
+
+## Earlier allocation reviews
+
+The runtime component budget was 9,700 lines after reviewing private context
 transport, bounded message history, capture startup, data/trace boundaries and
 fresh terminal capture supervision and inert origin identity encoding.
 The earlier measured baseline was 6,944 lines:
@@ -67,7 +98,7 @@ Three parent-run tests and independent source review cover strict bounds and
 historical prompt identity. These DTOs do not authorize restored execution; that
 state machine remains outside this allowance.
 
-The contracts budget is 3,550 lines for a measured 3,432-line baseline.
+The contracts budget was 3,550 lines for a measured 3,432-line baseline.
 The prior 2,244 lines cover shared session and private context interfaces.
 Capability negotiation and permission requests add 531 implementation lines,
 655 test lines and two module exports. They provide pure descriptor matching

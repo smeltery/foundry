@@ -30,3 +30,52 @@ impl From<RunResult> for Proposal {
         Self::Ordinary(value)
     }
 }
+
+impl Coordinator<'_> {
+    /// Called only after explicit owned process/helper cleanup succeeds.
+    pub(super) fn finish(
+        &self,
+        result: Proposal,
+        started: Instant,
+        cancellation: &Receiver<CancelMode>,
+        messages: &Receiver<AdapterMessage>,
+    ) -> Result<EngineExit, RuntimeError> {
+        match result {
+            Proposal::Ordinary(result) => Ok(EngineExit::Ordinary(result)),
+            Proposal::Validated(verified) => {
+                match cancellation.try_recv() {
+                    Ok(mode) => {
+                        return Ok(EngineExit::Ordinary(RunResult::Cancelled {
+                            mode,
+                            forced: true,
+                        }));
+                    }
+                    Err(TryRecvError::Disconnected)
+                        if matches!(self.ingress, Ingress::Restored { .. }) =>
+                    {
+                        return Err(protocol("restored owner disconnected after cleanup"));
+                    }
+                    _ => {}
+                }
+                if started.elapsed() >= self.spec.run_timeout {
+                    return Err(RuntimeError::RunTimeout);
+                }
+                match self.persistence.replies.try_recv() {
+                    Err(TryRecvError::Empty) => {}
+                    _ => return Err(protocol("late or disconnected persistence receipt")),
+                }
+                if messages.try_recv().is_ok() {
+                    return Err(protocol("queued instruction after capture cleanup"));
+                }
+                self.startup
+                    .as_ref()
+                    .ok_or_else(|| protocol("missing capture owner"))?
+                    .check_owner_drained()?;
+                Ok(EngineExit::Prepared(Box::new(PreparedCapture {
+                    verified: *verified,
+                    cleanup: CleanupReceipt { _private: () },
+                })))
+            }
+        }
+    }
+}

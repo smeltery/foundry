@@ -30,6 +30,7 @@ enum Phase {
 
 pub(super) struct Startup {
     terminal: Option<terminal::Terminal>,
+    restored_origin: Option<std::sync::Arc<super::capture::RestoredCaptureOrigin>>,
     plan: StartupPlan,
     pub trace: super::capture::DeliveredTrace,
     owner: CaptureOwner,
@@ -67,6 +68,7 @@ impl Startup {
         };
         Ok(Self {
             terminal: None,
+            restored_origin: None,
             plan,
             trace: super::capture::DeliveredTrace::new(),
             owner,
@@ -84,6 +86,23 @@ impl Startup {
             format_digest,
             configuration_digest,
         })
+    }
+    pub(super) fn restored(
+        plan: StartupPlan,
+        owner: CaptureOwner,
+        origin: std::sync::Arc<super::capture::RestoredCaptureOrigin>,
+        trace: super::capture::DeliveredTrace,
+        message_ack: bool,
+    ) -> Result<Self, RuntimeError> {
+        origin
+            .check_trace(&trace)
+            .map_err(|_| protocol("restored trace binding mismatch"))?;
+        let mut state = Self::new(plan, owner, origin.continuation.attempt_id.as_str())?;
+        state.restored_origin = Some(origin);
+        state.trace = trace;
+        state.message_ack = message_ack;
+        state.enter(Phase::Active);
+        Ok(state)
     }
     fn enter(&mut self, phase: Phase) {
         self.phase = phase;

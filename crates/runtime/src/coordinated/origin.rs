@@ -117,6 +117,12 @@ impl OriginIdentity {
         }
         Ok(())
     }
+    pub(crate) fn restored_identity(&self) -> Option<&RestoredBaselineIdentity> {
+        match &self.0 {
+            WireOrigin::RestoredBaseline(i) => Some(i),
+            _ => None,
+        }
+    }
     pub fn is_restored(&self) -> bool {
         matches!(self.0, WireOrigin::RestoredBaseline(_))
     }
