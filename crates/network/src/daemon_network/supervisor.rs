@@ -1,5 +1,5 @@
 use super::{
-    driver::{Event, Live, install, retire},
+    driver::{Event, Live, bounded_queue, install, retire},
     *,
 };
 use crate::peer_session::{PeerSession, SessionOptions};
@@ -24,17 +24,19 @@ pub(super) async fn run(
         }
         result
     });
-    let (events, mut received) = mpsc::channel::<Event>(32);
+    let (events, mut received) = mpsc::channel::<Event>(bounded_queue::EVENT_BUDGET);
     let mut live = BTreeMap::<EndpointId, Live>::new();
     let mut connecting =
         JoinSet::<(EndpointId, crate::peer_session::Result<connections::Ready>)>::new();
     let mut pending = BTreeSet::new();
     let mut generation = 0u64;
+    let mut presence_cursor = None;
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let result = async {
         loop {
             if *state.stop.borrow() { break; }
+            let mut selected = None;
             tokio::select! {
                 biased;
                 _ = stopped(state.stop.subscribe()) => break,
@@ -45,9 +47,7 @@ pub(super) async fn run(
                     }
                 }
                 event = received.recv() => {
-                    if let Some(event) = event {
-                        events::handle(&state, &outbox, &mut live, event).await?;
-                    }
+                    selected = event;
                 }
                 session = sessions.recv() => {
                     if let Some(session) = session {
@@ -84,7 +84,13 @@ pub(super) async fn run(
                 }
                 _ = state.wake.notified() => {}
                 _ = interval.tick() => {}
+                _ = std::future::ready(()), if bounded_queue::has_presence(&live) => {}
             }
+            for event in bounded_queue::ready(&mut received, selected) {
+                if *state.stop.borrow() { break; }
+                events::handle(&state, &outbox, &mut live, event).await?;
+            }
+            if *state.stop.borrow() { break; }
             let members = dispatch::batch(&state, &outbox, &mut live).await?;
             for peer in members {
                 if live.contains_key(&peer) || pending.contains(&peer) || connecting.len() >= MAX_CONNECTING {
@@ -109,6 +115,11 @@ pub(super) async fn run(
                     };
                     (peer, result.map(|session| connections::Ready { session, reservation }))
                 });
+            }
+            if !*state.stop.borrow()
+                && let Some(event) = bounded_queue::presence(&mut live, &mut presence_cursor)
+            {
+                events::handle(&state, &outbox, &mut live, event).await?;
             }
         }
         Ok(())

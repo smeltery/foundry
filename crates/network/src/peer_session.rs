@@ -14,6 +14,7 @@ mod frames;
 mod io;
 #[path = "peer_session/reader.rs"]
 mod reader;
+pub(crate) use driver::ReceiptPublisher;
 pub use driver::{DriverEvent, PeerDriver, PeerSender};
 pub use reader::{PeerReader, ReceivedFrame};
 #[path = "peer_session/mail.rs"]
@@ -119,6 +120,7 @@ pub struct PeerSession {
     sent_ids: BTreeMap<String, [u8; 32]>,
     usable: bool,
     mismatch: Option<ProtocolMismatch>,
+    receipt_publisher: Option<ReceiptPublisher>,
 }
 impl PeerSession {
     /// At most one bounded observation from the authenticated Hello. Hosts should
@@ -219,6 +221,7 @@ impl PeerSession {
             sent_ids: BTreeMap::new(),
             usable: false,
             mismatch: None,
+            receipt_publisher: None,
         };
         closer.0 = None;
         session.handshake().await?;

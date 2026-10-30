@@ -3,10 +3,12 @@ use super::*;
 use crate::{
     daemon_lease::DaemonLease,
     daemon_outbox::{OutboxLedger, QueueAction, Settlement},
-    mail_store::{MailStore, TransportDisposition},
-    peer_session::RoutingView,
+    mail_store::MailStore,
+    peer_session::{ReceiptPublisher, RoutingView},
 };
 use std::sync::Mutex;
+#[path = "outbox_receipts.rs"]
+mod receipts;
 
 pub(super) struct Outbox {
     inner: Arc<Mutex<Store>>,
@@ -14,6 +16,7 @@ pub(super) struct Outbox {
 struct Store {
     mail: MailStore,
     ledgers: BTreeMap<(EndpointId, u64), OutboxLedger>,
+    receipts: BTreeMap<(EndpointId, u64), Arc<Mutex<receipts::Slot>>>,
     _lease: DaemonLease,
 }
 impl Outbox {
@@ -28,6 +31,7 @@ impl Outbox {
                 inner: Arc::new(Mutex::new(Store {
                     mail,
                     ledgers: BTreeMap::new(),
+                    receipts: BTreeMap::new(),
                     _lease: lease,
                 })),
             })
@@ -45,20 +49,36 @@ impl Outbox {
             let _view = view;
             {
                 let mut store = inner.lock().map_err(|_| ControlError::Storage)?;
-                operation(&mut store)
+                let result = operation(&mut store);
+                if result.is_err() {
+                    store.close_receipts()?;
+                }
+                result
             }
         })
         .await
         .map_err(|_| ControlError::Storage)?
     }
-    pub async fn register(&self, peer: EndpointId, generation: u64) -> Result<(), ControlError> {
+    pub async fn register(
+        &self,
+        peer: EndpointId,
+        generation: u64,
+    ) -> Result<ReceiptPublisher, ControlError> {
         self.with(None, move |store| {
             let ledger = OutboxLedger::new(peer, generation, crate::peer_session::MAX_PENDING)
                 .map_err(|_| ControlError::Storage)?;
             if store.ledgers.insert((peer, generation), ledger).is_some() {
                 return Err(ControlError::Storage);
             }
-            Ok(())
+            let slot = Arc::new(Mutex::new(receipts::Slot::default()));
+            if store
+                .receipts
+                .insert((peer, generation), slot.clone())
+                .is_some()
+            {
+                return Err(ControlError::Storage);
+            }
+            Ok(receipts::publisher(slot))
         })
         .await
     }
@@ -68,6 +88,7 @@ impl Outbox {
         connections: Vec<(EndpointId, u64)>,
     ) -> Result<Batch, ControlError> {
         let team = view.team.clone();
+        let revision = view.revision;
         let active = view
             .members
             .iter()
@@ -81,17 +102,20 @@ impl Outbox {
             };
             // One current authority guard covers the complete global scan AND
             // all attempt claims. Concurrent Engine enqueues use this same gate.
-            for (key, ledger) in &mut store.ledgers {
-                if !active.contains(&key.0)
+            for key in store.ledgers.keys().copied().collect::<Vec<_>>() {
+                let retire = store.drain(key, revision, active.contains(&key.0))?;
+                let ledger = store.ledgers.get_mut(&key).ok_or(ControlError::Storage)?;
+                if retire
                     || ledger.receipt_deadline_elapsed(std::time::Instant::now())
                     || ledger
                         .requires_retirement(&store.mail)
                         .map_err(|_| ControlError::Storage)?
                 {
-                    batch.retire.push(*key);
+                    batch.retire.push(key);
                 }
             }
             if !batch.retire.is_empty() {
+                store.close_selected(&batch.retire)?;
                 return Ok(batch);
             }
             let checked = now().map_err(|_| ControlError::Storage)?;
@@ -116,6 +140,7 @@ impl Outbox {
                             // this batch. No ID owner is reset on a live stream.
                             batch.retire = store.ledgers.keys().copied().collect();
                             batch.messages.clear();
+                            store.close_selected(&batch.retire)?;
                             return Ok(batch);
                         }
                         QueueAction::Send(message) => {
@@ -129,25 +154,32 @@ impl Outbox {
         })
         .await
     }
-    pub async fn receipt(
+    pub async fn drain_receipts(
         &self,
         view: RoutingView,
         peer: EndpointId,
         generation: u64,
-        id: String,
-        disposition: TransportDisposition,
-    ) -> Result<Settlement, ControlError> {
-        if !view.members.iter().any(|m| m.active && m.endpoint == peer) {
-            return Ok(Settlement::Retire);
-        }
+    ) -> Result<bool, ControlError> {
+        let active = view.members.iter().any(|m| m.active && m.endpoint == peer);
+        let revision = view.revision;
         self.with(Some(view), move |store| {
-            let ledger = store
-                .ledgers
-                .get_mut(&(peer, generation))
-                .ok_or(ControlError::Storage)?;
-            ledger
-                .settle(&mut store.mail, &id, disposition)
-                .map_err(|_| ControlError::Storage)
+            store.drain((peer, generation), revision, active)
+        })
+        .await
+    }
+    pub async fn close_receipts(
+        &self,
+        view: Option<RoutingView>,
+        peer: EndpointId,
+        generation: u64,
+    ) -> Result<(), ControlError> {
+        let active = view
+            .as_ref()
+            .is_some_and(|v| v.members.iter().any(|m| m.active && m.endpoint == peer));
+        let revision = view.as_ref().map_or(0, |v| v.revision);
+        self.with(view, move |store| {
+            store.drain((peer, generation), revision, active)?;
+            store.close_selected(&[(peer, generation)])
         })
         .await
     }
@@ -157,6 +189,11 @@ impl Outbox {
         generation: u64,
     ) -> Result<(), ControlError> {
         self.with(None, move |store| {
+            store.close_selected(&[(peer, generation)])?;
+            store
+                .receipts
+                .remove(&(peer, generation))
+                .ok_or(ControlError::Storage)?;
             let ledger = store
                 .ledgers
                 .remove(&(peer, generation))

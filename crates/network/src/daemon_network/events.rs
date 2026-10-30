@@ -2,10 +2,7 @@ use super::{
     driver::{Event, Live, retire},
     *,
 };
-use crate::{
-    daemon_outbox::Settlement,
-    peer_session::{DriverEvent, PeerEvent},
-};
+use crate::peer_session::{DriverEvent, PeerEvent};
 pub(super) async fn handle(
     state: &State,
     outbox: &outbox::Outbox,
@@ -36,17 +33,11 @@ pub(super) async fn handle(
             disposition,
             note,
         })) => {
-            let _note = note; // Preserve the raw bounded field without logging it.
+            // The permit-bound publisher owns the accepted work. This event
+            // wakes its guarded drain; a batch may already have settled it.
+            let _receipt = (message_id, disposition, note);
             if let Some(view) = state.view().await? {
-                match outbox
-                    .receipt(view, peer, generation, message_id, disposition)
-                    .await?
-                {
-                    Settlement::Retire => close = true,
-                    Settlement::Settled { taken } => {
-                        let _taken = taken;
-                    }
-                }
+                close = outbox.drain_receipts(view, peer, generation).await?;
             } else {
                 close = true;
             }
@@ -81,4 +72,42 @@ pub(super) async fn handle(
         retire(state, outbox, old, peer).await?;
     }
     Ok(())
+}
+
+// Keep the last validated snapshot as offline metadata. Both operations share
+// one Engine lock, so a directory request cannot observe an online resurrection.
+pub(super) async fn retired_presence(
+    state: &State,
+    peer: EndpointId,
+    generation: u64,
+    presence: Option<crate::wire::Presence>,
+) -> Result<(), ControlError> {
+    let view = state.view().await?;
+    state
+        .engine
+        .with(move |engine| {
+            if let Some(view) = &view {
+                let members = view
+                    .members
+                    .iter()
+                    .filter(|member| member.active && member.endpoint != view.local)
+                    .map(|member| crate::daemon_engine::RemoteMember {
+                        peer: member.endpoint,
+                        person: member.person.clone(),
+                        machine: member.machine.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                engine.sync_remote_members(&view.team, view.revision, &members)?;
+                if members.iter().any(|member| member.peer == peer)
+                    && let Some(presence) = presence
+                {
+                    engine.remote_presence(peer, generation, &presence)?;
+                }
+            } else {
+                engine.suspend_remote_directory();
+            }
+            engine.remote_disconnected(peer, generation)
+        })
+        .await
+        .map_err(|_| ControlError::Storage)
 }

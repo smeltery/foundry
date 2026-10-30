@@ -193,6 +193,12 @@ impl PeerSession {
                 if revision != permit.revision {
                     return Err(PeerError::StaleEpoch);
                 }
+                if let Some(publish) = &self.receipt_publisher {
+                    publish(&id, &disposition, revision)?;
+                }
+                // Registration and the expiry scan use this same gate. The
+                // validated work is visible before a scan can decide retirement.
+                drop(permit);
                 Ok(PeerEvent::Receipt {
                     message_id: id,
                     disposition,

@@ -2,6 +2,10 @@ use super::*;
 use crate::wire;
 use iroh::EndpointId;
 
+#[cfg(test)]
+#[path = "remote_presence_tests.rs"]
+mod presence_tests;
+
 pub(super) fn label(value: &str) -> Result<(), EngineError> {
     if value.is_empty()
         || value.len() > registry::MAX_TEXT_BYTES
@@ -155,10 +159,19 @@ impl Engine {
             let name = known_name(value, owner)?;
             *value = format!("{}/{}/{name}", owner.person, owner.machine);
         }
-        let result = self
-            .mail
-            .save_remote_presence(&snapshot.team, peer, generation, &presence);
-        self.remote_result(result)?;
+        // The protected snapshot includes presence only for its current team.
+        let unchanged = snapshot.presence.iter().any(|prior| {
+            prior.peer == peer
+                && prior.generation == generation
+                && prior.online
+                && prior.presence == presence
+        });
+        if !unchanged {
+            let result =
+                self.mail
+                    .save_remote_presence(&snapshot.team, peer, generation, &presence);
+            self.remote_result(result)?;
+        }
         self.remote_generations.insert(peer, (generation, true));
         self.changed.notify_waiters();
         Ok(())
