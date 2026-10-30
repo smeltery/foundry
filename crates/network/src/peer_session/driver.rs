@@ -5,6 +5,11 @@ use tokio::{
     task::JoinHandle,
 };
 
+// The host binds this bounded sink to one actual ledger generation. ACK
+// validation calls it while retaining the current authority permit; no I/O here.
+pub(crate) type ReceiptPublisher =
+    Arc<dyn Fn(&str, &ReceiptDisposition, u64) -> Result<()> + Send + Sync>;
+
 const COMMAND_CAPACITY: usize = 32;
 const EVENT_CAPACITY: usize = 32;
 enum Command {
@@ -79,6 +84,14 @@ pub struct PeerDriver {
     _commands: mpsc::Sender<Request>,
 }
 impl PeerDriver {
+    pub(crate) fn start_receipted(
+        mut session: PeerSession,
+        publisher: ReceiptPublisher,
+    ) -> Result<(PeerSender, Self)> {
+        session.receipt_publisher = Some(publisher);
+        Self::start(session)
+    }
+
     /// The reader owns its stream and emits only complete bound tokens. Outbound
     /// commands never cancel an in-flight partial frame. One session remains the
     /// sole writer/ACK owner and revalidates authority for every effect.

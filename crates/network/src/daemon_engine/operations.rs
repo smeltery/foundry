@@ -50,12 +50,12 @@ impl Engine {
         Ok(Outcome::Attached)
     }
     pub(super) fn who(&self, filter: Filter) -> Result<Outcome, EngineError> {
-        let entries = self
-            .registry
-            .registry()?
-            .who(&filter.native(), registry::MAX_RESULTS)?;
         Ok(Outcome::Directory {
-            entries: entries.into_iter().map(Entry::from).collect(),
+            entries: self
+                .directory_routes(&filter)?
+                .into_iter()
+                .map(|route| route.entry)
+                .collect(),
         })
     }
     pub(super) fn send(
@@ -66,13 +66,13 @@ impl Engine {
         to: Filter,
     ) -> Result<Outcome, EngineError> {
         self.authorize(connection, &auth)?;
-        let recipient = self
-            .registry
-            .registry()?
-            .resolve(&to.native())?
-            .conversation;
+        let target = self.resolve_route(&to)?;
+        let recipient = target.entry.conversation;
+        if let Some((team, peer)) = target.remote {
+            return self.send_remote(&auth, &message, &recipient, &team, peer);
+        }
         message.sender = mailbox_address(&auth.conversation);
-        message.recipient = mailbox_address(&recipient.into());
+        message.recipient = mailbox_address(&recipient);
         let duplicate =
             self.mail.insert(&message, mail::State::Pending)? == mail::Insert::Duplicate;
         let state = self.mail.get(&message.id)?.state.into();

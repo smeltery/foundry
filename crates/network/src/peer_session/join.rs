@@ -1,35 +1,9 @@
 use super::*;
 use crate::{
-    full_team_store::{CodeJoinTrust, CodeLease, JoinTrust},
+    full_team_store::CodeLease,
     team::{JoinRequest, TeamDocument},
     team_state::Admission,
 };
-
-/// Caller-selected invitation trust, independent of the response JSON. None
-/// permits the authenticated inviter selected by the trusted invitation to
-/// introduce the founder; Some additionally pins a known founder. No freshness
-/// assertion is made about an otherwise valid signed snapshot.
-pub struct PublicBootstrap {
-    pub expected_team: String,
-    pub expected_founder: Option<EndpointId>,
-    pub authenticated_inviter: EndpointId,
-    pub state: TeamDocument,
-}
-
-/// Opaque code endpoint authentication replaces roster-inviter trust here. The
-/// owned anchor must be constructed from the selected code and ACTUAL JOIN peer,
-/// never from a member/endpoint asserted in reply JSON. Optional independent team
-/// and founder pins further restrict the introduced snapshot. No Debug/Serialize.
-pub struct PublicCodeBootstrap {
-    pub anchor: crate::code_invite::CodeAnchor,
-    pub expected_team: Option<String>,
-    pub expected_founder: Option<EndpointId>,
-    pub state: TeamDocument,
-}
-enum BootstrapInput {
-    Member(PublicBootstrap),
-    Code(PublicCodeBootstrap),
-}
 
 /// Committed admission and its bounded reply permit. No Debug/Serialize. Keep
 /// this value alive through JOIN reply serialization/write/finish, then drop it
@@ -58,102 +32,6 @@ impl AsRef<TeamDocument> for JoinAdmission {
     }
 }
 impl AdmittedTeam {
-    /// First durable join only. No reset/rejoin of an active or removed store.
-    /// Ownership is captured before detached validation/commit work begins.
-    pub fn bootstrap(
-        store: FullTeamStore,
-        ownership: DaemonLease,
-        local: EndpointId,
-        clock: impl Fn() -> Result<i64> + Send + 'static,
-        mailbox: Option<TextMailbox>,
-        input: PublicBootstrap,
-    ) -> impl std::future::Future<Output = Result<Arc<Self>>> + Send {
-        Self::bootstrap_input(
-            store,
-            ownership,
-            local,
-            clock,
-            mailbox,
-            BootstrapInput::Member(input),
-        )
-    }
-
-    /// Empty-store bootstrap authenticated by a selected short code endpoint.
-    /// The derived endpoint is not required or treated as a TEAM roster member.
-    pub fn bootstrap_code(
-        store: FullTeamStore,
-        ownership: DaemonLease,
-        local: EndpointId,
-        clock: impl Fn() -> Result<i64> + Send + 'static,
-        mailbox: Option<TextMailbox>,
-        input: PublicCodeBootstrap,
-    ) -> impl std::future::Future<Output = Result<Arc<Self>>> + Send {
-        Self::bootstrap_input(
-            store,
-            ownership,
-            local,
-            clock,
-            mailbox,
-            BootstrapInput::Code(input),
-        )
-    }
-
-    fn bootstrap_input(
-        store: FullTeamStore,
-        ownership: DaemonLease,
-        local: EndpointId,
-        clock: impl Fn() -> Result<i64> + Send + 'static,
-        mailbox: Option<TextMailbox>,
-        input: BootstrapInput,
-    ) -> impl std::future::Future<Output = Result<Arc<Self>>> + Send {
-        // Own the guard even if the returned future is dropped before first poll.
-        let gate = Self::owned_gate(store, ownership, local, clock, mailbox);
-        async move {
-            let mut gate = gate?;
-            tokio::task::spawn_blocking(move || {
-                let now = gate.now()?;
-                let base = gate.store.load(now).map_err(|_| PeerError::Storage)?;
-                let pending = match &input {
-                    BootstrapInput::Member(input) => gate.store.prepare_join(
-                        &base,
-                        &input.state,
-                        JoinTrust {
-                            team: &input.expected_team,
-                            founder: input.expected_founder,
-                            inviter: input.authenticated_inviter,
-                        },
-                        now,
-                    ),
-                    BootstrapInput::Code(input) => gate.store.prepare_code_join(
-                        &base,
-                        &input.state,
-                        CodeJoinTrust {
-                            anchor: &input.anchor,
-                            team: input.expected_team.as_deref(),
-                            founder: input.expected_founder,
-                        },
-                        now,
-                    ),
-                }
-                .map_err(|_| PeerError::Invalid)?;
-                let loaded = gate
-                    .store
-                    .commit_join(pending)
-                    .map_err(|_| PeerError::Storage)?;
-                let document = loaded.document().ok_or(PeerError::Unauthorized)?;
-                member(document, local)?;
-                gate.team = document.id.clone();
-                gate.founder = document.founder;
-                Ok(Arc::new(Self {
-                    local,
-                    gate: Arc::new(Mutex::new(gate)),
-                }))
-            })
-            .await
-            .map_err(|_| PeerError::Storage)?
-        }
-    }
-
     /// Peer is the actual authenticated JOIN remote_id, not an asserted request
     /// field. The gate remains held by the result until the transport sends it.
     pub async fn admit_join(
@@ -161,9 +39,26 @@ impl AdmittedTeam {
         peer: EndpointId,
         request: JoinRequest,
     ) -> Result<JoinAdmission> {
+        let (keep, cancel) = watch::channel(false);
+        let result = self
+            .admit_join_fenced(peer, request, Arc::new(AdmissionFence::new(cancel)))
+            .await;
+        drop(keep);
+        result
+    }
+
+    /// The owner stops pending admissions synchronously before closing/aborting
+    /// tasks. Dropping this future also stops work that has not begun commit.
+    pub async fn admit_join_fenced(
+        &self,
+        peer: EndpointId,
+        request: JoinRequest,
+        fence: Arc<AdmissionFence>,
+    ) -> Result<JoinAdmission> {
+        let _stop = super::super::admission_fence::StopAdmission(fence.clone());
         bound(&request, false)?;
         let guard = self.gate.clone().lock_owned().await;
-        tokio::task::spawn_blocking(move || admit(guard, peer, request, None, None))
+        tokio::task::spawn_blocking(move || admit(guard, peer, request, None, Some(&fence)))
             .await
             .map_err(|_| PeerError::Storage)?
     }
@@ -177,7 +72,17 @@ impl AdmittedTeam {
         request: JoinRequest,
         lease: Arc<CodeLease>,
     ) -> Result<JoinAdmission> {
-        self.code_admission(peer, request, lease, None).await
+        let (keep, cancel) = watch::channel(false);
+        let result = self
+            .code_admission(
+                peer,
+                request,
+                lease,
+                Some(Arc::new(AdmissionFence::new(cancel))),
+            )
+            .await;
+        drop(keep);
+        result
     }
     pub(crate) async fn admit_code_join_fenced(
         &self,
@@ -195,6 +100,9 @@ impl AdmittedTeam {
         lease: Arc<CodeLease>,
         fence: Option<Arc<AdmissionFence>>,
     ) -> Result<JoinAdmission> {
+        let _stop = fence
+            .as_ref()
+            .map(|fence| super::super::admission_fence::StopAdmission(fence.clone()));
         bound(&request, true)?;
         let guard = self.gate.clone().lock_owned().await;
         tokio::task::spawn_blocking(move || {

@@ -18,7 +18,14 @@ fn verify(connection: &Connection, version: i64) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if count != if version == 2 { 2 } else { 3 } {
+    if count
+        != match version {
+            2 => 2,
+            3 => 3,
+            4 => 7,
+            _ => return Err(MailError::Schema),
+        }
+    {
         return Err(MailError::Schema);
     }
     let mut expected = vec![
@@ -32,8 +39,15 @@ fn verify(connection: &Connection, version: i64) -> Result<()> {
         ),
         ("sequence", SEQUENCE.to_owned()),
     ];
-    if version == 3 {
+    if version >= 3 {
         expected.push(("poll_attempt", POLL.to_owned()));
+    }
+    if version == 4 {
+        expected.extend(
+            transport_schema::tables()
+                .into_iter()
+                .map(|(name, sql)| (name, sql.into())),
+        );
     }
     for (name, sql) in expected {
         let actual: String =
@@ -47,7 +61,7 @@ fn verify(connection: &Connection, version: i64) -> Result<()> {
     Ok(())
 }
 /// v1/unknown schemas are rejected without rewriting data. v2 is an exact checked
-/// additive migration: no dropped tables, deleted mail or reset sequence/retry state.
+/// additive migrations: no dropped mail, deleted rows or reset retry/sequence state.
 pub(super) fn initialize(connection: &mut Connection) -> Result<()> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let app: i64 = tx.query_row("PRAGMA application_id", [], |r| r.get(0))?;
@@ -61,19 +75,25 @@ pub(super) fn initialize(connection: &mut Connection) -> Result<()> {
         tx.execute_batch(MAIL_V2)?;
         tx.execute_batch(SEQUENCE)?;
         tx.execute("INSERT INTO sequence VALUES(1,0)", [])?;
-    } else if app == APP && matches!(version, 2 | 3) {
+    } else if app == APP && matches!(version, 2..=4) {
         verify(&tx, version)?;
     } else {
         return Err(MailError::Schema);
     }
-    if version != 3 {
+    if version < 3 {
         tx.execute_batch(&format!("ALTER TABLE mail ADD COLUMN {READ_COLUMN}"))?;
         tx.execute_batch(&format!("ALTER TABLE mail ADD COLUMN {ENCODING_COLUMN}"))?;
         tx.execute_batch(POLL)?;
         tx.pragma_update(None, "application_id", APP)?;
         tx.pragma_update(None, "user_version", 3)?;
     }
-    verify(&tx, 3)?;
+    if version < 4 {
+        for (_, sql) in transport_schema::tables() {
+            tx.execute_batch(sql)?;
+        }
+        tx.pragma_update(None, "user_version", 4)?;
+    }
+    verify(&tx, 4)?;
     tx.commit()?;
     Ok(())
 }

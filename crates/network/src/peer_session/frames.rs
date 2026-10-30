@@ -80,29 +80,47 @@ pub(super) fn message(
     address(&value.from, sender)?;
     address(&value.to, recipient)?;
     text(&value.id, 256, false)?;
-    if let Some(reply) = &value.reply_to {
-        text(reply, 256, false)?;
-    }
-    if value.body.len() > 128 * 1024 || value.sent_at < 0 {
+    if value.body.len() > wire::MAX_PEER_TEXT_BYTES || value.sent_at < 0 {
         return Err(PeerError::Limit);
     }
-    if !value.files.is_empty()
-        || value.approval.is_some()
-        || value.via.is_some()
-        || value.from_agent.is_some()
-        || value.from_repo.is_some()
-    {
+    if !value.files.is_empty() || value.approval.is_some() {
         return Err(PeerError::Unsupported);
     }
-    // Preserve the entire accepted wire message in the durable receiver record.
-    if serde_json::to_vec(value)
-        .map_err(|_| PeerError::Invalid)?
-        .len()
-        > 256 * 1024
-    {
-        return Err(PeerError::Limit);
-    }
+    serde_json::to_writer(MessageSize(0), value).map_err(|_| PeerError::Limit)?;
     Ok(())
+}
+
+struct MessageSize(usize);
+impl std::io::Write for MessageSize {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > crate::codec::MAX_FRAME_BYTES.saturating_sub(self.0) {
+            return Err(std::io::Error::other("message exceeds frame budget"));
+        }
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Text annotations are descriptive, never transport authority. Keep accepted
+/// characters in order, bound their output, and turn empty annotations into None.
+pub(super) fn clean_metadata(value: &mut wire::Message) {
+    fn annotation(value: &mut Option<String>, punctuation: &str, limit: usize) {
+        if let Some(input) = value.take() {
+            let cleaned: String = input
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || punctuation.contains(*c))
+                .take(limit)
+                .collect();
+            *value = (!cleaned.is_empty()).then_some(cleaned);
+        }
+    }
+    annotation(&mut value.from_agent, "-", 30);
+    annotation(&mut value.from_repo, "-_./", 100);
+    annotation(&mut value.via, "-_./:*@", 100);
+    annotation(&mut value.reply_to, "", 40);
 }
 
 impl PeerSession {
@@ -121,38 +139,71 @@ impl PeerSession {
                 })
             }
             PeerFrame::Msg { msg } => {
-                let (id, duplicate) = io::bounded(
+                let id = msg.id.clone();
+                let received = io::bounded(
                     &mut self.options.cancel,
                     self.options.deadline,
                     self.team.receive_text(self.peer, *msg),
                 )
-                .await??;
+                .await?;
+                if let Err(error @ (PeerError::Storage | PeerError::Quiescent)) = &received {
+                    return Err(*error);
+                }
+                // Revalidate even after a payload/policy error. A revoked or
+                // storage-fenced authority must not emit any new receipt.
                 let _permit = self.permit().await?;
+                let (state, note, event) = match received {
+                    Ok((id, duplicate)) => (
+                        "queued",
+                        String::new(),
+                        PeerEvent::Received {
+                            message_id: id,
+                            duplicate,
+                        },
+                    ),
+                    Err(error) => {
+                        let note = error.to_string();
+                        (
+                            "refused",
+                            note.clone(),
+                            PeerEvent::Rejected {
+                                message_id: id.clone(),
+                                note,
+                            },
+                        )
+                    }
+                };
                 io::write(
                     &mut self.send,
                     &PeerFrame::Ack {
                         id: id.clone(),
-                        state: "queued".into(),
-                        note: String::new(),
+                        state: state.into(),
+                        note,
                     },
                     &mut self.options,
                 )
                 .await?;
-                Ok(PeerEvent::Received {
-                    message_id: id,
-                    duplicate,
-                })
+                Ok(event)
             }
             PeerFrame::Ack { id, state, note } => {
                 let permit = self.permit().await?;
-                if state != "queued" || !note.is_empty() {
-                    return Err(PeerError::Unsupported);
-                }
+                let disposition =
+                    ReceiptDisposition::from_state(&state).map_err(|_| PeerError::Limit)?;
                 let revision = self.pending.remove(&id).ok_or(PeerError::UnexpectedAck)?;
                 if revision != permit.revision {
                     return Err(PeerError::StaleEpoch);
                 }
-                Ok(PeerEvent::Queued { message_id: id })
+                if let Some(publish) = &self.receipt_publisher {
+                    publish(&id, &disposition, revision)?;
+                }
+                // Registration and the expiry scan use this same gate. The
+                // validated work is visible before a scan can decide retirement.
+                drop(permit);
+                Ok(PeerEvent::Receipt {
+                    message_id: id,
+                    disposition,
+                    note,
+                })
             }
             PeerFrame::Hello { .. } => Err(PeerError::Protocol),
         }

@@ -40,7 +40,7 @@ pub(super) fn validate_message(message: &Message) -> Result<()> {
     if let Some(id) = &message.reply_to {
         identifier(id)?;
     }
-    if message.body.len() > MAX_MAIL_BODY {
+    if message.body.len() > message.encoding.maximum_bytes() {
         return Err(MailError::InvalidPayload);
     }
     message.validate_payload()
@@ -49,8 +49,8 @@ pub(super) fn validate_message(message: &Message) -> Result<()> {
 /// retained terminal rows too; malformed metadata is never silently filtered.
 pub(super) fn validate_budget(tx: &rusqlite::Transaction<'_>, now: i64, peek: bool) -> Result<()> {
     let (count, bytes, invalid): (i64, i64, bool) = tx.query_row(
-        "SELECT count(*),coalesce(sum(length(body)),0),coalesce(max(typeof(body)!='blob' OR length(body)>?1 OR typeof(id)!='text' OR length(CAST(id AS BLOB)) NOT BETWEEN 1 AND ?2 OR typeof(sender)!='text' OR length(CAST(sender AS BLOB)) NOT BETWEEN 1 AND ?2 OR typeof(recipient)!='text' OR length(CAST(recipient AS BLOB)) NOT BETWEEN 1 AND ?2 OR (reply_to IS NOT NULL AND (typeof(reply_to)!='text' OR length(CAST(reply_to AS BLOB)) NOT BETWEEN 1 AND ?2))),0) FROM mail",
-        params![MAX_MAIL_BODY, MAX_MAIL_IDENTIFIER], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+        "SELECT count(*),coalesce(sum(length(body)),0),coalesce(max(typeof(body)!='blob' OR encoding NOT IN(0,1) OR length(body)>CASE WHEN encoding=1 THEN ?3 ELSE ?1 END OR typeof(id)!='text' OR length(CAST(id AS BLOB)) NOT BETWEEN 1 AND ?2 OR typeof(sender)!='text' OR length(CAST(sender AS BLOB)) NOT BETWEEN 1 AND ?2 OR typeof(recipient)!='text' OR length(CAST(recipient AS BLOB)) NOT BETWEEN 1 AND ?2 OR (reply_to IS NOT NULL AND (typeof(reply_to)!='text' OR length(CAST(reply_to AS BLOB)) NOT BETWEEN 1 AND ?2))),0) FROM mail",
+        params![MAX_MAIL_BODY, MAX_MAIL_IDENTIFIER,crate::codec::MAX_FRAME_BYTES], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
     )?;
     if count > MAX_ROWS || bytes > MAX_BYTES || invalid {
         return Err(MailError::InvalidPayload);

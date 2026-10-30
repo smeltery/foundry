@@ -158,7 +158,24 @@ async fn real_peer_receipt_displays_text_retains_envelope_and_rejects_conflicts(
         )
         .await;
         sender.send_text(changed).await.unwrap();
-        assert!(matches!(receiver.receive().await, Err(PeerError::Invalid)));
+        let note = match receiver.receive().await.unwrap() {
+            PeerEvent::Rejected { message_id, note } => {
+                assert_eq!(message_id, original.id);
+                assert_eq!(note, PeerError::Invalid.to_string());
+                note
+            }
+            _ => panic!("expected conflicting envelope refusal"),
+        };
+        assert!(!note.is_empty());
+        assert!(matches!(
+            sender.receive().await.unwrap(),
+            PeerEvent::Receipt { message_id, disposition: ReceiptDisposition::Refused, note: actual }
+                if message_id == original.id && actual == note
+        ));
+        let unchanged = MailStore::open(&b.root).unwrap().get(&original.id).unwrap();
+        assert_eq!(unchanged.message, saved.message);
+        assert_eq!(unchanged.state, saved.state);
+        assert_eq!(unchanged.retry, saved.retry);
         drop((sender, receiver));
     }
     drop(engine);

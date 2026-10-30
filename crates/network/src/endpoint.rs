@@ -3,7 +3,7 @@ use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey,
     endpoint::{Connection, presets},
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[derive(Debug, Clone)]
 pub enum RelaySelection {
@@ -25,6 +25,31 @@ pub struct EndpointConfig {
 pub struct NetworkEndpoint {
     endpoint: Endpoint,
     profile: WireProfile,
+    binding: Arc<()>,
+}
+
+/// One accepted transport, bound to the exact endpoint instance that accepted
+/// it. No caller-supplied identity can manufacture this routing authority.
+pub struct AcceptedConnection {
+    connection: Option<Connection>,
+    binding: Arc<()>,
+    channel: Channel,
+    peer: EndpointId,
+}
+impl AcceptedConnection {
+    pub fn channel(&self) -> Channel {
+        self.channel
+    }
+    pub fn remote_id(&self) -> EndpointId {
+        self.peer
+    }
+}
+impl Drop for AcceptedConnection {
+    fn drop(&mut self) {
+        if let Some(connection) = &self.connection {
+            connection.close(0u32.into(), b"unrouted connection");
+        }
+    }
 }
 impl NetworkEndpoint {
     pub async fn bind(config: EndpointConfig) -> Result<Self> {
@@ -83,6 +108,7 @@ impl NetworkEndpoint {
         Ok(Self {
             endpoint,
             profile: config.profile,
+            binding: Arc::new(()),
         })
     }
 
@@ -114,15 +140,45 @@ impl NetworkEndpoint {
     pub async fn accept(&self, timeout: Duration) -> Result<Connection> {
         positive(timeout)?;
         tokio::time::timeout(timeout, async {
-            self.endpoint
-                .accept()
-                .await
-                .ok_or(NetworkError::Closed)?
-                .await
-                .map_err(transport)
+            loop {
+                let incoming = self.endpoint.accept().await.ok_or(NetworkError::Closed)?;
+                // Failed unauthenticated handshakes belong to that peer. Keep
+                // serving within the same bounded accept deadline.
+                if let Ok(connection) = incoming.await {
+                    return Ok(connection);
+                }
+            }
         })
         .await
         .map_err(|_| NetworkError::TimedOut)?
+    }
+
+    /// The runtime calls this from one accept loop, then dispatches by channel.
+    pub async fn accept_routed(&self, timeout: Duration) -> Result<AcceptedConnection> {
+        let connection = self.accept(timeout).await?;
+        let channel = if connection.alpn() == self.profile.team_alpn {
+            Channel::Team
+        } else if connection.alpn() == self.profile.join_alpn {
+            Channel::Join
+        } else {
+            connection.close(1u32.into(), b"channel refused");
+            return Err(NetworkError::Invalid("unknown accepted channel"));
+        };
+        Ok(AcceptedConnection {
+            peer: connection.remote_id(),
+            connection: Some(connection),
+            binding: self.binding.clone(),
+            channel,
+        })
+    }
+
+    /// Consume only a transport accepted by this actual instance. JOIN owners
+    /// may then pass it to serve_join; TEAM owners use accept_connection.
+    pub fn into_connection(&self, mut accepted: AcceptedConnection) -> Result<Connection> {
+        if !Arc::ptr_eq(&self.binding, &accepted.binding) {
+            return Err(NetworkError::Invalid("accepted endpoint binding mismatch"));
+        }
+        accepted.connection.take().ok_or(NetworkError::Closed)
     }
 
     pub async fn online(&self, timeout: Duration) -> Result<()> {
@@ -134,6 +190,11 @@ impl NetworkEndpoint {
 
     /// Await closure of all connections and endpoint-owned background tasks.
     pub async fn shutdown(self) {
+        self.close().await;
+    }
+
+    /// Drain the endpoint even when foreground controls retain shared handles.
+    pub async fn close(&self) {
         self.endpoint.close().await;
     }
 }

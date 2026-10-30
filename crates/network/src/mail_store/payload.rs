@@ -8,6 +8,12 @@ pub enum PayloadEncoding {
     WireJson,
 }
 impl PayloadEncoding {
+    pub(super) fn maximum_bytes(self) -> usize {
+        match self {
+            Self::Text => MAX_MAIL_BODY,
+            Self::WireJson => crate::codec::MAX_FRAME_BYTES,
+        }
+    }
     pub(super) fn code(self) -> i64 {
         match self {
             Self::Text => 0,
@@ -24,7 +30,7 @@ impl PayloadEncoding {
 }
 impl Message {
     fn wire_payload(&self) -> Result<crate::wire::Message> {
-        if self.body.len() > MAX_MAIL_BODY {
+        if self.body.len() > crate::codec::MAX_FRAME_BYTES {
             return Err(MailError::InvalidPayload);
         }
         let wire: crate::wire::Message =

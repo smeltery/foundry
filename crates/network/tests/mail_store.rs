@@ -206,7 +206,7 @@ fn concurrent_exact_insert_and_schema_failure() {
     );
     assert_eq!(root.open().unread("bob").unwrap(), 1);
     let raw = rusqlite::Connection::open(root.0.join("mail.sqlite3")).unwrap();
-    raw.execute_batch("PRAGMA user_version=4").unwrap();
+    raw.execute_batch("PRAGMA user_version=5").unwrap();
     drop(raw);
     assert!(matches!(MailStore::open(&root.0), Err(MailError::Schema)));
 }

@@ -1,5 +1,17 @@
 use super::*;
 impl TeamState {
+    pub fn set_relay(&self, actor: &SecretKey, relay: Option<&str>, now: i64) -> Result<Self> {
+        self.actor(actor)?;
+        let mut next = self.clone();
+        let mut metadata = self.document.meta.body.clone();
+        metadata.relay = relay.map(str::to_owned);
+        metadata.ts = next_ts(metadata.ts, now);
+        next.document.meta = SignedRecord::sign(metadata, actor, &self.document.id, &self.profile)
+            .map_err(|_| TeamError::Invalid)?;
+        next.refresh(actor.public(), now)?;
+        Ok(next)
+    }
+
     pub fn rotate_link(
         &self,
         actor: &SecretKey,

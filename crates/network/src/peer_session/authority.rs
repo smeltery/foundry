@@ -6,12 +6,24 @@ use crate::{
     team::TeamDocument,
 };
 use tokio::sync::{Mutex, OwnedMutexGuard};
+#[path = "bootstrap.rs"]
+mod bootstrap;
 #[path = "codes.rs"]
 mod codes;
+#[path = "formation.rs"]
+mod formation;
 #[path = "join.rs"]
 mod join;
+pub use formation::AuthorityStatus;
+#[path = "controls.rs"]
+mod controls;
+#[path = "routing.rs"]
+mod routing;
+pub use bootstrap::{PublicBootstrap, PublicCodeBootstrap};
 pub use codes::{CodePermit, IssuedInvitation};
-pub use join::{JoinAdmission, PublicBootstrap, PublicCodeBootstrap};
+pub use controls::TeamPublication;
+pub use join::JoinAdmission;
+pub use routing::{RoutingMember, RoutingView};
 
 /// One shared authorization/writer gate per local team. All cooperating local
 /// membership mutations must use this gate, or quiesce sessions before external
@@ -178,10 +190,11 @@ impl AdmittedTeam {
     pub(super) async fn receive_text(
         &self,
         peer: EndpointId,
-        message: wire::Message,
+        mut message: wire::Message,
     ) -> Result<(String, bool)> {
         let mut permit = self.authorize(peer).await?;
         tokio::task::spawn_blocking(move || {
+            frames::clean_metadata(&mut message);
             frames::message(&message, &permit.remote, &permit.local)?;
             let gate = &mut permit.guard;
             let mailbox = gate.mailbox.as_mut().ok_or(PeerError::Unsupported)?;
@@ -217,9 +230,15 @@ impl Gate {
             self.quiescent = true;
             PeerError::Storage
         })?;
-        let LoadedStatus::Active(state) = loaded else {
-            self.quiescent = true;
-            return Err(PeerError::Quiescent);
+        let state = match loaded {
+            LoadedStatus::Active(state) => state,
+            LoadedStatus::Empty(_) if self.team.is_empty() => {
+                return Err(PeerError::Unauthorized);
+            }
+            _ => {
+                self.quiescent = true;
+                return Err(PeerError::Quiescent);
+            }
         };
         let document = state.document().ok_or(PeerError::Unauthorized)?;
         if document.id != self.team

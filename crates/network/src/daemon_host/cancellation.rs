@@ -17,14 +17,15 @@ pub(super) struct WaitRegistry {
 struct RegistryState {
     closed: bool,
     connections: BTreeMap<ConnectionId, Vec<Weak<InboxWait>>>,
+    signals: BTreeMap<ConnectionId, watch::Sender<bool>>,
 }
 impl WaitRegistry {
     pub fn connection(self: &Arc<Self>, id: ConnectionId) -> ConnectionFence {
-        self.state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .connections
-            .insert(id, Vec::new());
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let (signal, _) = watch::channel(state.closed);
+        state.signals.insert(id, signal);
+        state.connections.insert(id, Vec::new());
+        drop(state);
         ConnectionFence {
             registry: self.clone(),
             id,
@@ -47,20 +48,29 @@ impl WaitRegistry {
     pub fn cancel_all(&self) {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.closed = true;
+        for signal in state.signals.values() {
+            signal.send_replace(true);
+        }
         for waits in state.connections.values() {
             cancel(waits);
         }
     }
     fn cancel_connection(&self, id: ConnectionId) {
-        if let Some(waits) = self
-            .state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .connections
-            .remove(&id)
-        {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(signal) = state.signals.remove(&id) {
+            signal.send_replace(true);
+        }
+        if let Some(waits) = state.connections.remove(&id) {
             cancel(&waits);
         }
+    }
+    fn signal(&self, id: ConnectionId) -> watch::Receiver<bool> {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(signal) = state.signals.get(&id) {
+            return signal.subscribe();
+        }
+        let (_, receiver) = watch::channel(true);
+        receiver
     }
 }
 fn cancel(waits: &[Weak<InboxWait>]) {
@@ -73,6 +83,9 @@ pub(super) struct ConnectionFence {
     id: ConnectionId,
 }
 impl ConnectionFence {
+    pub fn signal(&self) -> watch::Receiver<bool> {
+        self.registry.signal(self.id)
+    }
     pub fn reader_guard(&self) -> Self {
         Self {
             registry: self.registry.clone(),

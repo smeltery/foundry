@@ -126,4 +126,13 @@ impl FullTeamStore {
     pub fn commit_join(&mut self, pending: PendingJoin) -> Result<LoadedTeam> {
         self.commit_formation(pending.0)
     }
+    /// Cancellation competes with the first write after the actual SQLite
+    /// writer lock is acquired. No callback crosses transaction commit or I/O.
+    pub(crate) fn commit_join_when(
+        &mut self,
+        pending: PendingJoin,
+        begin_write: impl FnOnce() -> bool,
+    ) -> Result<LoadedTeam> {
+        self.commit_formation_when(pending.0, begin_write)
+    }
 }

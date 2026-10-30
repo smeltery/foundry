@@ -199,7 +199,7 @@ pub fn message() -> wire::Message {
         from_repo: None,
         to: "bob/desktop/terminal".into(),
         via: None,
-        reply_to: Some("thread-start".into()),
+        reply_to: Some("threadstart".into()),
         body: "independent fixture text".into(),
         wake: true,
         notify: false,
@@ -299,4 +299,11 @@ impl Drop for RawPeer {
     fn drop(&mut self) {
         self.connection.close(0u32.into(), b"raw fixture closed");
     }
+}
+
+pub fn ownership(node: &Node) -> daemon_lease::DaemonLease {
+    daemon_lease::DaemonLease::acquire(
+        &Dir::open_ambient_dir(&node.root, ambient_authority()).unwrap(),
+    )
+    .unwrap()
 }
