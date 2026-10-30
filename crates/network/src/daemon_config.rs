@@ -7,6 +7,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod inputs;
+mod network;
+mod resolved;
+mod startup;
+mod text;
+pub use network::{
+    CodebookConfig, NetworkConfig, NetworkMode, SeedConfig, TransportConfig, TrustConfig,
+};
+pub use resolved::ResolvedNetwork;
+pub use startup::{ResolvedStartup, StartupMode};
+pub use text::{SecretText, TextFile};
+
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
 #[derive(Deserialize)]
@@ -18,14 +30,6 @@ pub struct DaemonConfig {
     pub machine: String,
     pub network: NetworkMode,
     pub folders: Vec<FolderRule>,
-}
-
-/// Peer transport is not silently enabled by loading local daemon configuration.
-/// Additional modes require an implemented, explicitly configured peer owner.
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkMode {
-    Disabled,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +69,9 @@ impl DaemonConfig {
             }
         }
         self.folder_policy()?;
+        if let NetworkMode::Enabled(network) = &self.network {
+            network.validate()?;
+        }
         Ok(())
     }
 

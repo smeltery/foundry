@@ -2,8 +2,10 @@
 
 The development `f5y-daemon` executable provides local session registration,
 directory lookup and durable messaging over a private Unix socket. It runs in the
-foreground. Network CLI commands are not yet connected to it. This host does not
-enable peer transport, hosted identity or client injection.
+foreground. [Explicit peer configuration](peer-configuration.md) enables
+[team joins and durable peer messaging](peer-network.md). Network CLI commands
+are not yet connected to this executable. Hosted identity and client injection
+require further integration.
 
 ```mermaid
 flowchart LR
@@ -82,7 +84,7 @@ are capped at 600 seconds. Waiting does not hold the database lock; an authorize
 
 ## Mail and restart behavior
 
-Sending persists a message before replying. An exact message-ID retry preserves
+Local sending persists a message before replying. An exact message-ID retry preserves
 its current state; changing its recipient, contents, reply target or delivery
 intent returns a conflict. Wake defaults to `true` and notify to `false`; these
 intents are retained, not evidence of client injection.
@@ -125,5 +127,5 @@ extra address bytes for staging. A distinct socket directory is also leased, so
 two daemons cannot share that namespace. Conflicting replacement sockets are
 preserved; interrupted namespace changes can leave private staging directories
 for manual inspection. Cleanup failures report the retained path.
-Cross-machine delivery and the remaining team, approval, attachment and adapter
-workflows require further integration and validation.
+Peer messaging uses a separate durable transport outbox. Approval, attachment and
+client-adapter workflows require further integration and validation.

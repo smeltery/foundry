@@ -4,7 +4,7 @@ Run `python3 scripts/checks/loc.py` from the repository root. The checker scans 
 
 ## Counting policy
 
-The budget counts physical lines, including comments and blank lines. This deliberately avoids language-dependent heuristics and discourages hiding logic in comments or compressed formatting. It applies to Rust, TypeScript, JavaScript, Python and shell source files. Documentation, lockfiles and assets are not source code and are excluded by extension.
+The budget counts physical lines, including comments and blank lines. This deliberately avoids language-dependent heuristics and discourages hiding logic in comments or compressed formatting. It applies to Rust, TypeScript, JavaScript, Python, shell, Nix, C and header files, including native test fixtures. Documentation, lockfiles and assets are not source code and are excluded by extension.
 
 Each source file has a default limit of 400 lines. Each component also has a total limit in `scripts/checks/loc-budgets.json`. New source components must have an explicit budget. Tests count toward their configured component budget.
 
@@ -45,20 +45,29 @@ features, assertions or notices were removed, and no file exceptions were added.
 
 ## Current network allocation
 
-The independently reviewed network allocation is 31,300 physical Rust lines.
-The integrated snapshot measures 31,252: 13,779 implementation lines and 17,473
-test/helper lines across 183 files. The largest file is 378 lines; the default
-400-line file limit is unchanged. All comments and blank lines remain counted.
+The independently reviewed foreground network allocation is exactly 42,952
+physical source lines, up from the 31,252-line baseline. The snapshot contains
+256 files: 23,556 lines under `src/` (including inline tests) and 19,396 under
+`tests/`. Its 125 native C fixture lines, comments and blank lines are counted.
+The largest file is 389 lines; the default 400-line limit is unchanged.
 
-This snapshot includes the local daemon, atomic inbox batches and cancellation
-fences, durable invitation and JOIN authority, persistent peer primitives and
-attachment storage. The complete-reply and Linux directory-sync corrections add
-665 implementation lines and 1,404 test/helper lines. This allocation retains
-48 lines of correction room after 16 implementation and 260 test lines for
-disconnect fencing and its regressions. No features or
-meaningful tests were removed or compressed. Foreground peer supervision and
-remaining delivery/platform workflows need renewed measurement and review as
-they are implemented; this allowance does not establish their completion.
+The increment composes explicit configuration, authenticated peer routing,
+remote directory and presence, durable transport receipts and retries, team
+controls, and invitation listener recovery into the foreground daemon. It reuses
+the existing membership authority, protected mailbox store and persistent peer
+driver. The outbox ledger correlates connection-bound attempts over durable
+stored envelopes rather than introducing a second queue store.
+
+The allocation includes actual-process direct and private TLS relay workflows,
+offline and crash recovery, lost receipts, deduplication, removal, cancellation,
+expiry and shutdown tests. Guard-retention and temporary SQLite journal lifecycle
+regressions remain counted. Overlapping receipt-deadline fixtures were
+consolidated while preserving their distinct assertions. No meaningful coverage,
+features or required notices were removed or compressed to fit the allocation.
+
+This exact ceiling includes no future growth allowance. Further CLI, client and
+platform integration requires renewed measurement and review; this allocation
+does not establish their completion or full compatibility.
 
 ## Earlier allocation reviews
 

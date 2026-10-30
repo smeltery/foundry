@@ -25,6 +25,17 @@ mod schema;
 #[path = "mail_store/transitions.rs"]
 mod transitions;
 
+#[path = "mail_store/remote_directory.rs"]
+mod remote_directory;
+#[path = "mail_store/transport.rs"]
+mod transport;
+#[path = "mail_store/transport_schema.rs"]
+mod transport_schema;
+pub use remote_directory::RemoteMember;
+pub use transport::{
+    TRANSPORT_RETENTION_MS, TransportAttempt, TransportDisposition, TransportMessage,
+};
+
 pub type Result<T> = std::result::Result<T, MailError>;
 #[derive(Debug)]
 pub enum MailError {
@@ -278,7 +289,7 @@ impl MailStore {
         if let Some(reply) = &message.reply_to {
             identifier(reply)?;
         }
-        if message.body.len() > MAX_MAIL_BODY
+        if message.body.len() > message.encoding.maximum_bytes()
             || !matches!(initial, State::Pending | State::Held | State::Rejected)
         {
             return Err(MailError::InvalidInput);

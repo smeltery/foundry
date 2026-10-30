@@ -14,6 +14,11 @@ mod delivery;
 mod inbox;
 #[path = "daemon_engine/operations.rs"]
 mod operations;
+#[path = "daemon_engine/remote.rs"]
+mod remote;
+#[path = "daemon_engine/routing.rs"]
+mod routing;
+pub use mail::RemoteMember;
 #[path = "daemon_engine/protocol.rs"]
 mod protocol;
 #[path = "daemon_engine/waiting.rs"]
@@ -39,6 +44,8 @@ pub struct Engine {
     connections: BTreeMap<ConnectionId, Connection>,
     clock: Box<dyn Fn() -> Result<i64, EngineError> + Send>,
     uncertain: bool,
+    remote_ready: bool,
+    remote_generations: BTreeMap<iroh::EndpointId, (u64, bool)>,
     changed: Arc<Notify>,
     waits: BTreeMap<String, Arc<WaitState>>,
 }
@@ -79,6 +86,7 @@ impl Engine {
         let registry = registry::DurableRegistry::open(root, policy, Duration::from_secs(5))?;
         let mut mail = mail::MailStore::open(root)?;
         mail.recover_polling()?;
+        mail.recover_transport()?;
         Ok(Self {
             registry,
             mail,
@@ -86,6 +94,8 @@ impl Engine {
             connections: BTreeMap::new(),
             clock: Box::new(clock),
             uncertain: false,
+            remote_ready: false,
+            remote_generations: BTreeMap::new(),
             changed: Arc::new(Notify::new()),
             waits: BTreeMap::new(),
         })
@@ -95,7 +105,12 @@ impl Engine {
         if matches!(result, Err(EngineError::StorageUncertain)) {
             self.uncertain = true;
         }
-        if matches!(result, Ok(Outcome::Sent { .. }) | Ok(Outcome::PushFailed)) {
+        if matches!(
+            result,
+            Ok(Outcome::Sent { .. })
+                | Ok(Outcome::TransportQueued { .. })
+                | Ok(Outcome::PushFailed)
+        ) {
             self.changed.notify_waiters();
         }
         Reply {

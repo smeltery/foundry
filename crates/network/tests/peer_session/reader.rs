@@ -51,7 +51,7 @@ async fn partial_inbound_frame_survives_concurrent_output_on_persistent_connecti
     .unwrap();
     let token = reader.next().await.unwrap();
     assert!(
-        matches!(server.receive_frame(token).await.unwrap(), PeerEvent::Queued { message_id } if message_id == "receipt-1")
+        matches!(server.receive_frame(token).await.unwrap(), PeerEvent::Receipt { message_id, disposition: ReceiptDisposition::Queued, .. } if message_id == "receipt-1")
     );
     drop((reader, server, raw));
     tokio::join!(left.shutdown(), right.shutdown());

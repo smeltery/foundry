@@ -13,7 +13,11 @@ async fn observe(driver: &mut PeerDriver, received: &str, queued: &str) {
                 assert_eq!(message_id, received);
                 incoming = true;
             }
-            DriverEvent::Peer(PeerEvent::Queued { message_id }) => {
+            DriverEvent::Peer(PeerEvent::Receipt {
+                message_id,
+                disposition: ReceiptDisposition::Queued,
+                ..
+            }) => {
                 assert_eq!(message_id, queued);
                 receipt = true;
             }
@@ -93,7 +97,10 @@ async fn receive_only_driver_survives_dropping_outbound_handle() {
         tokio::time::timeout(WAIT, drive_a.next_event())
             .await
             .unwrap(),
-        Some(DriverEvent::Peer(PeerEvent::Queued { .. }))
+        Some(DriverEvent::Peer(PeerEvent::Receipt {
+            disposition: ReceiptDisposition::Queued,
+            ..
+        }))
     ));
     let (a_done, b_done) = tokio::join!(drive_a.shutdown(), drive_b.shutdown());
     a_done.unwrap();

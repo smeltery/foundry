@@ -6,12 +6,25 @@ async fn refused(frame: PeerFrame, expected: PeerError) {
     let (left, right) = (a.endpoint().await, b.endpoint().await);
     let (cancel, _) = watch::channel(false);
     let (mut raw, mut server) = raw_pair(&a, &left, &right, b.authority(true), &cancel).await;
+    let message_id = match &frame {
+        PeerFrame::Msg { msg } => Some(msg.id.clone()),
+        _ => None,
+    };
     write_frame(&mut raw.send, &frame, WAIT).await.unwrap();
-    assert!(matches!(server.receive().await, Err(error) if error == expected));
-    assert!(matches!(
-        read_frame(&mut raw.receive, WAIT).await,
-        Ok(None) | Err(_)
-    ));
+    if let Some(id) = message_id {
+        assert!(
+            matches!(server.receive().await.unwrap(), PeerEvent::Rejected {message_id,note} if message_id==id && note==expected.to_string())
+        );
+        assert!(
+            matches!(read_frame(&mut raw.receive,WAIT).await.unwrap(),Some(PeerFrame::Ack {id:actual,state,note}) if actual==id && state=="refused" && note==expected.to_string())
+        );
+    } else {
+        assert!(matches!(server.receive().await, Err(error) if error == expected));
+        assert!(matches!(
+            read_frame(&mut raw.receive, WAIT).await,
+            Ok(None) | Err(_)
+        ));
+    }
     assert_eq!(
         mail_store::MailStore::open(&b.root)
             .unwrap()
@@ -86,7 +99,7 @@ async fn wire_sender_and_local_recipient_policy_are_independently_enforced() {
     .await;
 }
 #[tokio::test]
-async fn unsupported_message_fields_are_not_silently_stripped_or_acked() {
+async fn unsupported_attachments_are_refused_without_silent_stripping() {
     let mut with_file = message();
     with_file.files.push(wire::TextAttachment {
         name: "file.txt".into(),
@@ -101,7 +114,11 @@ async fn unsupported_message_fields_are_not_silently_stripped_or_acked() {
     )
     .await;
     let mut with_route = message();
-    with_route.via = Some("third-party".into());
+    with_route.approval = Some(wire::SignedDocument {
+        body: serde_json::json!({"fixture":true}),
+        by: "fixture-signer".into(),
+        sig: "fixture-signature".into(),
+    });
     refused(
         PeerFrame::Msg {
             msg: Box::new(with_route),
@@ -153,7 +170,13 @@ async fn unexpected_ack_and_conflicting_message_ids_never_settle_other_mail() {
     )
     .await
     .unwrap();
-    assert!(matches!(server.receive().await, Err(PeerError::Invalid)));
+    assert!(matches!(
+        server.receive().await.unwrap(),
+        PeerEvent::Rejected { .. }
+    ));
+    assert!(
+        matches!(read_frame(&mut raw.receive,WAIT).await.unwrap(),Some(PeerFrame::Ack {state,..}) if state=="refused")
+    );
     assert_eq!(
         mail_store::MailStore::open(&b.root)
             .unwrap()

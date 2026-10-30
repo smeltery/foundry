@@ -7,7 +7,7 @@ mod admission_fence;
 mod authority;
 #[path = "peer_session/driver.rs"]
 mod driver;
-pub(crate) use admission_fence::AdmissionFence;
+pub use admission_fence::AdmissionFence;
 #[path = "peer_session/frames.rs"]
 mod frames;
 #[path = "peer_session/io.rs"]
@@ -18,9 +18,12 @@ pub use driver::{DriverEvent, PeerDriver, PeerSender};
 pub use reader::{PeerReader, ReceivedFrame};
 #[path = "peer_session/mail.rs"]
 mod mail;
+#[path = "peer_session/outbound.rs"]
+mod outbound;
 use crate::{Channel, NetworkEndpoint, PeerFrame, WireProfile, wire};
 pub use authority::{
-    AdmittedTeam, CodePermit, IssuedInvitation, JoinAdmission, PublicBootstrap, PublicCodeBootstrap,
+    AdmittedTeam, AuthorityStatus, CodePermit, IssuedInvitation, JoinAdmission, PublicBootstrap,
+    PublicCodeBootstrap, RoutingMember, RoutingView, TeamPublication,
 };
 use iroh::{
     EndpointAddr, EndpointId,
@@ -64,6 +67,9 @@ pub struct ProtocolMismatch {
     pub observed: u32,
 }
 
+/// A transport disposition is distinct from local adapter acknowledgement.
+pub use crate::mail_store::TransportDisposition as ReceiptDisposition;
+
 /// Profile must match the endpoint and the store's caller-selected policy.
 /// Numeric Hello version mismatch is observed without refusing State exchange.
 pub struct SessionOptions {
@@ -85,9 +91,19 @@ pub enum PeerEvent {
         message_id: String,
         duplicate: bool,
     },
+    /// The authenticated sender received a refusal; no inbox acceptance occurred.
+    Rejected {
+        message_id: String,
+        note: String,
+    },
     /// Durable receiver receipt, NOT adapter injection or local outbox settlement.
     Queued {
         message_id: String,
+    },
+    Receipt {
+        message_id: String,
+        disposition: ReceiptDisposition,
+        note: String,
     },
 }
 
@@ -100,6 +116,7 @@ pub struct PeerSession {
     peer: EndpointId,
     options: SessionOptions,
     pending: BTreeMap<String, u64>,
+    sent_ids: BTreeMap<String, [u8; 32]>,
     usable: bool,
     mismatch: Option<ProtocolMismatch>,
 }
@@ -140,12 +157,27 @@ impl PeerSession {
         if endpoint.id() != team.local() {
             return Err(PeerError::Unauthorized);
         }
-        let connection = io::bounded(
+        let accepted = io::bounded(
             &mut options.cancel,
             options.deadline,
-            endpoint.accept(options.deadline),
+            endpoint.accept_routed(options.deadline),
         )
         .await??;
+        Self::accept_connection(endpoint, accepted, team, options).await
+    }
+    /// Establish TEAM on the already accepted connection. The opaque origin
+    /// token prevents substituting another endpoint, even with the same key.
+    pub async fn accept_connection(
+        endpoint: &NetworkEndpoint,
+        accepted: crate::endpoint::AcceptedConnection,
+        team: Arc<AdmittedTeam>,
+        options: SessionOptions,
+    ) -> Result<Self> {
+        io::options(&options)?;
+        if endpoint.id() != team.local() {
+            return Err(PeerError::Unauthorized);
+        }
+        let connection = endpoint.into_connection(accepted)?;
         Self::establish(connection, team, options, false).await
     }
     async fn establish(
@@ -184,6 +216,7 @@ impl PeerSession {
             peer,
             options,
             pending: BTreeMap::new(),
+            sent_ids: BTreeMap::new(),
             usable: false,
             mismatch: None,
         };
@@ -280,31 +313,6 @@ impl PeerSession {
         .await;
         self.completed(result)
     }
-    /// Caller persists its outbound wire message before calling this; the pending
-    /// correlation here is volatile and never marks an outbox delivered. Reconnect
-    /// may resend the same immutable message after a lost receipt ACK.
-    pub async fn send_text(&mut self, message: wire::Message) -> Result<()> {
-        self.begin()?;
-        let result = async {
-            if self.pending.len() >= MAX_PENDING || self.pending.contains_key(&message.id) {
-                return Err(PeerError::Limit);
-            }
-            let permit = self.permit().await?;
-            frames::message(&message, &permit.local, &permit.remote)?;
-            io::write(
-                &mut self.send,
-                &PeerFrame::Msg {
-                    msg: Box::new(message.clone()),
-                },
-                &mut self.options,
-            )
-            .await?;
-            self.pending.insert(message.id, permit.revision);
-            Ok(())
-        }
-        .await;
-        self.completed(result)
-    }
     pub async fn receive(&mut self) -> Result<PeerEvent> {
         self.begin()?;
         let result = async {
@@ -313,7 +321,15 @@ impl PeerSession {
                 &mut self.options,
             )
             .await?;
-            self.handle_frame(frame).await
+            let event = self.handle_frame(frame).await?;
+            Ok(match event {
+                PeerEvent::Receipt {
+                    message_id,
+                    disposition: ReceiptDisposition::Queued,
+                    note,
+                } if note.is_empty() => PeerEvent::Queued { message_id },
+                event => event,
+            })
         }
         .await;
         self.completed(result)

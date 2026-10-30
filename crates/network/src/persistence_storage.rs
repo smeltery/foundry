@@ -97,8 +97,9 @@ impl Protection {
         // temporary-directory aliases). Resolve ancestors only after opening and
         // validating the supplied final directory without following a link.
         let root = std::fs::canonicalize(root).map_err(|_| PersistenceError::Storage)?;
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            inspect(&root.join(format!("{name}{suffix}")))?;
+        inspect(&root.join(name))?;
+        for suffix in ["-wal", "-shm", "-journal"] {
+            inspect_sidecar(&root.join(format!("{name}{suffix}")))?;
         }
         let database = root.join(name);
         let mut options = OpenOptions::new();
@@ -158,7 +159,7 @@ impl Protection {
             }
         }
         for suffix in ["-wal", "-shm", "-journal"] {
-            inspect(&self.root.join(format!("{}{suffix}", self.name)))?;
+            inspect_sidecar(&self.root.join(format!("{}{suffix}", self.name)))?;
         }
         Ok(())
     }
@@ -171,19 +172,38 @@ impl Protection {
     }
 }
 #[cfg(unix)]
-fn private(metadata: &std::fs::Metadata, directory: bool) -> Result<()> {
+fn private_object(metadata: &std::fs::Metadata, directory: bool) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
     if metadata.uid() != unsafe { libc::geteuid() }
         || metadata.mode() & 0o7777 != if directory { 0o700 } else { 0o600 }
         || if directory {
             !metadata.is_dir()
         } else {
-            !metadata.is_file() || metadata.nlink() != 1
+            !metadata.is_file()
         }
     {
         return Err(PersistenceError::UnsafeStorage);
     }
     Ok(())
+}
+#[cfg(unix)]
+fn private(metadata: &std::fs::Metadata, directory: bool) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    private_object(metadata, directory)?;
+    if !directory && metadata.nlink() != 1 {
+        return Err(PersistenceError::UnsafeStorage);
+    }
+    Ok(())
+}
+#[cfg(unix)]
+fn sidecar_live(metadata: &std::fs::Metadata) -> Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    private_object(metadata, false)?;
+    match metadata.nlink() {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(PersistenceError::UnsafeStorage),
+    }
 }
 #[cfg(unix)]
 fn inspect(path: &Path) -> Result<()> {
@@ -193,16 +213,82 @@ fn inspect(path: &Path) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Err(PersistenceError::Storage),
     }
+    #[cfg(test)]
+    lifecycle_tests::checkpoint(path, false);
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .map_err(|_| PersistenceError::UnsafeStorage)?;
+    #[cfg(test)]
+    lifecycle_tests::checkpoint(path, true);
     private(
         &file.metadata().map_err(|_| PersistenceError::Storage)?,
         false,
     )
 }
+#[cfg(unix)]
+fn inspect_sidecar(path: &Path) -> Result<()> {
+    use std::{
+        fs::OpenOptions,
+        os::unix::fs::{MetadataExt, OpenOptionsExt},
+    };
+    // SQLite may unlink/recreate a private sidecar while another handle checks
+    // it. Recheck that generation; never relax the root/database inode anchors.
+    for _ in 0..4 {
+        let observed = match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(PersistenceError::Storage),
+        };
+        #[cfg(test)]
+        let observed = lifecycle_tests::snapshot(path, false, observed);
+        if !sidecar_live(&observed)? {
+            continue;
+        }
+        #[cfg(test)]
+        lifecycle_tests::checkpoint(path, false);
+        let file = match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(PersistenceError::UnsafeStorage),
+        };
+        #[cfg(test)]
+        lifecycle_tests::checkpoint(path, true);
+        let held = file.metadata().map_err(|_| PersistenceError::Storage)?;
+        // The opened generation can differ from the earlier path observation.
+        // Every retired inode is independently checked before reinspection.
+        if !sidecar_live(&held)? {
+            continue;
+        }
+        if observed.dev() != held.dev() || observed.ino() != held.ino() {
+            continue;
+        }
+        match std::fs::symlink_metadata(path) {
+            Ok(current) => {
+                #[cfg(test)]
+                let current = lifecycle_tests::snapshot(path, true, current);
+                if sidecar_live(&current)?
+                    && current.dev() == held.dev()
+                    && current.ino() == held.ino()
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(PersistenceError::Storage),
+        }
+    }
+    Err(PersistenceError::Busy)
+}
+
+#[cfg(all(test, unix))]
+#[path = "persistence_storage_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 /// Cooperating operations serialize on a separately protected lock-file inode.
 pub(crate) struct StorageLock(File);
