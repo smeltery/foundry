@@ -8,10 +8,10 @@ const DOMAIN: &[u8] = b"f5y/local-team-checkpoint/v2\0";
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Checkpoint {
-    version: u32,
+    pub(super) version: u32,
     pub incarnation: [u8; 32],
     pub(super) identity: EndpointId,
-    policy: [u8; 32],
+    pub(super) policy: [u8; 32],
     pub revision: u64,
     pub parent: [u8; 32],
     #[serde(rename = "record_validation_horizon_ms")]
@@ -19,6 +19,12 @@ pub(super) struct Checkpoint {
     pub state: StoredState,
     pub operation_ms: i64,
     intents: Vec<()>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub code_intents: Vec<super::intent_types::StoredIntent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<super::ControlEffect>,
+    #[serde(default, skip_serializing_if = "zero")]
+    pub network_generation: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,7 +33,13 @@ pub(super) enum StoredState {
     Active { document: Box<TeamDocument> },
     Removed { team: String, founder: EndpointId },
 }
+fn zero(value: &u64) -> bool {
+    *value == 0
+}
 impl Checkpoint {
+    pub fn configure(&mut self, policy: &StorePolicy) {
+        self.version = if policy.codes.is_some() { 3 } else { 2 };
+    }
     pub fn document(&self) -> Option<&TeamDocument> {
         match &self.state {
             StoredState::Active { document } => Some(document),
@@ -47,6 +59,9 @@ impl Checkpoint {
             state: StoredState::Empty,
             operation_ms: 0,
             intents: Vec::new(),
+            code_intents: Vec::new(),
+            effects: Vec::new(),
+            network_generation: 0,
         }
     }
 }
@@ -83,8 +98,10 @@ pub(super) fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 pub(super) fn preimage(bytes: &[u8], version: i64) -> Vec<u8> {
     let mut output = if version == 1 {
         b"f5y/local-team-checkpoint/v1\0".to_vec()
-    } else {
+    } else if version == 2 {
         DOMAIN.to_vec()
+    } else {
+        b"f5y/local-team-checkpoint/v3\0".to_vec()
     };
     output.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
     output.extend_from_slice(bytes);
@@ -133,7 +150,7 @@ pub(super) fn create(
     }
     tx.execute_batch(TABLE)?;
     tx.pragma_update(None, "application_id", APP)?;
-    tx.pragma_update(None, "user_version", 2)?;
+    tx.pragma_update(None, "user_version", checkpoint.version)?;
     write(&tx, checkpoint, identity, true)?;
     tx.commit()?;
     Ok(())
@@ -145,7 +162,9 @@ pub(super) fn write(
     insert: bool,
 ) -> Result<[u8; 32]> {
     let bytes = encode(checkpoint)?;
-    let signature = identity.secret_key().sign(&preimage(&bytes, 2));
+    let signature = identity
+        .secret_key()
+        .sign(&preimage(&bytes, checkpoint.version as i64));
     let statement = if insert {
         "INSERT INTO checkpoint(id,payload,signature) VALUES(1,?1,?2)"
     } else {
@@ -165,9 +184,10 @@ pub(super) fn read(
     identity: &LocalIdentity,
     policy: &StorePolicy,
 ) -> Result<(Checkpoint, [u8; 32])> {
-    let bytes = read_bytes(connection, identity, 2)?;
+    let version = if policy.codes.is_some() { 3 } else { 2 };
+    let bytes = read_bytes(connection, identity, version)?;
     let checkpoint: Checkpoint = serde_json::from_slice(&bytes).map_err(|_| StoreError::Corrupt)?;
-    if checkpoint.version != 2 {
+    if checkpoint.version as i64 != version {
         return Err(StoreError::Schema);
     }
     if checkpoint.identity != identity.endpoint_id() || checkpoint.policy != policy.digest {
@@ -181,6 +201,7 @@ pub(super) fn read(
     if encode(&checkpoint)? != bytes || checkpoint.revision > i64::MAX as u64 {
         return Err(StoreError::Corrupt);
     }
+    super::intents::validate(&checkpoint, policy)?;
     Ok((checkpoint, digest(&bytes)))
 }
 

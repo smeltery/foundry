@@ -43,7 +43,42 @@ These allocations cover the reviewed behavior and failure tests, with narrow
 correction headroom. They do not exempt tests or permit unrelated expansion. No
 features, assertions or notices were removed, and no file exceptions were added.
 
+## Current network allocation
+
+The independently reviewed network allocation is 31,300 physical Rust lines.
+The integrated snapshot measures 31,252: 13,779 implementation lines and 17,473
+test/helper lines across 183 files. The largest file is 378 lines; the default
+400-line file limit is unchanged. All comments and blank lines remain counted.
+
+This snapshot includes the local daemon, atomic inbox batches and cancellation
+fences, durable invitation and JOIN authority, persistent peer primitives and
+attachment storage. The complete-reply and Linux directory-sync corrections add
+665 implementation lines and 1,404 test/helper lines. This allocation retains
+48 lines of correction room after 16 implementation and 260 test lines for
+disconnect fencing and its regressions. No features or
+meaningful tests were removed or compressed. Foreground peer supervision and
+remaining delivery/platform workflows need renewed measurement and review as
+they are implemented; this allowance does not establish their completion.
+
 ## Earlier allocation reviews
+
+The earlier network daemon allocation was 21,500 physical Rust lines. The transport/team
+baseline was 11,582; the integrated library and local daemon measure 21,356, including all
+tests, comments and blank lines. Independent review of the directory, mailbox,
+request engine and foreground owner found cohesive composition without a new
+service framework. The allowance also covers reviewed socket ownership and
+cancelled-work lease corrections, with real-socket, process and recovery tests.
+The separately reviewed code-policy binding adds 59 lines, and durable invitation
+intents add 684 implementation and 637 test lines. They cover explicit migration,
+atomic invitation publication, generation-bound recovery and effect acknowledgements.
+The reviewed admitted-peer and JOIN increment adds 2,378 lines including tests.
+It covers current membership checks, durable state and receipt exchange, bounded
+JOIN transport, lossless join bootstrap and store-root/identity binding. These
+library operations do not establish continuous daemon peer driving.
+Each file remains below 400 lines. No feature or test was removed to fit the
+allocation. The remaining 144 lines allow bounded corrections; unfinished peer
+driving, team, approval and adapter integration requires another measured review before
+further growth. This allocation is not evidence of full daemon completion.
 
 The runtime component budget was 9,700 lines after reviewing private context
 transport, bounded message history, capture startup, data/trace boundaries and

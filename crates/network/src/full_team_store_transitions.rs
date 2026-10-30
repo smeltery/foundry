@@ -38,11 +38,11 @@ pub enum CommitOutcome {
     },
 }
 pub struct PendingTransition {
-    instance: Arc<StoreInstance>,
-    base: [u8; 32],
-    revision: u64,
-    checkpoint: Checkpoint,
-    changed: bool,
+    pub(super) instance: Arc<StoreInstance>,
+    pub(super) base: [u8; 32],
+    pub(super) revision: u64,
+    pub(super) checkpoint: Checkpoint,
+    pub(super) changed: bool,
 }
 impl PendingTransition {
     /// Latch before commit: validated local removal requires quiescence even if
@@ -64,7 +64,7 @@ impl FullTeamStore {
             .map_err(|_| StoreError::Indeterminate)
     }
 
-    fn engine(&self, base: &LoadedTeam, now: i64) -> Result<TeamState> {
+    pub(super) fn engine(&self, base: &LoadedTeam, now: i64) -> Result<TeamState> {
         self.protection.check()?;
         if !Arc::ptr_eq(&self.instance, &base.instance) {
             return Err(StoreError::Binding);
@@ -77,7 +77,7 @@ impl FullTeamStore {
         })
         .map_err(|_| StoreError::Corrupt)
     }
-    fn candidate(
+    pub(super) fn candidate(
         &self,
         base: &LoadedTeam,
         state: TeamState,
@@ -88,17 +88,10 @@ impl FullTeamStore {
             self.identity.endpoint_id(),
             self.policy.digest,
         );
+        checkpoint.configure(&self.policy);
         checkpoint.parent = base.digest;
         checkpoint.operation_ms = now;
         checkpoint.accepted_ms = base.checkpoint.accepted_ms.max(now);
-        let changed = Some(state.document()) != base.document();
-        checkpoint.revision = if changed {
-            base.revision()
-                .checked_add(1)
-                .ok_or(StoreError::RevisionOverflow)?
-        } else {
-            base.revision()
-        };
         // Decide removal before the first full candidate encoding/signing call.
         checkpoint.state = if state.is_active(self.identity.endpoint_id()) {
             StoredState::Active {
@@ -109,6 +102,24 @@ impl FullTeamStore {
                 team: state.document().id.clone(),
                 founder: state.document().founder,
             }
+        };
+        let document_changed = checkpoint.document() != base.document();
+        intents::refresh(
+            &base.checkpoint,
+            &mut checkpoint,
+            &self.policy,
+            now,
+            document_changed,
+        )?;
+        let changed = document_changed
+            || checkpoint.code_intents != base.checkpoint.code_intents
+            || checkpoint.effects != base.checkpoint.effects;
+        checkpoint.revision = if changed {
+            base.revision()
+                .checked_add(1)
+                .ok_or(StoreError::RevisionOverflow)?
+        } else {
+            base.revision()
         };
         if checkpoint.revision > i64::MAX as u64 {
             // Retain a private, nonpublishable removal candidate so the caller

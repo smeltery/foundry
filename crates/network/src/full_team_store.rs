@@ -1,11 +1,27 @@
 //! Local identity-sealed full documents. No remote-history or rollback guarantee.
-//! Typed transitions, local removal and checked live-file scrub; code intents are unsupported.
+//! Typed transitions, atomic code intents, local removal and checked live-file scrub.
 #[path = "full_team_store_checkpoint.rs"]
 mod checkpoint;
+#[path = "full_team_store_code_migration.rs"]
+mod code_migration;
 #[path = "full_team_store_input.rs"]
 mod input;
+#[path = "full_team_store_intent_recovery.rs"]
+mod intent_recovery;
+#[path = "full_team_store_intent_types.rs"]
+mod intent_types;
+#[path = "full_team_store_intents.rs"]
+mod intents;
+pub use intent_types::{
+    CodeIntentId, CodeLease, ControlEffect, IssuedCodeInvite, PendingCodeIntent,
+};
+#[path = "full_team_store_join.rs"]
+mod join;
 #[path = "full_team_store_legacy.rs"]
 mod legacy;
+#[path = "full_team_store_owner.rs"]
+mod owner;
+pub use join::{CodeJoinTrust, JoinTrust, PendingJoin};
 #[path = "full_team_store_policy.rs"]
 mod policy;
 #[path = "full_team_store_scrub.rs"]
@@ -191,7 +207,9 @@ impl FullTeamStore {
             let incarnation = if create {
                 let mut incarnation = [0; 32];
                 getrandom::fill(&mut incarnation).map_err(|_| StoreError::Storage)?;
-                let empty = Checkpoint::empty(incarnation, identity.endpoint_id(), policy.digest);
+                let mut empty =
+                    Checkpoint::empty(incarnation, identity.endpoint_id(), policy.digest);
+                empty.configure(&policy);
                 checkpoint::create(&mut connection, &empty, &identity)?;
                 incarnation
             } else {
@@ -292,6 +310,8 @@ impl FullTeamStore {
             self.identity.endpoint_id(),
             self.policy.digest,
         );
+        checkpoint.configure(&self.policy);
+        checkpoint.network_generation = u64::from(self.policy.codes.is_some());
         checkpoint.revision = 1;
         checkpoint.parent = base.digest;
         checkpoint.accepted_ms = now_ms;
@@ -334,10 +354,6 @@ impl FullTeamStore {
             digest,
         })
     }
-    /// No asserted code/hash/secret can be persisted before real derivation exists.
-    pub fn prepare_code_intent(&self) -> Result<()> {
-        Err(StoreError::Unsupported)
-    }
 }
 
 #[cfg(all(test, unix))]
@@ -355,3 +371,7 @@ mod migration_tests;
 #[cfg(all(test, unix))]
 #[path = "../tests/full_team_store_support/clock.rs"]
 mod clock_tests;
+
+#[cfg(all(test, unix))]
+#[path = "full_team_store_intent_tests.rs"]
+mod intent_tests;

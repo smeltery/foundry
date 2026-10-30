@@ -3,7 +3,8 @@
 The network library's `FullTeamStore` preserves signed team state in a private
 SQLite database. It supports formation, invitations, admission, key rotation,
 configured identity proofs and member removal. These are library operations;
-network CLI commands, listener recovery and delivery integration remain unfinished.
+network CLI commands, automatic listener recovery and daemon delivery integration
+remain unfinished.
 The smaller [membership projection store](../../crates/network/docs/persistence.md)
 is a separate format and is not automatically promoted into full-team state.
 
@@ -64,15 +65,49 @@ each at most 1,023 bytes. Code input is limited to 4,096 bytes. Digest mismatch,
 invalid entries and entropy failure return errors. Derivation alone does not
 publish an invitation, persist its intent, bind a listener or establish discovery.
 
+## Durable invitation intents
+
+A store policy configured with `with_codes` binds the ordered dictionary and both
+derivation contexts. `prepare_code_intent` creates an opaque candidate;
+`commit_code_intent` atomically persists the invitation, local intent and control
+effects before returning privileged invitation material. A conflict requires a
+fresh load and explicit preparation. An uncertain commit requires recovery.
+
+```mermaid
+flowchart LR
+    Prepare[Prepare opaque invitation] --> Commit[Commit invitation and intent]
+    Commit --> Output[Return private invitation]
+    Commit --> Recover[Recover current generation leases]
+    Recover --> Validate[Validate before external effects]
+    Validate --> Host[CodeListener serves authenticated JOIN]
+```
+
+Recovery validates committed state and returns generation-bound leases. The host
+must serialize lease validation with revocation before binding and before
+publication. Expired, consumed or revoked invitations cannot authorize a new
+listener. Existing join replies need separate host-owned draining authority.
+Private-relay invitations return long tickets without a code-listener intent.
+Control effects contain identifiers, not captured secrets or wire snapshots;
+acknowledging an exact effect is a checked durable mutation. `CodeListener` binds
+from a fresh permit, revalidates before publication, and serves JOIN with the
+committed admission guard held through reply output. Pending exchanges stop when
+the listener stops; already-started commits and replies retain their ownership.
+Foreground daemon routing, discovery/publication and automatic recovery scheduling
+remain separate integration work.
+
 ## Migration and limits
 
-Schema version 2 opens directly. Older full-team version 1 requires explicit
+Schema version 2 opens directly without a code policy. Enabling codes on an
+existing store uses explicit `enable_codes`, preserving its signed records while
+atomically migrating to version 3. Ordinary open does not perform that migration.
+Older full-team version 1 requires explicit
 `migrate_v1`; ordinary open never rewrites it. Migration verifies the old signature,
 policy and complete records, preserves membership and revision, and commits the
 new representation atomically. Migration errors after commit may be indeterminate.
 
 Typed incoming collections are bounded to 4,096 entries and full checkpoint
 encoding to 4 MiB. Unsupported or oversized state is rejected, not truncated.
-Code intents remain unsupported. Local tests cover migration, stale candidates,
-removal, reader contention and process exit between commit and cleanup; they do
+Local tests cover migration, stale candidates, durable invitation intents,
+generation fencing, removal, reader contention and process exit between commit
+and cleanup; they do
 not establish two-machine compatibility or hardware power-loss guarantees.

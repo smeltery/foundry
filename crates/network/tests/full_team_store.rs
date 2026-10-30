@@ -30,7 +30,7 @@ fn formation_reopen_is_exact_and_empty_load_never_forms_implicitly() {
         Err(StoreError::Conflict)
     ));
     assert!(matches!(
-        reopened.prepare_code_intent(),
+        reopened.prepare_code_intent(&loaded, 24, false, NOW),
         Err(StoreError::Unsupported)
     ));
     assert_eq!(reopened.load(NOW).unwrap().revision(), 1);

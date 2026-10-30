@@ -4,9 +4,11 @@ This crate provides authenticated Iroh QUIC connections, explicitly configured
 relay transport, typed peer frames and bounded framing. It is an internal library;
 it includes typed signature verification and an in-memory membership projection.
 The full-team store also persists typed team transitions and local removal; see
-[durable teams](../../docs/architecture/teams.md). Network CLI commands, mailboxes,
-hosted identity, service discovery and automatic connection authorization remain
-unimplemented.
+[durable teams](../../docs/architecture/teams.md). Network CLI commands, hosted
+identity, service discovery and automatic peer authorization remain unimplemented.
+The separate [local foreground daemon](../../docs/user/daemon.md) provides private
+Unix IPC, a durable session directory and a mailbox; its host does not yet connect
+this transport to cross-machine delivery.
 
 ## Integration
 
@@ -70,7 +72,7 @@ membership; callers still own connection authorization and message dispatch.
 Compatible histories and independent updates have convergence tests. Conflicting
 admissions or person-name claims do not have a general convergence guarantee.
 A new bootstrap from an older valid snapshot can restore stale activity; callers
-must preserve trusted history across reconnects. Configuration and full team persistence remain unimplemented. The separate
+must preserve trusted history across reconnects. The separate
 [projection store](docs/persistence.md) retains supported membership history, and
 local identity storage is described below.
 
@@ -89,8 +91,8 @@ peer updates still undergo separate authorization checks. Independent replicas d
 not provide globally exactly-once invitation consumption.
 
 Bootstrap verifies and reports an accepted subset. It is not a lossless durable
-loader for historically accepted state. Full-team persistence and service wiring
-are still under development.
+loader for historically accepted state. The separate full-team store persists
+validated transitions; daemon team-service wiring remains under development.
 
 ## Durable local identity
 
