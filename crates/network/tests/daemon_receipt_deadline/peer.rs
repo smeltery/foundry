@@ -21,7 +21,12 @@ pub enum Event {
         elapsed: Duration,
         heartbeats: usize,
     },
-    AckWritten,
+    ReceiptLost {
+        connection: usize,
+    },
+    AckWritten {
+        connection: usize,
+    },
 }
 pub struct Controlled {
     pub address: EndpointAddr,
@@ -32,11 +37,17 @@ pub struct Controlled {
 }
 impl Controlled {
     pub fn start(admitted: Admitted) -> Self {
+        Self::start_with_fault(admitted, false)
+    }
+    pub fn start_with_lost_replay_receipt(admitted: Admitted) -> Self {
+        Self::start_with_fault(admitted, true)
+    }
+    fn start_with_fault(admitted: Admitted, lose_replay: bool) -> Self {
         let address = admitted.endpoint.address();
         let (events, receive) = mpsc::channel(8);
         let (ack, permission) = mpsc::channel(1);
         let (stop, cancel) = watch::channel(false);
-        let task = tokio::spawn(run(admitted, events, permission, cancel));
+        let task = tokio::spawn(run(admitted, events, permission, cancel, lose_replay));
         Self {
             address,
             events: receive,
@@ -107,17 +118,80 @@ async fn handshake(
     }
     Ok((send, receive))
 }
-async fn observe(events: &mpsc::Sender<Event>, event: Event) {
-    assert!(events.send(event).await.is_ok(), "test observer closed");
+fn observe(events: &mpsc::Sender<Event>, event: Event) {
+    assert!(
+        events.try_send(event).is_ok(),
+        "required fixture observation unavailable"
+    );
+}
+struct Receipts {
+    // One permission survives transport retirement; writes remain per connection.
+    enabled: bool,
+    lose_next: bool,
+    written: bool,
+}
+impl Receipts {
+    // True retires only this transport; no successful write is reported on loss.
+    async fn acknowledge(
+        &mut self,
+        connection: &Connection,
+        send: &mut SendStream,
+        id: &str,
+        events: &mpsc::Sender<Event>,
+        written_here: &mut bool,
+    ) -> bool {
+        if !self.enabled || *written_here {
+            return false;
+        }
+        if self.lose_next {
+            self.lose_next = false;
+            // Deliberate fixture-only loss: suppress this receipt and
+            // retire its actual transport after the caller grants permission.
+            connection.close(0u32.into(), b"fixture lost replay receipt");
+            observe(
+                events,
+                Event::ReceiptLost {
+                    connection: connection.stable_id(),
+                },
+            );
+            return true;
+        }
+        let receipt = PeerFrame::Ack {
+            id: id.into(),
+            state: "queued".into(),
+            note: String::new(),
+        };
+        if write_frame(send, &receipt, DEADLINE).await.is_err() {
+            connection.close(0u32.into(), b"fixture receipt output failed");
+            return true;
+        }
+        *written_here = true;
+        if !self.written {
+            self.written = true;
+            observe(
+                events,
+                Event::AckWritten {
+                    connection: connection.stable_id(),
+                },
+            );
+        }
+        false
+    }
 }
 async fn run(
     mut admitted: Admitted,
     events: mpsc::Sender<Event>,
     mut ack: mpsc::Receiver<()>,
     mut stop: watch::Receiver<bool>,
+    lose_replay: bool,
 ) {
     let mut first_saved = false;
-    let mut acknowledged = false;
+    let mut receipts = Receipts {
+        enabled: false,
+        lose_next: lose_replay,
+        written: false,
+    };
+    let mut replay_reported = false;
     // Retain closed handles too, so stable IDs cannot be confused by reuse.
     let mut retained = Vec::new();
     for _ in 0..8 {
@@ -151,6 +225,7 @@ async fn run(
         let mut message_id = None;
         let mut heartbeats = 0;
         let mut replay = false;
+        let mut written_here = false;
         let stopped = loop {
             tokio::select! {
                 biased;
@@ -173,11 +248,15 @@ async fn run(
                         first_saved = true;
                         message_at = Some(Instant::now());
                         message_id = Some(msg.id);
-                        observe(&events, Event::Message {
-                            payload,
-                            connection: connection.stable_id(),
-                            duplicate: replay,
-                        }).await;
+                        if !replay || !replay_reported {
+                            replay_reported |= replay;
+                            observe(&events, Event::Message {
+                                payload,
+                                connection: connection.stable_id(),
+                                duplicate: replay,
+                            });
+                        }
+                        if replay && receipts.acknowledge(&connection, &mut send, message_id.as_ref().unwrap(), &events, &mut written_here).await { break false; }
                         // Deliberately NO ACK on the first connection. Presence
                         // output and the dedicated inbound reader remain live.
                     }
@@ -188,16 +267,10 @@ async fn run(
                         break false;
                     }
                 },
-                permission = ack.recv(), if replay && !acknowledged => {
+                permission = ack.recv(), if replay && !receipts.enabled => {
                     assert!(permission.is_some());
-                    let receipt = PeerFrame::Ack {
-                        id: message_id.clone().unwrap(),
-                        state: "queued".into(),
-                        note: String::new(),
-                    };
-                    write_frame(&mut send, &receipt, DEADLINE).await.unwrap();
-                    acknowledged = true;
-                    observe(&events, Event::AckWritten).await;
+                    receipts.enabled = true;
+                    if receipts.acknowledge(&connection, &mut send, message_id.as_ref().unwrap(), &events, &mut written_here).await { break false; }
                 }
                 _ = tick.tick() => {
                     let presence = PeerFrame::Presence {
@@ -218,29 +291,25 @@ async fn run(
             connection.close(0u32.into(), b"fixture stopped after observation");
             break;
         }
-        if let Some(at) = message_at {
-            if !replay {
-                // No fixture close occurs before this observation. The daemon
-                // must retire the withheld-receipt connection itself.
-                observe(
-                    &events,
-                    Event::Closed {
-                        connection: connection.stable_id(),
-                        elapsed: at.elapsed(),
-                        heartbeats,
-                    },
-                )
-                .await;
-            } else {
-                assert!(
-                    acknowledged,
-                    "replay connection died before its permitted ACK"
-                );
-                break;
-            }
+        if let Some(at) = message_at
+            && !replay
+        {
+            // No fixture close occurs before this observation. The daemon
+            // must retire the withheld-receipt connection itself.
+            observe(
+                &events,
+                Event::Closed {
+                    connection: connection.stable_id(),
+                    elapsed: at.elapsed(),
+                    heartbeats,
+                },
+            );
         }
     }
-    assert!(acknowledged, "actual replay acknowledgement never written");
+    assert!(
+        receipts.written,
+        "actual replay acknowledgement never written"
+    );
     drop(retained);
     admitted.endpoint.shutdown().await;
 }

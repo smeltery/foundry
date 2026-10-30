@@ -91,7 +91,7 @@ pub(super) async fn run(
                     continue;
                 }
                 let address = state.addresses.read().await.get(&peer).cloned().unwrap_or_else(|| EndpointAddr::new(peer));
-                let Some(reservation) = state.connections.reserve(state.endpoint.id(), peer, true) else {
+                let Some(reservation) = state.connections.outgoing(state.endpoint.id(), peer) else {
                     continue;
                 };
                 let owner = state.clone();

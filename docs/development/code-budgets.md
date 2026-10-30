@@ -45,11 +45,16 @@ features, assertions or notices were removed, and no file exceptions were added.
 
 ## Current network allocation
 
-The independently reviewed foreground network allocation is exactly 42,952
+The independently reviewed foreground network allocation is exactly 43,084
 physical source lines, up from the 31,252-line baseline. The snapshot contains
-256 files: 23,556 lines under `src/` (including inline tests) and 19,396 under
+256 files: 23,583 lines under `src/` (including inline tests) and 19,501 under
 `tests/`. Its 125 native C fixture lines, comments and blank lines are counted.
 The largest file is 389 lines; the default 400-line limit is unchanged.
+
+The final correction adds 132 lines: 27 under `src/`, including a reservation
+unit test, and 105 integration-test/support lines. Automatic dialing preserves
+accepted handshakes; receipt tests cover continued retries after another lost
+acknowledgement.
 
 The increment composes explicit configuration, authenticated peer routing,
 remote directory and presence, durable transport receipts and retries, team

@@ -199,6 +199,8 @@ async fn dedicated_reader_allows_idle_but_times_out_a_started_frame() {
             .await
             .unwrap();
         let (mut send, mut receive) = connection.open_bi().await.unwrap();
+        // Exercise delayed protocol setup before testing the idle reader.
+        tokio::time::sleep(Duration::from_millis(250)).await;
         write_frame(
             &mut send,
             &PeerFrame::Hello {
@@ -227,17 +229,24 @@ async fn dedicated_reader_allows_idle_but_times_out_a_started_frame() {
             receive,
         }
     };
-    let mut opt = options(&cancel);
-    opt.deadline = Duration::from_millis(200);
+    let opt = options(&cancel);
     let (raw, server) = tokio::join!(dial, PeerSession::accept(&right, b.authority(false), opt));
     let (mut raw, mut server) = (raw, server.unwrap());
     let mut reader = server.take_reader().unwrap();
-    let reading = tokio::spawn(async move { reader.next().await });
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    let (started, read_started) = tokio::sync::oneshot::channel();
+    let reading = tokio::spawn(async move {
+        started.send(()).unwrap();
+        reader.next().await
+    });
+    read_started.await.unwrap();
+    tokio::time::sleep(WAIT + Duration::from_millis(250)).await;
     assert!(!reading.is_finished());
     raw.send.write_all(&[0]).await.unwrap();
     assert!(matches!(
-        tokio::time::timeout(WAIT, reading).await.unwrap().unwrap(),
+        tokio::time::timeout(WAIT * 2, reading)
+            .await
+            .unwrap()
+            .unwrap(),
         Err(PeerError::TimedOut)
     ));
     drop((raw, server));

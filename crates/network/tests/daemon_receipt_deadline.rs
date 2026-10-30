@@ -27,6 +27,15 @@ const BODY: &str = "immutable application receipt deadline fixture";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn healthy_peer_withholding_ack_is_retired_after_five_seconds_then_replay_deduplicates() {
+    receipt_replay(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_permitted_replay_receipt_is_acked_on_a_later_connection_without_new_permission() {
+    receipt_replay(true).await;
+}
+
+async fn receipt_replay(lose_replay: bool) {
     let root = config::Root::new();
     let mut sender_config = root.config("sender", "alex");
     // Isolate the receipt deadline from unrelated invitation-effect revisions.
@@ -42,7 +51,11 @@ async fn healthy_peer_withholding_ack_is_retired_after_five_seconds_then_replay_
     let admitted = admission::Admitted::join(&mut ipc, &auth, &recipient).await;
     let ticket = admitted.ticket.clone();
     let bearer = admitted.bearer.clone();
-    let mut peer = peer::Controlled::start(admitted);
+    let mut peer = if lose_replay {
+        peer::Controlled::start_with_lost_replay_receipt(admitted)
+    } else {
+        peer::Controlled::start(admitted)
+    };
     ipc.control(&auth, json!({"kind":"connect","address":peer.address}))
         .await;
     tokio::time::timeout(DEADLINE, async {
@@ -131,14 +144,14 @@ async fn healthy_peer_withholding_ack_is_retired_after_five_seconds_then_replay_
     })
     .await
     .expect("old durable attempt must retire before replay is observed");
-    let replay = match peer.event().await {
+    let (replay, replay_connection) = match peer.event().await {
         peer::Event::Message {
             payload,
             connection,
             duplicate: true,
         } => {
             assert_ne!(connection, first_connection, "replay reused old transport");
-            payload
+            (payload, connection)
         }
         _ => panic!("new connection must replay and durably deduplicate"),
     };
@@ -153,7 +166,21 @@ async fn healthy_peer_withholding_ack_is_retired_after_five_seconds_then_replay_
     assert_ne!(second.generation, first.generation);
     observations::receiver(&received, ID, &original);
     peer.acknowledge_replay().await;
-    assert!(matches!(peer.event().await, peer::Event::AckWritten));
+    if lose_replay {
+        match peer.event().await {
+            peer::Event::ReceiptLost { connection } => assert_eq!(connection, replay_connection),
+            _ => panic!("permitted replay receipt must be deliberately lost"),
+        }
+    }
+    match peer.event().await {
+        peer::Event::AckWritten { connection } => {
+            assert_ne!(connection, first_connection);
+            if lose_replay {
+                assert_ne!(connection, replay_connection);
+            }
+        }
+        _ => panic!("actual receipt write on a current replay transport required"),
+    }
     tokio::time::timeout(DEADLINE, async {
         while observations::claim(&source, ID).is_some() {
             tokio::time::sleep(Duration::from_millis(25)).await;

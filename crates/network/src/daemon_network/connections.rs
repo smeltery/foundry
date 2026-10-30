@@ -35,11 +35,24 @@ pub(super) struct Ready {
     pub reservation: Reservation,
 }
 impl Connections {
+    // Periodic dialing must not cancel a handshake already accepted by the router.
+    pub fn outgoing(&self, local: EndpointId, peer: EndpointId) -> Option<Reservation> {
+        self.reserve_with_preemption(local, peer, true, false)
+    }
     pub fn reserve(
         &self,
         local: EndpointId,
         peer: EndpointId,
         outgoing: bool,
+    ) -> Option<Reservation> {
+        self.reserve_with_preemption(local, peer, outgoing, true)
+    }
+    fn reserve_with_preemption(
+        &self,
+        local: EndpointId,
+        peer: EndpointId,
+        outgoing: bool,
+        preempt: bool,
     ) -> Option<Reservation> {
         if local == peer {
             return None;
@@ -47,7 +60,7 @@ impl Connections {
         let mut slots = self.0.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(old) = slots.get(&peer) {
             let preferred = (local < peer) == outgoing;
-            if old.outgoing == outgoing || !preferred {
+            if !preempt || old.outgoing == outgoing || !preferred {
                 return None;
             }
             old.stop.send_replace(true);
@@ -75,6 +88,20 @@ mod tests {
         let a = iroh::SecretKey::generate().public();
         let b = iroh::SecretKey::generate().public();
         (a.min(b), a.max(b))
+    }
+    #[test]
+    fn periodic_outgoing_dial_preserves_an_incoming_handshake_even_when_outgoing_is_preferred() {
+        let (local, peer) = pair();
+        let registry = Connections::default();
+        let incoming = registry.reserve(local, peer, false).unwrap();
+        let cancel = incoming.cancel();
+        assert!(registry.outgoing(local, peer).is_none());
+        assert!(
+            !*cancel.borrow(),
+            "an actor tick canceled the incoming handshake"
+        );
+        drop(incoming);
+        assert!(registry.outgoing(local, peer).is_some());
     }
     #[test]
     fn preferred_dial_replaces_incoming_before_handshake_and_old_drop_cannot_erase_it() {
