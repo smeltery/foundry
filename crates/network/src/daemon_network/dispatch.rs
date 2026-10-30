@@ -59,12 +59,18 @@ pub(super) async fn batch(
         .collect::<HashSet<_>>();
     // The complete global preflight and all attempt claims share a fresh actual
     // authority guard. After this point, wire writes have no metadata dependency.
+    crate::daemon_outbox::diagnostic(format_args!("batch_enter live={}", live.len()));
     let batch = outbox
         .batch(
             view,
             live.iter().map(|(peer, c)| (*peer, c.generation)).collect(),
         )
         .await?;
+    crate::daemon_outbox::diagnostic(format_args!(
+        "batch_done send={} retire={}",
+        batch.messages.len(),
+        batch.retire.len()
+    ));
     let retired = batch
         .retire
         .into_iter()

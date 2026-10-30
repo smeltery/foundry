@@ -42,10 +42,27 @@ fn capture(reader: impl AsyncRead + Unpin + Send + 'static) -> JoinHandle<Vec<u8
     })
 }
 impl Node {
+    pub fn diagnostic_pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+    pub fn diagnostic_running(&mut self) -> bool {
+        self.child
+            .try_wait()
+            .expect("diagnostic child status")
+            .is_none()
+    }
     pub async fn start(config: Config) -> Self {
-        Self::start_or_rejected(config)
+        let mut node = Self::start_or_rejected(config)
             .await
-            .expect("daemon exited before readiness")
+            .expect("daemon exited before readiness");
+        if std::env::var_os("FOUNDRY_ACK_DIAGNOSTIC").is_some() {
+            eprintln!(
+                "fixture child pid={:?} running={}",
+                node.diagnostic_pid(),
+                node.diagnostic_running()
+            );
+        }
+        node
     }
     pub async fn start_or_rejected(config: Config) -> Option<Self> {
         config.save();

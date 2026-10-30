@@ -159,6 +159,10 @@ pub(crate) async fn start(
     let owner = state.clone();
     let task = tokio::spawn(async move {
         let result = supervisor::run(owner.clone(), commands).await;
+        crate::daemon_outbox::diagnostic(format_args!(
+            "supervisor_end error={:?}",
+            result.as_ref().err()
+        ));
         owner.stop.send_replace(true);
         owner.endpoint.close().await;
         result

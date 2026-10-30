@@ -140,7 +140,15 @@ impl Outbox {
         if !view.members.iter().any(|m| m.active && m.endpoint == peer) {
             return Ok(Settlement::Retire);
         }
+        crate::daemon_outbox::diagnostic(format_args!(
+            "outbox_receipt_wait generation={}",
+            generation
+        ));
         self.with(Some(view), move |store| {
+            crate::daemon_outbox::diagnostic(format_args!(
+                "outbox_receipt_locked generation={}",
+                generation
+            ));
             let ledger = store
                 .ledgers
                 .get_mut(&(peer, generation))

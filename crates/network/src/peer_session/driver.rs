@@ -41,6 +41,9 @@ pub struct PeerSender {
     control: Arc<Control>,
 }
 impl PeerSender {
+    pub(crate) fn diagnostic_stable_id(&self) -> usize {
+        self.control.connection.stable_id()
+    }
     async fn request(&self, command: Command) -> Result<()> {
         if self.control.stopping.load(Ordering::Acquire) {
             return Err(PeerError::Closed);
@@ -120,6 +123,7 @@ impl PeerDriver {
                             Command::State=>session.publish_state().await,
                             Command::Presence(presence)=>session.publish_presence(presence).await,
                         };
+                        crate::daemon_outbox::diagnostic(format_args!("driver_command_result stable={} error={:?}",session.connection.stable_id(),result.as_ref().err()));
                         let failed=result.is_err();
                         let _=request.result.send(result);
                         if failed {
@@ -132,6 +136,7 @@ impl PeerDriver {
                             Some(Err(error))=>Err(error),
                             None=>Err(PeerError::Closed),
                         };
+                        crate::daemon_outbox::diagnostic(format_args!("driver_frame_result stable={} error={:?}",session.connection.stable_id(),result.as_ref().err()));
                         match result {
                             Ok(event)=>if events.try_send(DriverEvent::Peer(event)).is_err() { break Err(PeerError::Limit); },
                             Err(error)=>break if owned_control.stopping.load(Ordering::Acquire) { Ok(()) } else { Err(error) },
@@ -139,6 +144,11 @@ impl PeerDriver {
                     }
                 }
             };
+            crate::daemon_outbox::diagnostic(format_args!(
+                "peer_driver_end stable={} error={:?}",
+                session.connection.stable_id(),
+                result.as_ref().err()
+            ));
             owned_control.stop();
             drop(session);
             drop(frames);

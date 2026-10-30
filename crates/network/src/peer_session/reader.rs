@@ -44,6 +44,12 @@ impl PeerReader {
             )
             .await??
             .ok_or(PeerError::Closed)?;
+            if matches!(&frame, PeerFrame::Ack { .. }) {
+                crate::daemon_outbox::diagnostic(format_args!(
+                    "ack_decoded stable={}",
+                    self.connection.stable_id()
+                ));
+            }
             Ok(ReceivedFrame {
                 binding: self.binding.clone(),
                 frame,
@@ -52,6 +58,11 @@ impl PeerReader {
         .await;
         self.usable = result.is_ok();
         if result.is_err() {
+            crate::daemon_outbox::diagnostic(format_args!(
+                "reader_error stable={} category={:?}",
+                self.connection.stable_id(),
+                result.as_ref().err()
+            ));
             self.connection.close(1u32.into(), b"reader closed");
         }
         result

@@ -255,6 +255,13 @@ impl MailStore {
         if peer != attempt.queued.peer || generation != attempt.generation {
             return Err(MailError::StaleAttempt);
         }
+        crate::daemon_outbox::diagnostic(format_args!(
+            "cas_enter generation={} serial={} revision={} retry={}",
+            generation,
+            attempt.serial,
+            attempt.queued.revision,
+            disposition.as_state() == "retry"
+        ));
         self.protection.check()?;
         let tx = self
             .connection
@@ -265,7 +272,7 @@ impl MailStore {
         } else {
             format!("DELETE FROM transport_outbox WHERE {condition}")
         };
-        if tx.execute(
+        let changed = tx.execute(
             &sql,
             params![
                 attempt.queued.message.id,
@@ -276,13 +283,19 @@ impl MailStore {
                 attempt.serial,
                 generation.to_be_bytes()
             ],
-        )? != 1
-        {
+        )?;
+        crate::daemon_outbox::diagnostic(format_args!(
+            "cas_changed generation={} rows={}",
+            generation, changed
+        ));
+        if changed != 1 {
             return Err(MailError::StaleAttempt);
         }
         self.protection.check()?;
         tx.commit()?;
+        crate::daemon_outbox::diagnostic(format_args!("cas_commit generation={}", generation));
         self.protection.sync()?;
+        crate::daemon_outbox::diagnostic(format_args!("cas_sync generation={}", generation));
         Ok(())
     }
     pub fn disconnect_transport(&mut self, peer: EndpointId, generation: u64) -> Result<()> {

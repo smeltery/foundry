@@ -84,6 +84,33 @@ impl Drop for Reading {
         self.0.abort();
     }
 }
+pub(super) fn diagnostic(value: std::fmt::Arguments<'_>) {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let Some(path) = std::env::var_os("FOUNDRY_ACK_DIAGNOSTIC") else {
+        return;
+    };
+    let line = format!(
+        "fixture pid={} ms={} {}\n",
+        std::process::id(),
+        super::admission::now(),
+        value
+    );
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        if file.metadata().is_ok_and(|m| m.len() < 8 * 1024 * 1024)
+            && file.write_all(line.as_bytes()).is_err()
+        {
+            eprintln!("diagnostic fixture write failed");
+        }
+    } else {
+        eprintln!("diagnostic fixture open failed");
+    }
+}
 async fn handshake(
     admitted: &mut Admitted,
     connection: &Connection,
@@ -161,10 +188,15 @@ impl Receipts {
             state: "queued".into(),
             note: String::new(),
         };
+        diagnostic(format_args!("ack_start stable={}", connection.stable_id()));
         if write_frame(send, &receipt, DEADLINE).await.is_err() {
             connection.close(0u32.into(), b"fixture receipt output failed");
             return true;
         }
+        diagnostic(format_args!(
+            "ack_written stable={}",
+            connection.stable_id()
+        ));
         *written_here = true;
         if !self.written {
             self.written = true;
@@ -239,6 +271,7 @@ async fn run(
                             "same connection retransmitted instead of retiring its old owner");
                         let (inserted, payload) = admitted.persist(&msg);
                         replay = first_saved;
+                        diagnostic(format_args!("message stable={} replay={}",connection.stable_id(),replay));
                         let expected = if replay {
                             foundry_network::mail_store::Insert::Duplicate
                         } else {
@@ -286,6 +319,13 @@ async fn run(
                 }
             }
         };
+        diagnostic(format_args!(
+            "connection_end stable={} replay={} written={} stopped={}",
+            connection.stable_id(),
+            replay,
+            written_here,
+            stopped
+        ));
         drop(reading);
         if stopped {
             connection.close(0u32.into(), b"fixture stopped after observation");

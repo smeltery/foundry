@@ -22,10 +22,16 @@ pub(super) async fn retire(
     live: Live,
     peer: EndpointId,
 ) -> Result<(), ControlError> {
+    crate::daemon_outbox::diagnostic(format_args!("retire_start generation={}", live.generation));
     live.stop.send_replace(true);
     live.sender.stop();
     // The pump owns shutdown, which joins the sole writer and persistent reader.
     let joined = live.pump.await.map_err(|_| ControlError::Storage)?;
+    crate::daemon_outbox::diagnostic(format_args!(
+        "driver_join generation={} error={:?}",
+        live.generation,
+        joined.as_ref().err()
+    ));
     outbox.disconnected(peer, live.generation).await?;
     state
         .engine
@@ -50,6 +56,11 @@ pub(super) async fn install(
     } = ready;
     let peer = session.peer();
     let (sender, mut driver) = PeerDriver::start(session).map_err(|_| ControlError::Transport)?;
+    crate::daemon_outbox::diagnostic(format_args!(
+        "install generation={} stable={}",
+        generation,
+        sender.diagnostic_stable_id()
+    ));
     outbox.register(peer, generation).await?;
     let stop = state.stop.subscribe();
     let (retirement, retiring) = watch::channel(false);

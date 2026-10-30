@@ -76,11 +76,16 @@ impl std::fmt::Display for MailError {
 impl std::error::Error for MailError {}
 impl From<rusqlite::Error> for MailError {
     fn from(e: rusqlite::Error) -> Self {
+        crate::daemon_outbox::diagnostic(format_args!(
+            "mail_sql category={:?}",
+            e.sqlite_error().map(|v| (v.code, v.extended_code))
+        ));
         Self::Storage(e)
     }
 }
 impl From<PersistenceError> for MailError {
     fn from(e: PersistenceError) -> Self {
+        crate::daemon_outbox::diagnostic(format_args!("mail_protection category={e:?}"));
         Self::Protection(e)
     }
 }

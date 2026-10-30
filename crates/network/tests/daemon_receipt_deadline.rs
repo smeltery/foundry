@@ -36,11 +36,17 @@ async fn lost_permitted_replay_receipt_is_acked_on_a_later_connection_without_ne
 }
 
 async fn receipt_replay(lose_replay: bool) {
+    peer::diagnostic(format_args!("test_start lose_replay={}", lose_replay));
     let root = config::Root::new();
     let mut sender_config = root.config("sender", "alex");
     // Isolate the receipt deadline from unrelated invitation-effect revisions.
     sender_config.value["network"]["codebook"] = serde_json::Value::Null;
-    let sender = child::Node::start(sender_config).await;
+    let mut sender = child::Node::start(sender_config).await;
+    peer::diagnostic(format_args!(
+        "sender_start lose_replay={} daemon_pid={:?}",
+        lose_replay,
+        sender.diagnostic_pid()
+    ));
     let (mut ipc, auth) = sender.client().await;
     ipc.control(
         &auth,
@@ -165,6 +171,10 @@ async fn receipt_replay(lose_replay: bool) {
     assert_ne!(second.attempt, first.attempt);
     assert_ne!(second.generation, first.generation);
     observations::receiver(&received, ID, &original);
+    peer::diagnostic(format_args!(
+        "second_claim attempt={:?} generation={:?} revision={}",
+        second.attempt, second.generation, second.revision
+    ));
     peer.acknowledge_replay().await;
     if lose_replay {
         match peer.event().await {
@@ -182,7 +192,25 @@ async fn receipt_replay(lose_replay: bool) {
         _ => panic!("actual receipt write on a current replay transport required"),
     }
     tokio::time::timeout(DEADLINE, async {
-        while observations::claim(&source, ID).is_some() {
+        let mut previous = None;
+        let mut previous_running = true;
+        while let Some(row) = observations::claim(&source, ID) {
+            let running = sender.diagnostic_running();
+            if running != previous_running {
+                peer::diagnostic(format_args!(
+                    "sender_liveness lose_replay={} running={}",
+                    lose_replay, running
+                ));
+                previous_running = running;
+            }
+            let current = (row.attempt, row.generation, row.revision);
+            if previous.as_ref() != Some(&current) {
+                peer::diagnostic(format_args!(
+                    "queue attempt={:?} generation={:?} revision={}",
+                    current.0, current.1, current.2
+                ));
+                previous = Some(current);
+            }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     })

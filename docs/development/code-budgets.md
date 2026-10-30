@@ -43,7 +43,16 @@ These allocations cover the reviewed behavior and failure tests, with narrow
 correction headroom. They do not exempt tests or permit unrelated expansion. No
 features, assertions or notices were removed, and no file exceptions were added.
 
-## Current network allocation
+## Temporary receipt diagnostic allocation
+
+This isolated diagnostic branch uses exactly 43,326 network source lines,
+including bounded category-only tracing and test instrumentation. The maximum
+file is 394 lines; the 400-line file limit and all test accounting remain.
+This temporary measurement includes no growth allowance. The delivery branch
+retains its separately reviewed 43,084-line allocation; this diagnostic code and
+workflow are not delivery acceptance or a production budget increase.
+
+## Current delivery network allocation
 
 The independently reviewed foreground network allocation is exactly 43,084
 physical source lines, up from the 31,252-line baseline. The snapshot contains

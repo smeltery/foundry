@@ -83,9 +83,20 @@ impl OutboxLedger {
     /// Expiry requires retiring and joining the driver, not reusing an ID-only
     /// acknowledgement stream with a fresh indistinguishable attempt.
     pub(crate) fn receipt_deadline_elapsed(&self, now: Instant) -> bool {
-        self.pending
+        let age = self
+            .pending
             .values()
-            .any(|pending| now.saturating_duration_since(pending.started) >= RECEIPT_TIMEOUT)
+            .map(|pending| now.saturating_duration_since(pending.started))
+            .max();
+        let expired = age.is_some_and(|age| age >= RECEIPT_TIMEOUT);
+        if expired {
+            diagnostic(format_args!(
+                "receipt_deadline generation={} age_ms={}",
+                self.generation,
+                age.unwrap().as_millis()
+            ));
+        }
+        expired
     }
     fn check_id(&mut self, store: &MailStore, id: &str) -> Result<bool, MailError> {
         if !self.retiring
@@ -126,6 +137,10 @@ impl OutboxLedger {
             return Ok(QueueAction::Retire);
         }
         let attempt = store.begin_transport_attempt(queued, self.generation)?;
+        diagnostic(format_args!(
+            "prepare generation={} revision={}",
+            self.generation, queued.revision
+        ));
         let id = queued.message.id.clone();
         self.sent.insert(
             id.clone(),
@@ -149,7 +164,17 @@ impl OutboxLedger {
         id: &str,
         disposition: TransportDisposition,
     ) -> Result<Settlement, MailError> {
+        diagnostic(format_args!(
+            "settle_enter generation={} pending={} retiring={}",
+            self.generation,
+            self.pending.contains_key(id),
+            self.retiring
+        ));
         if self.check_id(store, id)? {
+            diagnostic(format_args!(
+                "settle_retire_changed generation={}",
+                self.generation
+            ));
             return Ok(Settlement::Retire);
         }
         let pending = self.pending.get(id).ok_or(MailError::StaleAttempt)?;
@@ -161,10 +186,12 @@ impl OutboxLedger {
             disposition,
         ) {
             Ok(()) => {
+                diagnostic(format_args!("settled generation={}", self.generation));
                 self.pending.remove(id);
                 Ok(Settlement::Settled { taken })
             }
             Err(MailError::StaleAttempt) => {
+                diagnostic(format_args!("settle_stale generation={}", self.generation));
                 self.retiring = true;
                 Ok(Settlement::Retire)
             }
@@ -174,6 +201,11 @@ impl OutboxLedger {
     /// Call after stopping and joining the actual driver. Resets only attempts
     /// from this connection generation; durable queued envelopes are preserved.
     pub(crate) fn disconnected(self, store: &mut MailStore) -> Result<(), MailError> {
+        diagnostic(format_args!(
+            "disconnected generation={} pending={}",
+            self.generation,
+            self.pending.len()
+        ));
         store.disconnect_transport(self.peer, self.generation)
     }
 }
@@ -181,3 +213,35 @@ impl OutboxLedger {
 #[cfg(test)]
 #[path = "daemon_outbox_tests.rs"]
 mod tests;
+
+pub(crate) fn diagnostic(value: std::fmt::Arguments<'_>) {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let Some(path) = std::env::var_os("FOUNDRY_ACK_DIAGNOSTIC") else {
+        return;
+    };
+    let line = format!(
+        "daemon pid={} ms={} {}\n",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+        value
+    );
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(mut file) => {
+            if file.metadata().is_ok_and(|m| m.len() < 8 * 1024 * 1024)
+                && file.write_all(line.as_bytes()).is_err()
+            {
+                eprintln!("diagnostic trace write failed");
+            }
+        }
+        Err(_) => eprintln!("diagnostic trace open failed"),
+    }
+}

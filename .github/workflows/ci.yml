@@ -1,61 +1,25 @@
 name: ci
-
+run-name: Receipt diagnostic on ${{ github.ref_name }}
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  plan:
+  receipt-diagnostic:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      matrix: ${{ steps.scope.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.13.13"
-      - id: scope
-        name: Select required check groups
-        env:
-          CI_EVENT: ${{ github.event_name }}
-          CI_BASE: ${{ github.event.pull_request.base.sha }}
-          CI_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/checks/ci_scope.py
-
-  check:
-    needs: [plan]
-    name: check (${{ matrix.group }}, ${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Require a fresh Flox installation
         run: |
           if command -v nix >/dev/null || command -v flox >/dev/null; then
-            echo "Expected a fresh runner without Nix or Flox" >&2
+            echo "Expected a fresh runner" >&2
             exit 1
           fi
       - id: flox
-        name: Install pinned Flox
         uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
         with:
           version: "1.19.1"
@@ -68,84 +32,32 @@ jobs:
         env:
           FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
         run: bash scripts/ci/flox.sh true
-      - name: Install frozen tooling dependencies
-        if: contains(fromJSON('["adapter", "integration", "docs"]'), matrix.group)
-        run: bash scripts/ci/flox.sh bun install --frozen-lockfile --ignore-scripts
-      - name: Install pinned browser
-        if: matrix.group == 'docs'
-        run: bash scripts/ci/flox.sh bun run docs:browser
-      - name: Permit pinned browser sandbox
-        if: matrix.group == 'docs'
-        run: bash scripts/ci/browser-sandbox.sh
-      - name: Run shared checks
-        env:
-          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
-          CHECK_GROUP: ${{ matrix.group }}
-        run: bash scripts/ci/flox.sh python3 scripts/checks/all.py --group "$CHECK_GROUP"
-      - name: Require unchanged dependency locks
-        run: git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock .flox/toolchain/flake.lock
-
-  activation:
-    name: activation (${{ matrix.system }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {system: x86_64-linux, runner: ubuntu-24.04}
-          - {system: aarch64-linux, runner: ubuntu-24.04-arm}
-          - {system: aarch64-darwin, runner: macos-15}
-          - {system: x86_64-darwin, runner: macos-15-intel}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Record native runner
-        env:
-          EXPECTED_SYSTEM: ${{ matrix.system }}
-          ACTUAL_ARCH: ${{ runner.arch }}
-        run: |
-          printf '%s %s %s\n' "$ACTUAL_ARCH" "$ImageOS" "$ImageVersion"
-          native="$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
-          native="${native/arm64/aarch64}"
-          test "$native" = "$EXPECTED_SYSTEM"
-      - name: Require a fresh Flox installation
-        run: |
-          if command -v nix >/dev/null || command -v flox >/dev/null; then
-            echo "Expected a fresh runner without Nix or Flox" >&2
-            exit 1
-          fi
-      - id: flox
-        name: Install pinned Flox
-        uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
-        with:
-          version: "1.19.1"
-          disable-metrics: "true"
-          disable-upgrade-notifications: "false"
-          github-token: ""
-          floxhub-token: ""
-          use-cache: "false"
-      - name: Activate and exercise the locked toolchain
+      - name: Enforce measured diagnostic LOC allocation
         env:
           FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
-        run: bash scripts/ci/flox.sh python3 scripts/ci/flox_verify.py --smoke
-      - name: Compile native application dependencies
-        run: bash scripts/ci/flox.sh cargo check --locked --package f5y --all-targets
-      - name: Require unchanged locks
-        run: git diff --exit-code -- .flox/env/manifest.lock .flox/toolchain/flake.lock Cargo.lock bun.lock
-
-  required:
-    name: required
-    if: always()
-    needs: [plan, check, activation]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require every check to pass
+        run: bash scripts/ci/flox.sh python3 scripts/checks/loc.py
+      - name: Prepare private trace
+        run: install -m 600 /dev/null "$RUNNER_TEMP/foundry-receipt-selected.log"
+      - name: Reproduce selected receipt target
         env:
-          PLAN_RESULT: ${{ needs.plan.result }}
-          CHECK_RESULT: ${{ needs.check.result }}
-          ACTIVATION_RESULT: ${{ needs.activation.result }}
-        run: test "$PLAN_RESULT" = success && test "$CHECK_RESULT" = success && test "$ACTIVATION_RESULT" = success
+          FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
+          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
+          FOUNDRY_ACK_DIAGNOSTIC: ${{ runner.temp }}/foundry-receipt-selected.log
+        run: bash scripts/ci/flox.sh cargo test --workspace --locked --test daemon_receipt_deadline -- --nocapture
+      - name: Reproduce full canonical Rust sequence if selected target passes
+        env:
+          FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
+          FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
+          FOUNDRY_ACK_DIAGNOSTIC: ${{ runner.temp }}/foundry-receipt-full.log
+        run: bash scripts/ci/flox.sh python3 scripts/checks/all.py --group rust
+      - name: Require unchanged locks
+        if: always()
+        run: git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock .flox/toolchain/flake.lock
+      - name: Collect bounded receipt trace
+        if: always()
+        run: |
+          for receipt_trace in "$RUNNER_TEMP/foundry-receipt-selected.log" "$RUNNER_TEMP/foundry-receipt-full.log"; do
+            if [[ -f "$receipt_trace" ]]; then
+              python3 -c 'import pathlib,re,sys; rows=pathlib.Path(sys.argv[1]).read_text().splitlines(); noise=r"(batch_enter|batch_done send=0 retire=0|driver_(frame|command)_result.*error=None|event_seen.*receipt=false|event generation=.*receipt=false)"; print("\n".join([r for r in rows if not re.search(noise,r)][-5000:]))' "$receipt_trace"
+            fi
+          done

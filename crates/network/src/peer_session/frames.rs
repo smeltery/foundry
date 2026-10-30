@@ -186,10 +186,23 @@ impl PeerSession {
                 Ok(event)
             }
             PeerFrame::Ack { id, state, note } => {
-                let permit = self.permit().await?;
+                crate::daemon_outbox::diagnostic(format_args!(
+                    "ack_frame stable={} pending={}",
+                    self.connection.stable_id(),
+                    self.pending.contains_key(&id)
+                ));
+                let permit = self.permit().await.inspect_err(|e| {
+                    crate::daemon_outbox::diagnostic(format_args!(
+                        "ack_permit_error category={e:?}"
+                    ));
+                })?;
                 let disposition =
                     ReceiptDisposition::from_state(&state).map_err(|_| PeerError::Limit)?;
                 let revision = self.pending.remove(&id).ok_or(PeerError::UnexpectedAck)?;
+                crate::daemon_outbox::diagnostic(format_args!(
+                    "ack_revision sent={} current={}",
+                    revision, permit.revision
+                ));
                 if revision != permit.revision {
                     return Err(PeerError::StaleEpoch);
                 }

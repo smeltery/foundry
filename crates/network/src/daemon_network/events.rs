@@ -17,12 +17,24 @@ pub(super) async fn handle(
         generation,
         event,
     } = event;
+    crate::daemon_outbox::diagnostic(format_args!(
+        "event_seen generation={} receipt={} live={:?}",
+        generation,
+        matches!(&event, Some(DriverEvent::Peer(PeerEvent::Receipt { .. }))),
+        live.get(&peer).map(|v| v.generation)
+    ));
     if live
         .get(&peer)
         .is_none_or(|connection| connection.generation != generation)
     {
         return Ok(());
     }
+    crate::daemon_outbox::diagnostic(format_args!(
+        "event generation={} receipt={} present={}",
+        generation,
+        matches!(&event, Some(DriverEvent::Peer(PeerEvent::Receipt { .. }))),
+        event.is_some()
+    ));
     let mut close = event.is_none();
     match event {
         Some(DriverEvent::Warning(warning)) => {
