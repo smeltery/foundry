@@ -11,6 +11,9 @@ def mark(name, value):
     os.close(fd)
 
 
+# Model cold startup before the parent can observe fixture readiness.
+if SCENARIO == "detached":
+    time.sleep(0.5)
 mark("started", os.getpid())
 if SCENARIO == "blocked_input":
     time.sleep(60)
