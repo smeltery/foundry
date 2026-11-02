@@ -5,43 +5,43 @@
     "minimum-cli-version": "1.19.1",
     "install": {
       "actionlint": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#actionlint"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#actionlint"
       },
       "binutils": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#binutils"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#binutils"
       },
       "bun": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#bun"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#bun"
       },
       "cargo-deny": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cargo-deny"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#cargo-deny"
       },
       "cc": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#cc"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#cc"
       },
       "git": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#git"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#git"
       },
       "nodejs": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#nodejs"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#nodejs"
       },
       "pkg-config": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pkg-config"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#pkg-config"
       },
       "pre-commit": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#pre-commit"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#pre-commit"
       },
       "python": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#python"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#python"
       },
       "rust": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#rust"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#rust"
       },
       "shellcheck": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#shellcheck"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#shellcheck"
       },
       "toolchain-env": {
-        "flake": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain#toolchain-env"
+        "flake": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain#toolchain-env"
       }
     },
     "vars": {
@@ -59,7 +59,7 @@
   "packages": [
     {
       "install_id": "actionlint",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.actionlint",
       "derivation": "/nix/store/rgnmm1as49n486xzjgmv6im2dpx4snwl-actionlint-1.7.12.drv",
@@ -88,7 +88,7 @@
     },
     {
       "install_id": "actionlint",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.actionlint",
       "derivation": "/nix/store/saj0jli0hjr99yaizc4mczs3kp8gaaid-actionlint-1.7.12.drv",
@@ -117,7 +117,7 @@
     },
     {
       "install_id": "actionlint",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.actionlint",
       "derivation": "/nix/store/sn8y8rfrhq91dxr1lggdv66n27lkaw1x-actionlint-1.7.12.drv",
@@ -146,7 +146,7 @@
     },
     {
       "install_id": "actionlint",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.actionlint",
       "derivation": "/nix/store/30wqmz4v5k1jcwy4pdiz33grrm8s0pii-actionlint-1.7.12.drv",
@@ -175,7 +175,7 @@
     },
     {
       "install_id": "binutils",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.binutils",
       "derivation": "/nix/store/w9ch0db4pssqsk5dkglv9splxk8wc1c6-cctools-binutils-darwin-wrapper-1010.6.drv",
@@ -201,7 +201,7 @@
     },
     {
       "install_id": "binutils",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.binutils",
       "derivation": "/nix/store/bd9gpzgdsmlx2gxyf4ybld556y6xgd8f-cctools-binutils-darwin-wrapper-1010.6.drv",
@@ -227,7 +227,7 @@
     },
     {
       "install_id": "binutils",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.binutils",
       "derivation": "/nix/store/8m9ah1jph6sbvgc4jhmvzw7zvf6d4dac-binutils-wrapper-2.46.drv",
@@ -261,7 +261,7 @@
     },
     {
       "install_id": "binutils",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.binutils",
       "derivation": "/nix/store/i4bn7208nkimbvsii0kynx5mlwmn38jx-binutils-wrapper-2.46.drv",
@@ -295,7 +295,7 @@
     },
     {
       "install_id": "bun",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.bun",
       "derivation": "/nix/store/fah4i5k38xn12ccbcglj1zwg2aczrr5r-bun-1.3.11.drv",
@@ -325,7 +325,7 @@
     },
     {
       "install_id": "bun",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.bun",
       "derivation": "/nix/store/f5db58ppigi38r3id6kgh3amg5jj2xka-bun-1.3.11.drv",
@@ -355,7 +355,7 @@
     },
     {
       "install_id": "bun",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.bun",
       "derivation": "/nix/store/n3v4q8v2prxz1j33qnbxi22gz5hwp7bj-bun-1.3.11.drv",
@@ -385,7 +385,7 @@
     },
     {
       "install_id": "bun",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.bun",
       "derivation": "/nix/store/7ly432fhz0kdgnibi4snz0vd7nysnlzy-bun-1.3.11.drv",
@@ -415,7 +415,7 @@
     },
     {
       "install_id": "cargo-deny",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.cargo-deny",
       "derivation": "/nix/store/mcyg3kcx2ly89qvxhjd7ns5fp6vpraxz-cargo-deny-0.19.9.drv",
@@ -445,7 +445,7 @@
     },
     {
       "install_id": "cargo-deny",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.cargo-deny",
       "derivation": "/nix/store/wmfyhga6a7p928i0k6l9dlwglfbz6p2d-cargo-deny-0.19.9.drv",
@@ -475,7 +475,7 @@
     },
     {
       "install_id": "cargo-deny",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.cargo-deny",
       "derivation": "/nix/store/yh00zijiwg0padjsq0ffsghwkj6m2xsn-cargo-deny-0.19.9.drv",
@@ -505,7 +505,7 @@
     },
     {
       "install_id": "cargo-deny",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.cargo-deny",
       "derivation": "/nix/store/a668q2rr3aavq8pb262gab11npnpj4fy-cargo-deny-0.19.9.drv",
@@ -535,7 +535,7 @@
     },
     {
       "install_id": "cc",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.cc",
       "derivation": "/nix/store/hnp49hr8lz6c130zirr80sw499jmqry6-clang-wrapper-21.1.8.drv",
@@ -561,7 +561,7 @@
     },
     {
       "install_id": "cc",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.cc",
       "derivation": "/nix/store/rmw46im59qyq1qf72zii05alw2a64ib1-clang-wrapper-21.1.8.drv",
@@ -587,7 +587,7 @@
     },
     {
       "install_id": "cc",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.cc",
       "derivation": "/nix/store/j50f2pfyahhjrsg6xy33zj4wzwahndwk-gcc-wrapper-15.3.0.drv",
@@ -621,7 +621,7 @@
     },
     {
       "install_id": "cc",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.cc",
       "derivation": "/nix/store/sxf2064rx5xmhq2x4zj3ffjjgn6239nw-gcc-wrapper-15.3.0.drv",
@@ -655,7 +655,7 @@
     },
     {
       "install_id": "git",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.git",
       "derivation": "/nix/store/3bxc88zv6jm6f931ka2g0v6wzkwlqrv2-git-2.54.0.drv",
@@ -686,7 +686,7 @@
     },
     {
       "install_id": "git",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.git",
       "derivation": "/nix/store/5vsvbxh73c8vq7rvpyvyb6jriqmilv4s-git-2.54.0.drv",
@@ -717,7 +717,7 @@
     },
     {
       "install_id": "git",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.git",
       "derivation": "/nix/store/d4rd2ir7rkc2b9z195c4lz8jsm5j4dsa-git-2.54.0.drv",
@@ -750,7 +750,7 @@
     },
     {
       "install_id": "git",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.git",
       "derivation": "/nix/store/xklwki1yih8p421zi4v2frribpprly5r-git-2.54.0.drv",
@@ -783,7 +783,7 @@
     },
     {
       "install_id": "nodejs",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.nodejs",
       "derivation": "/nix/store/nzl8gxk999l5bv45gr3v8wly0hsjanlw-nodejs-22.23.1.drv",
@@ -812,7 +812,7 @@
     },
     {
       "install_id": "nodejs",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.nodejs",
       "derivation": "/nix/store/q78b6baiwar340nchrxdvq66qdp89iin-nodejs-22.23.1.drv",
@@ -841,7 +841,7 @@
     },
     {
       "install_id": "nodejs",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.nodejs",
       "derivation": "/nix/store/gjpc98c5zm2h7lz0vcfjs9cs9yssg7w9-nodejs-22.23.1.drv",
@@ -870,7 +870,7 @@
     },
     {
       "install_id": "nodejs",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.nodejs",
       "derivation": "/nix/store/hck6d5r5px23vpq95bh3zpwjlqcr80ma-nodejs-22.23.1.drv",
@@ -899,7 +899,7 @@
     },
     {
       "install_id": "pkg-config",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.pkg-config",
       "derivation": "/nix/store/68bnv2qfgidg0rpg8yzcndj68s07fi1k-pkg-config-wrapper-0.29.2.drv",
@@ -933,7 +933,7 @@
     },
     {
       "install_id": "pkg-config",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.pkg-config",
       "derivation": "/nix/store/pwg1ab97dpyy0fpywni2h74hanxxiw83-pkg-config-wrapper-0.29.2.drv",
@@ -967,7 +967,7 @@
     },
     {
       "install_id": "pkg-config",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.pkg-config",
       "derivation": "/nix/store/zk2hylz7zndvw139zlp328cxfb06wm6n-pkg-config-wrapper-0.29.2.drv",
@@ -1001,7 +1001,7 @@
     },
     {
       "install_id": "pkg-config",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.pkg-config",
       "derivation": "/nix/store/6bh2y41c1b70015alvgrdsr01hls783h-pkg-config-wrapper-0.29.2.drv",
@@ -1035,7 +1035,7 @@
     },
     {
       "install_id": "pre-commit",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.pre-commit",
       "derivation": "/nix/store/56kbaflfayc76mygq4m3pcv0k73l5wdi-pre-commit-4.5.1.drv",
@@ -1066,7 +1066,7 @@
     },
     {
       "install_id": "pre-commit",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.pre-commit",
       "derivation": "/nix/store/9l18169bly7n3578ryxqcg0n2wsdsv8a-pre-commit-4.5.1.drv",
@@ -1097,7 +1097,7 @@
     },
     {
       "install_id": "pre-commit",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.pre-commit",
       "derivation": "/nix/store/bggp5jp8ffw3rmkmhwhzq8pkyj02phii-pre-commit-4.5.1.drv",
@@ -1128,7 +1128,7 @@
     },
     {
       "install_id": "pre-commit",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.pre-commit",
       "derivation": "/nix/store/c9099ib1ycx9jd7i9iqizf181sjg2aqz-pre-commit-4.5.1.drv",
@@ -1159,12 +1159,12 @@
     },
     {
       "install_id": "python",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.python",
-      "derivation": "/nix/store/w3ipi4931sms4xngdfqiw848yv721316-python3-3.13.13.drv",
+      "derivation": "/nix/store/bknb559vqzsgsrjz47gr6yfl8ivz60cs-python3-3.13.13.drv",
       "outputs": {
-        "out": "/nix/store/72nnzfds2jnq904id2qsfnsq8qsg35x0-python3-3.13.13"
+        "out": "/nix/store/ygxqin6ydzjfawywqpp5pal8wv6sf5bh-python3-3.13.13"
       },
       "output-names": [
         "out"
@@ -1188,12 +1188,12 @@
     },
     {
       "install_id": "python",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.python",
-      "derivation": "/nix/store/kcqbpmx1l82xpg70b1705xx1cdc9gm76-python3-3.13.13.drv",
+      "derivation": "/nix/store/klsjr5grg2dlgbsimgczsz32s6h0s7ps-python3-3.13.13.drv",
       "outputs": {
-        "out": "/nix/store/wlpscf6pvz6x84ywkj7wwfl16qbmql0b-python3-3.13.13"
+        "out": "/nix/store/fyyi8b1dpk3xpjnn52rznnpvlyivds97-python3-3.13.13"
       },
       "output-names": [
         "out"
@@ -1217,13 +1217,13 @@
     },
     {
       "install_id": "python",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.python",
-      "derivation": "/nix/store/c0mzldlfx93kws02rqa48sy4ldlh7z91-python3-3.13.13.drv",
+      "derivation": "/nix/store/x2hqw4p7ypn5mh08wgv4h37g6pqnw9ka-python3-3.13.13.drv",
       "outputs": {
-        "debug": "/nix/store/l8vry50i4vfzfwf41v5zv3xwya2154iq-python3-3.13.13-debug",
-        "out": "/nix/store/h8xc387124b14ffqdydf08b4d8nwh36v-python3-3.13.13"
+        "debug": "/nix/store/wsi1phrz2gvs0xa8gxsq34mbdpr0s6h0-python3-3.13.13-debug",
+        "out": "/nix/store/lqn6mbgzzdrqq2qkwddcmxj9z6amdd86-python3-3.13.13"
       },
       "output-names": [
         "out",
@@ -1248,13 +1248,13 @@
     },
     {
       "install_id": "python",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.python",
-      "derivation": "/nix/store/74sf06y9qhpxqxzdww2g9nxr4d5xnxnj-python3-3.13.13.drv",
+      "derivation": "/nix/store/3qs947by1lp93b4gnfisb3jx67mpkd3c-python3-3.13.13.drv",
       "outputs": {
-        "debug": "/nix/store/ac2ak0h3xw37xvp7sp5hvd352w7shhx6-python3-3.13.13-debug",
-        "out": "/nix/store/ckykabdm28hh86gjgwbf92qnvf9h5v38-python3-3.13.13"
+        "debug": "/nix/store/f8f8fd1yyvay2916vv1lk77v4cy5p3wz-python3-3.13.13-debug",
+        "out": "/nix/store/60m4rxhg2fldqaak400c0lry96ijrzqn-python3-3.13.13"
       },
       "output-names": [
         "out",
@@ -1279,7 +1279,7 @@
     },
     {
       "install_id": "rust",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.rust",
       "derivation": "/nix/store/98q3l2wlp4s2kvfcmh3yj7pdz022h1hj-rust-minimal-1.95.0.drv",
@@ -1304,7 +1304,7 @@
     },
     {
       "install_id": "rust",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.rust",
       "derivation": "/nix/store/j0nwczsj098w5ysh2fyn1lih8zwpz6pv-rust-minimal-1.95.0.drv",
@@ -1329,7 +1329,7 @@
     },
     {
       "install_id": "rust",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.rust",
       "derivation": "/nix/store/k68cppa85y61f5f5sv6iq098bxv5kq95-rust-minimal-1.95.0.drv",
@@ -1354,7 +1354,7 @@
     },
     {
       "install_id": "rust",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.rust",
       "derivation": "/nix/store/lz3ghc7ghwizq4qi74ppdgzcw6i78r4w-rust-minimal-1.95.0.drv",
@@ -1379,7 +1379,7 @@
     },
     {
       "install_id": "shellcheck",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.shellcheck",
       "derivation": "/nix/store/dns7a42cs8hp66rlm6xai3b0i6610qna-shellcheck-0.11.0.drv",
@@ -1416,7 +1416,7 @@
     },
     {
       "install_id": "shellcheck",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.shellcheck",
       "derivation": "/nix/store/jmz9dsz64fzafjr9h0r64wq6pl87fl4z-shellcheck-0.11.0.drv",
@@ -1453,7 +1453,7 @@
     },
     {
       "install_id": "shellcheck",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.shellcheck",
       "derivation": "/nix/store/q8baih50g4f03xxbhkfcg6hql3rgy6lv-shellcheck-0.11.0.drv",
@@ -1490,7 +1490,7 @@
     },
     {
       "install_id": "shellcheck",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.shellcheck",
       "derivation": "/nix/store/ndhksp356pj968g91ihkqhlm47q99mal-shellcheck-0.11.0.drv",
@@ -1527,7 +1527,7 @@
     },
     {
       "install_id": "toolchain-env",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-darwin.toolchain-env",
       "derivation": "/nix/store/p711x8bbd6sldpbr02f03yljaqq6njxp-toolchain.sh.drv",
@@ -1550,7 +1550,7 @@
     },
     {
       "install_id": "toolchain-env",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-darwin.toolchain-env",
       "derivation": "/nix/store/a053nsx49v2wx02y66c8hr14cm5iw7d9-toolchain.sh.drv",
@@ -1573,7 +1573,7 @@
     },
     {
       "install_id": "toolchain-env",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.aarch64-linux.toolchain-env",
       "derivation": "/nix/store/49dr1lvms9pcwyzs7x95bg6i3fd56l79-toolchain.sh.drv",
@@ -1596,7 +1596,7 @@
     },
     {
       "install_id": "toolchain-env",
-      "locked-url": "github:smeltery/foundry/a4746bf747898838c940d80ab1bce5f12dc950e4?dir=.flox/toolchain&narHash=sha256-kv1rWAUWr6YFaz3QmXbFJfb7PQXO5UZX1DYoLVkFJdk%3D",
+      "locked-url": "github:smeltery/foundry/e6f40629b3d0e1a18bb281eb78de4e88e28c8f19?dir=.flox/toolchain&narHash=sha256-hxXW5QCzahzfGbKUioZVtrDnz/Sj1OBVqOaKiBdIn4w%3D",
       "flake-description": "Foundry development toolchain",
       "locked-flake-attr-path": "packages.x86_64-linux.toolchain-env",
       "derivation": "/nix/store/mivp7pkfi31c3kmi1l6rrzpwfn15m3w2-toolchain.sh.drv",
