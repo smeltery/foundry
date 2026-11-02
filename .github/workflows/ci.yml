@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# Pull requests cancel superseded runs. Every other run is keyed by commit so it
+# always finishes: main saves the Cargo caches and triggers auto-release.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
