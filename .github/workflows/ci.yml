@@ -54,6 +54,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Integration jobs also carry their runner's native activation checks when planned.
+      - name: Record native runner
+        if: matrix.system
+        env:
+          EXPECTED_SYSTEM: ${{ matrix.system }}
+          ACTUAL_ARCH: ${{ runner.arch }}
+        run: |
+          printf '%s %s %s\n' "$ACTUAL_ARCH" "$ImageOS" "$ImageVersion"
+          native="$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
+          native="${native/arm64/aarch64}"
+          test "$native" = "$EXPECTED_SYSTEM"
       - name: Require a fresh Flox installation
         run: |
           if command -v nix >/dev/null || command -v flox >/dev/null; then
@@ -95,6 +106,14 @@ jobs:
             target
           key: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock', 'Cargo.toml') }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock', 'Cargo.toml') }}-
+      - name: Activate and exercise the locked toolchain
+        if: matrix.system
+        env:
+          FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
+        run: bash scripts/ci/flox.sh python3 scripts/ci/flox_verify.py --smoke
+      - name: Compile native application dependencies
+        if: matrix.system
+        run: bash scripts/ci/flox.sh cargo check --locked --package f5y --all-targets
       - name: Run shared checks
         env:
           FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
@@ -117,6 +136,8 @@ jobs:
 
   activation:
     needs: [plan]
+    # Empty when every planned system runs inside an integration job.
+    if: needs.plan.outputs.activation != '{"include":[]}'
     name: activation (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -174,4 +195,11 @@ jobs:
           PLAN_RESULT: ${{ needs.plan.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           ACTIVATION_RESULT: ${{ needs.activation.result }}
-        run: test "$PLAN_RESULT" = success && test "$CHECK_RESULT" = success && test "$ACTIVATION_RESULT" = success
+          ACTIVATION_PLAN: ${{ needs.plan.outputs.activation }}
+        run: |
+          test "$PLAN_RESULT" = success
+          test "$CHECK_RESULT" = success
+          # Activation may be skipped only when the plan left it no systems.
+          test "$ACTIVATION_RESULT" = success || {
+            test "$ACTIVATION_RESULT" = skipped && test "$ACTIVATION_PLAN" = '{"include":[]}'
+          }
