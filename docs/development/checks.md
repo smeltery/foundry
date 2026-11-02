@@ -63,6 +63,26 @@ locks and the root `Cargo.toml` build profiles. Only main-branch pushes save the
 Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
 
+## Local verification with Bellows
+
+[Bellows](https://github.com/smeltery/bellows) can run the CI check groups on
+your workstation against the proposed merge of your committed branch:
+
+```sh
+git fetch origin main
+bellows verify --repository smeltery/foundry --base origin/main --profile native
+```
+
+The `native` profile in `.bellows.yml` activates the locked Flox environment,
+verifies it, and runs the `rust`, `integration` and quick groups through
+`scripts/ci/with-toolchain.sh`, which applies the same compiler settings as
+`scripts/ci/flox.sh`. It omits `hygiene`, because the naming-policy scan needs
+`FOUNDRY_NAMING_POLICY`. On macOS it gives native Apple silicon results.
+
+Results are advisory. Bellows receipts do not prove who ran the checks, so
+hosted CI and its `required` check still decide merges. Do not publish or accept
+`bellows/verify` statuses as a substitute for hosted checks.
+
 ## Pull request scope
 
 Pull requests always run documentation and hygiene checks. Changes under `docs/`

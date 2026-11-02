@@ -27,18 +27,7 @@ status=0
 # shellcheck disable=SC2016
 "$flox_command" activate --dir "$root" -- bash -euo pipefail -c '
   python3 scripts/ci/flox_verify.py
-  if [[ -n ${RUSTFLAGS+x} || -n ${CARGO_ENCODED_RUSTFLAGS+x} ]]; then
-    echo "Canonical checks require the selected target compiler flags" >&2
-    exit 1
-  fi
-  for override in RUSTC RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CARGO_BUILD_RUSTC CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER; do
-    if [[ -n ${!override:-} ]]; then
-      echo "Canonical checks reject compiler overrides: $override" >&2
-      exit 1
-    fi
-  done
-  source "$FLOX_ENV/share/foundry/toolchain.sh"
-  "$@"
+  bash scripts/ci/with-toolchain.sh "$@"
 ' foundry-check "$@" || status=$?
 if ! cmp -s "$snapshot" .flox/env/manifest.lock; then
   echo "Development environment activation changed the lock" >&2
