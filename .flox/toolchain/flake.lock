@@ -32,27 +32,10 @@
         "type": "github"
       }
     },
-    "python": {
-      "locked": {
-        "lastModified": 1775683928,
-        "narHash": "sha256-S39IpiW2df/L5onRv8POQKMv2AIvDlpIevubfpujhRw=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "634df81a6bde9521cc2c14bc512ba5b2a89ae13f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "634df81a6bde9521cc2c14bc512ba5b2a89ae13f",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "hooks": "hooks",
         "nixpkgs": "nixpkgs",
-        "python": "python",
         "runtimes": "runtimes",
         "rust-overlay": "rust-overlay",
         "utilities": "utilities"
