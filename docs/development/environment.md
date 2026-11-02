@@ -40,7 +40,7 @@ manifest references a public immutable recipe commit; its Flox-generated lock
 records selected outputs for Apple silicon, Intel macOS, Linux x86_64 and Linux
 ARM64. Native Windows is not supported.
 
-Four native CI activation jobs check actual tool origins and versions and compile
+Native CI activation checks on all four systems verify actual tool origins and versions and compile
 application dependencies. Package evaluation alone does not establish execution
 on another platform. These checks remain required alongside the existing
 integration tests; release packaging has separate acceptance gates.

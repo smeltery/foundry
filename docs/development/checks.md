@@ -52,11 +52,13 @@ arm64 and macOS arm64. On Linux x64, `rust` and `integration` each get a job and
 the remaining short groups share one `quick` job, so setup is paid once. The
 integration jobs build both executables and run the
 real-helper tests that the ordinary Rust suite skips. The aggregate gate requires
-every matrix job to succeed. Four additional fresh native activation jobs require
-the complete pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon.
-These jobs also compile application dependencies and reject changed locks.
-Pull requests skip the macOS Intel activation job, the slowest runner; main-branch
-pushes still require it.
+every matrix job to succeed. Fresh native activation checks require the complete
+pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon. They also
+compile application dependencies and reject changed locks. When an integration
+job runs on a system's runner, it performs that system's activation checks too,
+so the toolchain is set up once; other systems get a separate activation job.
+Pull requests skip macOS Intel activation, the slowest runner; main-branch pushes
+still require it.
 
 Check jobs restore Cargo registry and `target/` caches keyed by the Flox and Cargo
 locks. Only main-branch pushes save them, and release builds never use them.

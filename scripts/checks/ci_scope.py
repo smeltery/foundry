@@ -56,9 +56,21 @@ def matrix(groups):
     return {"include": jobs}
 
 
-def activation_matrix(event):
-    return {"include": [{"system": system, "runner": runner} for system, runner in ACTIVATION
-                        if event != "pull_request" or system not in MAIN_ONLY_SYSTEMS]}
+def activation_matrix(event, checks):
+    """Attach each system's activation to an integration job on its runner, if one runs.
+
+    The host job then sets up the toolchain once for both; other systems keep their own job.
+    """
+    hosts = {job["runner"]: job for job in checks["include"] if job["group"] == "integration"}
+    standalone = []
+    for system, runner in ACTIVATION:
+        if event == "pull_request" and system in MAIN_ONLY_SYSTEMS:
+            continue
+        if runner in hosts:
+            hosts[runner]["system"] = system
+        else:
+            standalone.append({"system": system, "runner": runner})
+    return {"include": standalone}
 
 
 def changed_paths(base, head, *, cwd=None):
@@ -75,7 +87,8 @@ def main():
     event = os.environ["CI_EVENT"]
     paths = changed_paths(os.environ["CI_BASE"], os.environ["CI_HEAD"]) if event == "pull_request" else []
     groups = select_groups(event, paths)
-    checks, activation = matrix(groups), activation_matrix(event)
+    checks = matrix(groups)
+    activation = activation_matrix(event, checks)
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"matrix={json.dumps(checks, separators=(',', ':'))}\n")
         output.write(f"activation={json.dumps(activation, separators=(',', ':'))}\n")
