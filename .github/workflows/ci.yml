@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# Pull requests cancel superseded runs. Every other run is keyed by commit so it
+# always finishes: main saves the Cargo caches and triggers auto-release.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -92,7 +94,7 @@ jobs:
       - name: Permit pinned browser sandbox
         if: matrix.browser
         run: bash scripts/ci/browser-sandbox.sh
-      # Keyed by toolchain and dependency locks; main saves, pull requests only restore.
+      # Keyed by toolchain, build profiles and dependency locks; main saves, pull requests only restore.
       - id: cargo-cache
         name: Restore Cargo dependencies and build output
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -102,8 +104,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock') }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock') }}-
+          key: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock', 'Cargo.toml') }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock', 'Cargo.toml') }}-
       - name: Activate and exercise the locked toolchain
         if: matrix.system
         env:

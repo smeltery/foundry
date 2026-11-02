@@ -10,6 +10,11 @@ rust-version = "1.95"
 repository = "https://github.com/smeltery/foundry"
 license-file = "LICENSE"
 
+# Quota tests fill production-sized SQLite stores and hash large payloads.
+# Optimized dependencies run them several times faster; workspace code stays unoptimized.
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = true
 codegen-units = 1

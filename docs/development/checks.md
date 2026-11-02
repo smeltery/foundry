@@ -61,7 +61,7 @@ Pull requests skip macOS Intel activation, the slowest runner; main-branch pushe
 still require it.
 
 Check jobs restore Cargo registry and `target/` caches keyed by the Flox and Cargo
-locks. Only main-branch pushes save them, and release builds never use them.
+locks and the root `Cargo.toml` build profiles. Only main-branch pushes save them, and release builds never use them.
 Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
 

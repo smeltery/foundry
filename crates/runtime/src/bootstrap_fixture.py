@@ -18,7 +18,7 @@ packet = json.loads(line)
 body = base64.b64decode(packet['body_base64'], validate=True)
 assert base64.b64encode(body).decode() == packet['body_base64']
 assert len(body) <= 65536
-assert set(os.environ) <= {'PATH', 'LANG', 'LC_ALL', 'TZ', '__CF_USER_TEXT_ENCODING'}
+assert set(os.environ) <= {'PATH', 'LANG', 'LC_ALL', 'TZ', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'}  # Python adds LC_CTYPE in the C locale (PEP 538)
 assert body.decode(errors='ignore') not in str(sys.argv)
 Path('received').write_text(hashlib.sha256(body).hexdigest())
 if mode == 'stderr':
