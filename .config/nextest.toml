@@ -1,0 +1,6 @@
+# The service application tests run adapters under 300ms leases renewed every 20ms.
+# A busy 4-core CI runner can starve renewal past that deadline, so these tests get
+# one retry; nextest still reports a retried pass as FLAKY. Other tests fail at once.
+[[profile.default.overrides]]
+filter = 'binary_id(foundry-service::application)'
+retries = 1

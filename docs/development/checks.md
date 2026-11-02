@@ -21,6 +21,8 @@ bash scripts/ci/flox.sh python3 scripts/checks/all.py
 | `docs` | Documentation tooling tests, Markdown, links and rendered diagrams |
 | `hygiene` | License digest, whitespace, LOC, external naming policy and workflow syntax |
 
+The `foundry-service` application tests use 300ms adapter leases, so `.config/nextest.toml` gives them one retry; nextest reports a retried pass as FLAKY.
+
 Use `--group rust`, for example, to run one group, or list several groups after `--group`. `--fast` skips Rust test execution but retains lint and complete documentation validation. Before pushing, run the full suite. A missing tool or policy is an error, not an implicit skip.
 
 Dependency checks use the pinned cargo-deny tool and `deny.toml`. Unresolved
