@@ -23,7 +23,9 @@ def rust(fast):
     run("cargo", "fmt", "--all", "--check")
     run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings")
     if not fast:
-        run("cargo", "test", "--workspace", "--locked", "--no-fail-fast")
+        # Nextest runs test binaries in parallel; it does not run doctests.
+        run("cargo", "nextest", "run", "--workspace", "--locked", "--no-fail-fast")
+        run("cargo", "test", "--workspace", "--locked", "--doc")
 
 
 def python_checks():
