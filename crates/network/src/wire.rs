@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+/// Maximum UTF-8 body bytes for a peer text message.
+pub const MAX_PEER_TEXT_BYTES: usize = 64 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum PeerFrame {

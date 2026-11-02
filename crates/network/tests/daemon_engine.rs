@@ -258,3 +258,5 @@ mod inbox_tests;
 mod output_tests;
 #[path = "../src/daemon_engine/quota_tests.rs"]
 mod quota_tests;
+#[path = "../src/daemon_engine/remote_tests.rs"]
+mod remote_tests;

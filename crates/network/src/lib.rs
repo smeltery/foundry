@@ -18,6 +18,10 @@ pub mod daemon_engine;
 #[cfg(unix)]
 pub mod daemon_host;
 pub mod daemon_lease;
+#[cfg(unix)]
+pub(crate) mod daemon_network;
+#[cfg(unix)]
+pub(crate) mod daemon_outbox;
 pub mod endpoint;
 pub mod mail_store;
 pub mod membership;

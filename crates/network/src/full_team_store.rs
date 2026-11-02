@@ -12,6 +12,9 @@ mod intent_recovery;
 mod intent_types;
 #[path = "full_team_store_intents.rs"]
 mod intents;
+#[cfg(all(test, unix))]
+#[path = "full_team_store_relay_tests.rs"]
+mod relay_tests;
 pub use intent_types::{
     CodeIntentId, CodeLease, ControlEffect, IssuedCodeInvite, PendingCodeIntent,
 };
@@ -62,6 +65,7 @@ pub enum StoreError {
     Corrupt,
     Binding,
     Conflict,
+    Cancelled,
     TooLarge,
     Unsupported,
     RevisionOverflow,
@@ -78,6 +82,7 @@ impl fmt::Display for StoreError {
             Self::Corrupt => "invalid full team checkpoint",
             Self::Binding => "full team storage binding mismatch",
             Self::Conflict => "full team checkpoint conflict",
+            Self::Cancelled => "full team commit cancelled before writing",
             Self::TooLarge => "full team checkpoint exceeds limit",
             Self::RevisionOverflow => "full team revision exhausted",
             Self::Indeterminate => "full team commit outcome requires reload",
@@ -290,44 +295,16 @@ impl FullTeamStore {
         fields: Formation<'_>,
         now_ms: i64,
     ) -> Result<PendingFormation> {
-        self.protection.check()?;
-        if !Arc::ptr_eq(&self.instance, &base.instance) {
-            return Err(StoreError::Binding);
-        }
-        if base.checkpoint.document().is_some() || base.revision() != 0 {
-            return Err(StoreError::Conflict);
-        }
-        let state = TeamState::found(
-            fields,
-            self.identity.secret_key(),
-            &self.policy.profile,
-            now_ms,
-            &mut SystemEntropy,
-        )
-        .map_err(|_| StoreError::Invalid)?;
-        let mut checkpoint = Checkpoint::empty(
-            self.instance.incarnation,
-            self.identity.endpoint_id(),
-            self.policy.digest,
-        );
-        checkpoint.configure(&self.policy);
-        checkpoint.network_generation = u64::from(self.policy.codes.is_some());
-        checkpoint.revision = 1;
-        checkpoint.parent = base.digest;
-        checkpoint.accepted_ms = now_ms;
-        checkpoint.state = StoredState::Active {
-            document: Box::new(state.document().clone()),
-        };
-        checkpoint.operation_ms = now_ms;
-        checkpoint::encode(&checkpoint)?;
-        validation::validate(&checkpoint, &self.policy, now_ms)?;
-        Ok(PendingFormation {
-            instance: self.instance.clone(),
-            base: base.digest,
-            checkpoint,
-        })
+        self.prepare_formation_with_relay(base, fields, None, now_ms)
     }
     pub fn commit_formation(&mut self, pending: PendingFormation) -> Result<LoadedTeam> {
+        self.commit_formation_when(pending, || true)
+    }
+    fn commit_formation_when(
+        &mut self,
+        pending: PendingFormation,
+        begin_write: impl FnOnce() -> bool,
+    ) -> Result<LoadedTeam> {
         if !Arc::ptr_eq(&self.instance, &pending.instance) {
             return Err(StoreError::Binding);
         }
@@ -343,6 +320,9 @@ impl FullTeamStore {
             || base.document().is_some()
         {
             return Err(StoreError::Conflict);
+        }
+        if !begin_write() {
+            return Err(StoreError::Cancelled);
         }
         let digest = checkpoint::write(&tx, &pending.checkpoint, &self.identity, false)?;
         self.protection.check()?;

@@ -93,6 +93,7 @@ async fn disconnected_read(seconds: u64, block: Block) {
         ConnectionId(1),
         shutdown,
         fence,
+        None,
     ));
     write_record(
         &mut client,

@@ -43,16 +43,11 @@ async fn dispatch(
     engine: Arc<OwnedEngine>,
     connection: ConnectionId,
     request: RequestEnvelope,
+    network: Option<crate::daemon_network::NetworkHandle>,
 ) -> Result<Reply, HostError> {
-    tokio::task::spawn_blocking(move || {
-        Ok(engine
-            .inner
-            .lock()
-            .map_err(|_| HostError::Storage)?
-            .handle(connection, request))
-    })
-    .await
-    .map_err(|_| HostError::Task)?
+    network::EngineAccess::new(engine)
+        .dispatch(connection, request, network.map(|n| n.authority()))
+        .await
 }
 pub(super) async fn run(
     stream: UnixStream,
@@ -60,6 +55,7 @@ pub(super) async fn run(
     connection: ConnectionId,
     shutdown: watch::Sender<bool>,
     fence: cancellation::ConnectionFence,
+    network: Option<crate::daemon_network::NetworkHandle>,
 ) -> Result<(), HostError> {
     let mut stopping = shutdown.subscribe();
     let (input, mut writer) = stream.into_split();
@@ -87,6 +83,17 @@ pub(super) async fn run(
                 let request = match record {
                     Some(Ok(Some(value))) => {
                         let id = value.get("id").and_then(serde_json::Value::as_u64);
+                        if value.get("op").and_then(serde_json::Value::as_str)==Some("network") {
+                            let response=match serde_json::from_value::<crate::daemon_network::NetworkEnvelope>(value) {
+                                Ok(envelope)=>match &network {
+                                    Some(network)=>network.request(connection,envelope,work.fence.signal()).await,
+                                    None=>crate::daemon_network::NetworkResponse::error(envelope.id,crate::daemon_network::ControlError::Disabled),
+                                },
+                                Err(_)=>crate::daemon_network::NetworkResponse::error(id.unwrap_or(0),crate::daemon_network::ControlError::Invalid),
+                            };
+                            if response.write(&mut writer).await.is_err() {break;}
+                            continue;
+                        }
                         match serde_json::from_value::<RequestEnvelope>(value) {
                             Ok(request) => request,
                             Err(_) => {
@@ -123,7 +130,7 @@ pub(super) async fn run(
                         }
                     }
                 } else {
-                    match dispatch(engine.clone(), connection, request).await {
+                    match dispatch(engine.clone(), connection, request, network.clone()).await {
                         Ok(reply) => Response::Small(reply),
                         Err(error) => { result = Err(error); break; }
                     }

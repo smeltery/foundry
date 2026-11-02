@@ -54,6 +54,76 @@ impl PendingTransition {
     }
 }
 impl FullTeamStore {
+    pub fn prepare_formation_with_relay(
+        &self,
+        base: &LoadedTeam,
+        fields: Formation<'_>,
+        relay: Option<&str>,
+        now_ms: i64,
+    ) -> Result<PendingFormation> {
+        if relay.is_some_and(|value| value.len() > MAX_CHECKPOINT_BYTES) {
+            return Err(StoreError::TooLarge);
+        }
+        self.protection.check()?;
+        if !Arc::ptr_eq(&self.instance, &base.instance) {
+            return Err(StoreError::Binding);
+        }
+        if base.checkpoint.document().is_some() || base.revision() != 0 {
+            return Err(StoreError::Conflict);
+        }
+        let state = TeamState::found(
+            fields,
+            self.identity.secret_key(),
+            &self.policy.profile,
+            now_ms,
+            &mut SystemEntropy,
+        )
+        .map_err(|_| StoreError::Invalid)?;
+        let state = match relay {
+            Some(relay) => state
+                .set_relay(self.identity.secret_key(), Some(relay), now_ms)
+                .map_err(|_| StoreError::Invalid)?,
+            None => state,
+        };
+        let mut checkpoint = Checkpoint::empty(
+            self.instance.incarnation,
+            self.identity.endpoint_id(),
+            self.policy.digest,
+        );
+        checkpoint.configure(&self.policy);
+        checkpoint.network_generation = u64::from(self.policy.codes.is_some());
+        checkpoint.revision = 1;
+        checkpoint.parent = base.digest;
+        checkpoint.accepted_ms = now_ms;
+        checkpoint.state = StoredState::Active {
+            document: Box::new(state.document().clone()),
+        };
+        checkpoint.operation_ms = now_ms;
+        checkpoint::encode(&checkpoint)?;
+        validation::validate(&checkpoint, &self.policy, now_ms)?;
+        Ok(PendingFormation {
+            instance: self.instance.clone(),
+            base: base.digest,
+            checkpoint,
+        })
+    }
+
+    pub fn prepare_relay(
+        &self,
+        base: &LoadedTeam,
+        relay: Option<&str>,
+        now: i64,
+    ) -> Result<PendingTransition> {
+        if relay.is_some_and(|value| value.len() > MAX_CHECKPOINT_BYTES) {
+            return Err(StoreError::TooLarge);
+        }
+        let state = self
+            .engine(base, now)?
+            .set_relay(self.identity.secret_key(), relay, now)
+            .map_err(|_| StoreError::Invalid)?;
+        self.candidate(base, state, now)
+    }
+
     pub(super) fn sync_committed(&self) -> Result<()> {
         #[cfg(test)]
         if self.fail_sync {

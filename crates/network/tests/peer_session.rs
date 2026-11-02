@@ -147,3 +147,14 @@ mod code_bootstrap;
 mod driver;
 #[path = "peer_session/engine_inbox.rs"]
 mod engine_inbox;
+
+#[path = "peer_session/runtime_cancellation.rs"]
+mod runtime_cancellation;
+#[path = "peer_session/runtime_controls.rs"]
+mod runtime_controls;
+#[path = "peer_session/runtime_payload.rs"]
+mod runtime_payload;
+#[path = "peer_session/runtime_receipts.rs"]
+mod runtime_receipts;
+#[path = "peer_session/runtime_routing.rs"]
+mod runtime_routing;

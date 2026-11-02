@@ -12,6 +12,32 @@ const DEADLINE: Duration = Duration::from_secs(15);
 
 type TestResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
 
+#[tokio::test]
+async fn failed_peer_handshake_does_not_end_accepting_healthy_connections() -> TestResult {
+    let server = std::sync::Arc::new(NetworkEndpoint::bind(config()).await?);
+    let mut incompatible = config();
+    incompatible.profile.team_alpn = b"fixture/unrecognized".to_vec();
+    let rejected = NetworkEndpoint::bind(incompatible).await?;
+    let healthy = NetworkEndpoint::bind(config()).await?;
+    let accepting = server.clone();
+    let accepted = tokio::spawn(async move { accepting.accept(DEADLINE).await });
+    assert!(
+        rejected
+            .connect(server.address(), Channel::Team, DEADLINE)
+            .await
+            .is_err()
+    );
+    let client = healthy
+        .connect(server.address(), Channel::Team, Duration::from_secs(2))
+        .await?;
+    let incoming = accepted.await??;
+    assert_eq!(incoming.remote_id(), healthy.id());
+    client.close(0u32.into(), b"fixture finished");
+    incoming.close(0u32.into(), b"fixture finished");
+    tokio::join!(server.close(), rejected.shutdown(), healthy.shutdown());
+    Ok(())
+}
+
 struct Observations {
     remote_ids_match: bool,
     frames_match: bool,

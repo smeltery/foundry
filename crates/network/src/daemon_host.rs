@@ -1,4 +1,4 @@
-//! Foreground local daemon owner. Peer transport is not enabled by this host.
+//! Foreground local IPC and explicitly configured peer runtime owner.
 use crate::{
     daemon_config::DaemonConfig,
     daemon_engine::{
@@ -26,10 +26,13 @@ use tokio::{
 mod cancellation;
 #[path = "daemon_host/connection.rs"]
 mod connection;
+pub(crate) mod network;
 #[path = "daemon_host/response.rs"]
 mod response;
 #[path = "daemon_host/spool.rs"]
 mod spool;
+#[path = "daemon_host/startup.rs"]
+mod startup;
 #[path = "daemon_host/waiting.rs"]
 mod waiting;
 pub use cancellation::DaemonTask;
@@ -63,6 +66,8 @@ pub struct Daemon {
     listener: LocalListener,
     engine: Arc<OwnedEngine>,
     cancellation: Arc<WaitRegistry>,
+    network: Option<crate::daemon_network::NetworkHandle>,
+    network_owner: Option<crate::daemon_network::NetworkOwner>,
 }
 struct OwnedEngine {
     inner: Mutex<Engine>,
@@ -74,47 +79,10 @@ struct OwnedEngine {
 }
 impl Daemon {
     pub async fn open(config: DaemonConfig) -> Result<Self, HostError> {
-        config.validate().map_err(|_| HostError::Configuration)?;
-        let policy = config
-            .folder_policy()
-            .map_err(|_| HostError::Configuration)?;
-        let root = config
-            .state_directory
-            .canonicalize()
-            .map_err(|_| HostError::Startup)?;
-        let directory =
-            Dir::open_ambient_dir(&root, ambient_authority()).map_err(|_| HostError::Startup)?;
-        let lease = DaemonLease::acquire(&directory).map_err(|_| HostError::Startup)?;
-        let engine_lease = lease.retain().map_err(|_| HostError::Startup)?;
-        let engine_root = root.clone();
-        let engine = tokio::task::spawn_blocking(move || {
-            let engine = Engine::open(
-                &engine_root,
-                policy,
-                TrustedIdentity {
-                    person: config.person,
-                    machine: config.machine,
-                },
-            )?;
-            Ok::<_, EngineError>(OwnedEngine {
-                inner: Mutex::new(engine),
-                replies: Arc::new(Semaphore::new(1)),
-                root: directory,
-                _lease: engine_lease,
-            })
-        })
-        .await
-        .map_err(|_| HostError::Task)?
-        .map_err(|_| HostError::Storage)?;
-        let listener =
-            LocalListener::bind_at(&root, &config.socket_directory, lease, WRITE_TIMEOUT)
-                .await
-                .map_err(|_| HostError::Startup)?;
-        Ok(Self {
-            listener,
-            engine: Arc::new(engine),
-            cancellation: Arc::new(WaitRegistry::default()),
-        })
+        startup::open(config, None).await
+    }
+    pub async fn open_from(config: DaemonConfig, reference_base: &Path) -> Result<Self, HostError> {
+        startup::open(config, Some(reference_base)).await
     }
 
     /// Prefer this owned handle when an external task must abort the daemon.
@@ -152,8 +120,14 @@ impl Daemon {
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
                 .map_err(|_| HostError::Signal)?;
         let mut result = Ok(());
+        let mut network_stop = self.network.as_ref().map(|network| network.stopping());
         loop {
             tokio::select! {
+                _ = async {
+                    if let Some(stop)=&mut network_stop {
+                        if !*stop.borrow() {let _=stop.changed().await;}
+                    } else {std::future::pending::<()>().await;}
+                }=>{result=Err(HostError::Task);break;}
                 changed = stopping.changed() => {
                     if changed.is_err() || *stopping.borrow() { break; }
                 }
@@ -183,9 +157,10 @@ impl Daemon {
                             let fence = self.cancellation.connection(connection);
                             let engine = self.engine.clone();
                             let shutdown = shutdown.clone();
+                            let network = self.network.clone();
                             workers.tasks.spawn(async move {
                                 let _permit = permit;
-                                connection::run(stream, engine, connection, shutdown, fence).await
+                                connection::run(stream, engine, connection, shutdown, fence, network).await
                             });
                         }
                         Err(crate::NetworkError::TimedOut) => {}
@@ -200,6 +175,12 @@ impl Daemon {
             if !matches!(finished, Ok(Ok(()))) {
                 result = Err(HostError::Task);
             }
+        }
+        drop(self.network);
+        if let Some(owner) = self.network_owner
+            && owner.shutdown().await.is_err()
+        {
+            result = Err(HostError::Task);
         }
         result
     }

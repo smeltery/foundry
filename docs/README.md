@@ -11,6 +11,8 @@ is underway; each page distinguishes tested functionality from planned features.
 - [Sessions, attempts and cancellation](user/sessions.md)
 - [Network command interface](user/network.md)
 - [Local foreground daemon](user/daemon.md)
+- [Configure daemon peer transport](user/peer-configuration.md)
+- [Join a team and exchange peer mail](user/peer-network.md)
 - [Plugin command surface](user/plugins.md)
 - [Client packages and configuration](user/client-packages.md)
 

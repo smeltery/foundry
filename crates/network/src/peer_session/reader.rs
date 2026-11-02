@@ -1,4 +1,5 @@
 use super::*;
+use tokio::io::AsyncReadExt;
 
 /// Opaque complete frame from one actual authenticated connection. The binding
 /// cannot be asserted through JSON or manufactured by a caller of receive_frame.
@@ -27,10 +28,19 @@ impl PeerReader {
         }
         self.usable = false;
         let result = async {
+            // Idle connections have no partially read record to time out. Once
+            // the first byte arrives, one deadline covers the remaining frame.
+            let first = tokio::select! {
+                _ = async { loop {
+                    if *self.cancel.borrow() || self.cancel.changed().await.is_err() { break; }
+                }} => return Err(PeerError::Closed),
+                first = self.receive.read_u8() => first.map_err(|_| PeerError::Closed)?,
+            };
+            let mut record = std::io::Cursor::new([first]).chain(&mut self.receive);
             let frame = io::bounded(
                 &mut self.cancel,
                 self.deadline,
-                crate::read_frame(&mut self.receive, self.deadline),
+                crate::read_frame(&mut record, self.deadline),
             )
             .await??
             .ok_or(PeerError::Closed)?;

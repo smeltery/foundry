@@ -202,7 +202,7 @@ fn exact_v2_migration_preserves_rows_intents_retry_and_sequence() {
     assert_eq!(
         raw.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
     assert_eq!(
         raw.query_row("SELECT count(*) FROM mail", [], |r| r.get::<_, i64>(0))

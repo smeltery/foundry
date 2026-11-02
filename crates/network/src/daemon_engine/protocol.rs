@@ -127,6 +127,11 @@ pub enum Outcome {
         duplicate: bool,
         state: MailState,
     },
+    TransportQueued {
+        message_id: String,
+        peer: String,
+        revision: u64,
+    },
     Inbox {
         messages: Vec<Mail>,
         text: String,

@@ -18,14 +18,25 @@ async fn main() -> std::process::ExitCode {
         eprintln!("Usage: f5y-daemon --config PATH");
         return ExitCode::from(2);
     }
-    let config = match DaemonConfig::load(&PathBuf::from(&args[1])) {
+    let config_path = match std::path::absolute(PathBuf::from(&args[1])) {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("error: daemon configuration path could not be resolved");
+            return ExitCode::from(2);
+        }
+    };
+    let config = match DaemonConfig::load(&config_path) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("error: {error}");
             return ExitCode::from(2);
         }
     };
-    let daemon = match Daemon::open(config).await {
+    let Some(reference_base) = config_path.parent() else {
+        eprintln!("error: daemon configuration directory is unavailable");
+        return ExitCode::from(2);
+    };
+    let daemon = match Daemon::open_from(config, reference_base).await {
         Ok(daemon) => daemon,
         Err(error) => {
             eprintln!("error: {error}");

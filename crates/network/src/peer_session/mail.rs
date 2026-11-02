@@ -11,6 +11,7 @@ type RecipientResolver = dyn Fn(&str) -> Result<String> + Send;
 pub struct TextMailbox {
     store: MailStore,
     resolve: Box<RecipientResolver>,
+    arrived: Option<Arc<tokio::sync::Notify>>,
 }
 impl TextMailbox {
     pub fn new(
@@ -20,7 +21,14 @@ impl TextMailbox {
         Self {
             store,
             resolve: Box::new(resolve),
+            arrived: None,
         }
+    }
+    /// Notify after durable insertion, before any ACK network output. A broken
+    /// writer or lost driver event cannot hide already accepted inbox mail.
+    pub fn with_notification(mut self, arrived: Arc<tokio::sync::Notify>) -> Self {
+        self.arrived = Some(arrived);
+        self
     }
     pub(super) fn receive(&mut self, message: &wire::Message) -> Result<bool> {
         let recipient = (self.resolve)(&message.to)?;
@@ -47,6 +55,9 @@ impl TextMailbox {
                 MailError::UnsupportedPayload => PeerError::Unsupported,
                 _ => PeerError::Storage,
             })?;
+        if let Some(arrived) = &self.arrived {
+            arrived.notify_waiters();
+        }
         Ok(inserted == Insert::Duplicate)
     }
 }
