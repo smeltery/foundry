@@ -68,6 +68,7 @@ class FloxEntryTests(unittest.TestCase):
         scripts.mkdir(parents=True)
         self.entry = scripts / "flox.sh"
         shutil.copyfile(SOURCE, self.entry)
+        shutil.copyfile(SOURCE.with_name("with-toolchain.sh"), scripts / "with-toolchain.sh")
         (scripts / "flox_verify.py").write_text(VERIFIER)
         self.lock = self.root / ".flox/env/manifest.lock"
         self.lock.parent.mkdir(parents=True)

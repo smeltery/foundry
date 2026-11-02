@@ -1,0 +1,26 @@
+version: 1
+# Advisory local verification of the proposed merge: `bellows verify --profile native`.
+# Hosted CI and its required check still decide merges. The naming-policy scan in
+# the hygiene group needs FOUNDRY_NAMING_POLICY, so it stays in hosted CI.
+profiles:
+  native:
+    executor: flox
+    checks:
+      environment:
+        argv: [python3, scripts/ci/flox_verify.py]
+      install:
+        argv: [bun, install, --frozen-lockfile, --ignore-scripts]
+        needs: [environment]
+      browser:
+        argv: [bun, run, docs:browser]
+        needs: [install]
+      rust:
+        argv: [bash, scripts/ci/with-toolchain.sh, python3, scripts/checks/all.py, --group, rust]
+        needs: [environment]
+      integration:
+        argv: [bash, scripts/ci/with-toolchain.sh, python3, scripts/checks/all.py, --group, integration]
+        needs: [install]
+      quick:
+        argv: [bash, scripts/ci/with-toolchain.sh, python3, scripts/checks/all.py, --group,
+               dependencies, python, adapter, mcp-sdk, docs]
+        needs: [browser]
