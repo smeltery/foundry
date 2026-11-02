@@ -12,7 +12,7 @@ bash scripts/ci/flox.sh python3 scripts/checks/all.py
 
 | Group | Checks |
 | --- | --- |
-| `rust` | Formatting, Clippy with warnings denied, workspace tests |
+| `rust` | Formatting, Clippy with warnings denied, workspace tests run in parallel by cargo-nextest, doctests |
 | `dependencies` | Locked Cargo advisory, dependency-ban and source checks |
 | `python` | Repository validation tests and catalog fixture validation |
 | `adapter` | Strict TypeScript checking, ESM build and offline adapter protocol tests |

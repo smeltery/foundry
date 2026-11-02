@@ -16,9 +16,9 @@ SPEC.loader.exec_module(verify)
 
 
 def fixture():
-    names = ["rust", "bun", "nodejs", "python", "pre-commit", "cargo-deny",
+    names = ["rust", "bun", "nodejs", "python", "pre-commit", "cargo-deny", "cargo-nextest",
              "actionlint", "shellcheck", "git", "pkg-config", "cc", "binutils", "toolchain-env"]
-    versions = ["1.95.0", "1.3.11", "22.23.1", "3.13.13", "4.5.1", "0.19.9",
+    versions = ["1.95.0", "1.3.11", "22.23.1", "3.13.13", "4.5.1", "0.19.9", "0.9.137",
                 "1.7.12", "0.11.0", "2.54.0", "0.29.2", None, "fixture-only", None]
     systems = ["aarch64-darwin", "x86_64-darwin", "aarch64-linux", "x86_64-linux"]
     origin = "github:example/toolchain/" + "a" * 40
@@ -43,7 +43,7 @@ class LockTests(unittest.TestCase):
         for system in manifest["options"]["systems"]:
             with self.subTest(system=system):
                 selected = verify.validate_lock(manifest, lock, system)
-                self.assertEqual(len(selected), 13)
+                self.assertEqual(len(selected), 14)
                 self.assertTrue(all(str(paths[0]).endswith(system) for paths in selected.values()))
 
     def test_incomplete_duplicate_wrong_system_or_wrong_source_fails(self):
@@ -81,7 +81,7 @@ class LockTests(unittest.TestCase):
         lock["manifest"] = copy.deepcopy(manifest)
         for record in lock["packages"]:
             record["locked-url"] += "?narHash=sha256-" + "A" * 43 + "%3D&dir=.flox%2Ftoolchain"
-        self.assertEqual(len(verify.validate_lock(manifest, lock, "aarch64-darwin")), 13)
+        self.assertEqual(len(verify.validate_lock(manifest, lock, "aarch64-darwin")), 14)
         for suffix in ("?dir=elsewhere", "?dir=../escape", "?dir=.flox/toolchain&dir=.flox/toolchain",
                        "?narHash=bad", "?narHash=sha256-AA==", "?unknown=1", "?dir="):
             changed = copy.deepcopy(lock)
@@ -99,7 +99,7 @@ class LockTests(unittest.TestCase):
             record["requested-outputs-to-install"] = []
             record["outputs-to-install"] = ["out"]
         selected = verify.validate_lock(manifest, lock, "aarch64-darwin")
-        self.assertEqual(len(selected), 13)
+        self.assertEqual(len(selected), 14)
         self.assertEqual(str(selected["rust"][0]),
                          "/nix/store/" + "a" * 32 + "-rust-aarch64-darwin")
         for requested, default in [(["missing"], ["out"]), ([], ["missing"]),
@@ -232,7 +232,7 @@ class CommandTests(unittest.TestCase):
                 evidence = verify.verify(root, True)
                 self.assertEqual(os.environ, before)
             self.assertEqual(set(evidence["commands"]), set(banners) | {"ar", "ranlib"})
-            self.assertEqual(origins.call_count, 20)
+            self.assertEqual(origins.call_count, 21)
             self.assertIn(unittest.mock.call(["/activated/bin/actionlint", "-version"]), run.call_args_list)
             smoke.assert_called_once()
             self.assertTrue(evidence["c_link_smoke"])
