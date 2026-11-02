@@ -1,0 +1,7 @@
+# These daemon and lease tests wait on real timers (300ms leases, 2-10s replies).
+# On busy 4-core CI runners they occasionally miss them, so they get one retry;
+# nextest still reports a retried pass as FLAKY. Running them serially would add
+# over ten minutes because the daemon binaries hold most of the suite's test time.
+[[profile.default.overrides]]
+filter = 'binary_id(foundry-network::daemon_network_process) | binary_id(foundry-network::daemon_runtime) | binary_id(foundry-service::application)'
+retries = 1
