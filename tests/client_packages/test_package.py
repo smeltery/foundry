@@ -28,6 +28,13 @@ class PackageTests(unittest.TestCase):
         # Never skipped: the standard Python check gates the delivered real tree.
         validate(repository())
 
+    def test_shared_skill_fits_native_utf8_byte_limit(self):
+        path = repository() / PACKAGE / 'skills/foundry/SKILL.md'
+        content = path.read_bytes()
+        content.decode('utf-8')
+        self.assertLessEqual(len(content), 8000,
+                             'Keep the complete shared skill within the native byte limit')
+
     def test_isolated_packaged_root_and_hidden_archive_inventory(self):
         validate(self.source)
         expected = inventory(self.source)
@@ -68,6 +75,12 @@ class PackageTests(unittest.TestCase):
             with self.subTest(relative=relative):
                 self.changed_json(self.source / relative, change)
 
+    def test_claude_marketplace_description_requires_text(self):
+        path = self.source / '.claude-plugin/marketplace.json'
+        for value in ('', '   ', None, 42, {}):
+            with self.subTest(value=value):
+                self.changed_json(path, lambda document: document.update(description=value))
+
     def test_versions_schema_and_client_fields(self):
         for client in ('claude', 'codex', 'cursor'):
             self.changed_json(self.package / f'.{client}-plugin/plugin.json',
@@ -80,7 +93,8 @@ class PackageTests(unittest.TestCase):
                           lambda d: d.update(skills=[]))
 
     def test_missing_workflow_asset_and_hidden_descriptor(self):
-        for relative in ('commands/f5y-fix-ci.md', 'assets/logo-light.svg',
+        for relative in ('skills/f5y-fix-ci/SKILL.md', 'skills/f5y-build/SKILL.md',
+                         'assets/logo-light.svg',
                          '.claude-plugin/plugin.json'):
             path = self.package / relative
             data = path.read_bytes()
@@ -107,7 +121,7 @@ class PackageTests(unittest.TestCase):
             validate(self.source)
 
     def test_escaped_links_and_license_drift(self):
-        command = self.package / 'commands/f5y-ask.md'
+        command = self.package / 'skills/f5y-ask/SKILL.md'
         original = command.read_text()
         command.write_text(original + '\n[Outside](../../../LICENSE)\n')
         with self.assertRaises(InvalidPackage):

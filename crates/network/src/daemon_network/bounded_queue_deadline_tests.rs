@@ -41,7 +41,7 @@ async fn preparation(ack: bool, change_epoch: bool) {
     let (a, b) = (Node::open("amber").await, Node::open("birch").await);
     admit(&a, &b).await;
     let (cancel, _) = watch::channel(false);
-    let (session, mut remote) = pair(&a, &b, &cancel).await;
+    let (session, mut remote) = pair(&a, &b, &cancel, Duration::from_secs(10)).await;
     let outbox = Arc::new(outbox::Outbox::open(&a.state).await.unwrap());
     let (send, mut receive) = mpsc::channel(EVENT_BUDGET);
     let peer = b.state.endpoint.id();

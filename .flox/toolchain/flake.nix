@@ -8,7 +8,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     runtimes.url = "github:NixOS/nixpkgs/01fbdeef22b76df85ea168fbfe1bfd9e63681b30";
-    python.url = "github:NixOS/nixpkgs/634df81a6bde9521cc2c14bc512ba5b2a89ae13f";
     utilities.url = "github:NixOS/nixpkgs/def71860b28ab804d787a6bcd53b8cfa98c2b7c1";
     hooks.url = "github:NixOS/nixpkgs/2be1525b287109fdbbd1d9e47b90abf73d8547af";
   };
@@ -23,9 +22,6 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
           runtimes = import inputs.runtimes { inherit system; };
-          pythonPackages = pkgs.callPackage
-            (inputs.python + "/pkgs/development/interpreters/python/default.nix") { };
-          python = pythonPackages.python313.override { self = python; };
           utilities = import inputs.utilities { inherit system; };
           hooks = import inputs.hooks { inherit system; };
           target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
@@ -37,7 +33,8 @@
           };
           bun = runtimes.bun;
           nodejs = runtimes.callPackage ./nodejs.nix { };
-          inherit python;
+          # Hydra-built in this pin, so CI downloads Python instead of compiling it.
+          python = utilities.python313;
           pre-commit = hooks.pre-commit;
           cargo-deny = utilities.cargo-deny;
           actionlint = utilities.actionlint;

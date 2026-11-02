@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.scope.outputs.matrix }}
+      activation: ${{ steps.scope.outputs.activation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -40,6 +41,9 @@ jobs:
     name: check (${{ matrix.group }}, ${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      # Incremental artifacts only bloat the dependency cache; CI never rebuilds in place.
+      CARGO_INCREMENTAL: "0"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -69,34 +73,54 @@ jobs:
           FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
         run: bash scripts/ci/flox.sh true
       - name: Install frozen tooling dependencies
-        if: contains(fromJSON('["adapter", "integration", "docs"]'), matrix.group)
+        if: matrix.bun
         run: bash scripts/ci/flox.sh bun install --frozen-lockfile --ignore-scripts
       - name: Install pinned browser
-        if: matrix.group == 'docs'
+        if: matrix.browser
         run: bash scripts/ci/flox.sh bun run docs:browser
       - name: Permit pinned browser sandbox
-        if: matrix.group == 'docs'
+        if: matrix.browser
         run: bash scripts/ci/browser-sandbox.sh
+      # Keyed by toolchain and dependency locks; main saves, pull requests only restore.
+      - id: cargo-cache
+        name: Restore Cargo dependencies and build output
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock') }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.group }}-${{ hashFiles('.flox/env/manifest.lock') }}-
       - name: Run shared checks
         env:
           FOUNDRY_NAMING_POLICY: ${{ secrets.FOUNDRY_NAMING_POLICY }}
-          CHECK_GROUP: ${{ matrix.group }}
-        run: bash scripts/ci/flox.sh python3 scripts/checks/all.py --group "$CHECK_GROUP"
+          CHECKS: ${{ matrix.checks }}
+        run: |
+          read -ra checks <<< "$CHECKS"
+          bash scripts/ci/flox.sh python3 scripts/checks/all.py --group "${checks[@]}"
       - name: Require unchanged dependency locks
         run: git diff --exit-code -- .flox/env/manifest.lock Cargo.lock bun.lock .flox/toolchain/flake.lock
+      - name: Save Cargo dependencies and build output
+        if: github.event_name == 'push' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
 
   activation:
+    needs: [plan]
     name: activation (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {system: x86_64-linux, runner: ubuntu-24.04}
-          - {system: aarch64-linux, runner: ubuntu-24.04-arm}
-          - {system: aarch64-darwin, runner: macos-15}
-          - {system: x86_64-darwin, runner: macos-15-intel}
+      matrix: ${{ fromJSON(needs.plan.outputs.activation) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

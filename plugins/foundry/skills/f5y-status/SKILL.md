@@ -1,10 +1,11 @@
 ---
+name: f5y-status
 description: Inspect Foundry session state while keeping queueing, delivery and completion distinct.
 ---
 
 # Foundry status
 
-Apply the [Foundry coordination skill](../skills/foundry/SKILL.md).
+Apply the [Foundry coordination skill](../foundry/SKILL.md).
 
 For a supplied ID, call `session_get` directly. Otherwise call `session_list` and
 identify the intended session by prompt and directory. The list is bounded and
