@@ -79,15 +79,18 @@ def validate_content(package, documents):
     require('Package validation does not' in skill, 'missing static-validation boundary')
     paths = []
     for workflow in WORKFLOWS:
-        path = contained(package, f'commands/f5y-{workflow}.md')
+        path = contained(package, f'skills/f5y-{workflow}/SKILL.md')
         header, body = frontmatter(path)
-        fields(header, ('description',))
+        fields(header, ('name', 'description'))
+        require(header['name'] == f'f5y-{workflow}', 'workflow skill identity')
         text_value(header['description'])
         require(skill_path in links(package, path, body), 'workflow must link coordination skill')
         require(len(body.splitlines()) >= 8, 'workflow lacks task instructions')
         tool_names(body)
         paths.append(path)
-    require(set((package / 'commands').glob('*.md')) == set(paths), 'unexpected workflow set')
+    require(set((package / 'skills').glob('*/SKILL.md')) == {*paths, skill_path},
+            'unexpected workflow set')
+    require(not (package / 'commands').exists(), 'duplicate workflow discovery directory')
     rule_path = contained(package, 'rules/foundry-handoff.mdc')
     rule, body = frontmatter(rule_path)
     fields(rule, ('description', 'alwaysApply'))

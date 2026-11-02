@@ -116,9 +116,13 @@ impl Server {
         if self.initialized {
             return Err((-32600, "Already initialized"));
         }
-        if params["protocolVersion"] != PROTOCOL_VERSION {
-            return Err((-32602, "Unsupported protocol version"));
-        }
+        let requested = params["protocolVersion"]
+            .as_str()
+            .ok_or((-32602, "Protocol version must be a string"))?;
+        let selected = match requested {
+            "2025-06-18" | PROTOCOL_VERSION => requested,
+            _ => PROTOCOL_VERSION,
+        };
         if !params["capabilities"].is_object()
             || !params["clientInfo"]["name"].is_string()
             || !params["clientInfo"]["version"].is_string()
@@ -127,7 +131,7 @@ impl Server {
         }
         self.initialized = true;
         Ok(
-            json!({"protocolVersion":PROTOCOL_VERSION,"capabilities":{"tools":{}},
+            json!({"protocolVersion":selected,"capabilities":{"tools":{}},
             "serverInfo":{"name":"foundry-mcp","version":env!("CARGO_PKG_VERSION")}}),
         )
     }
