@@ -39,7 +39,28 @@ class ScopeTests(unittest.TestCase):
         jobs = scope.matrix(groups)["include"]
         self.assertEqual({job["runner"] for job in jobs if job["group"] == "integration"},
                          {"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15"})
-        self.assertEqual(len(scope.matrix(scope.GROUPS)["include"]), 10)
+        self.assertEqual(len(scope.matrix(scope.GROUPS)["include"]), 5)
+
+    def test_batched_matrix_runs_every_selected_group_once_on_linux_x64(self):
+        for groups in [scope.GROUPS, ("docs", "hygiene"), ("rust", "adapter", "integration", "docs", "hygiene")]:
+            with self.subTest(groups=groups):
+                jobs = [job for job in scope.matrix(groups)["include"] if job["runner"] == "ubuntu-24.04"]
+                checks = [check for job in jobs for check in job["checks"].split()]
+                self.assertEqual(sorted(checks), sorted(groups))
+        jobs = {job["group"]: job for job in scope.matrix(scope.GROUPS)["include"]
+                if job["runner"] == "ubuntu-24.04"}
+        self.assertEqual(set(jobs), {"rust", "integration", "quick"})
+        self.assertEqual((jobs["quick"]["bun"], jobs["quick"]["browser"]), (True, True))
+        self.assertEqual((jobs["rust"]["bun"], jobs["rust"]["browser"]), (False, False))
+        self.assertEqual((jobs["integration"]["bun"], jobs["integration"]["browser"]), (True, False))
+
+    def test_intel_macos_activation_runs_only_outside_pull_requests(self):
+        systems = lambda event: {job["system"] for job in scope.activation_matrix(event)["include"]}
+        native = {"x86_64-linux", "aarch64-linux", "aarch64-darwin", "x86_64-darwin"}
+        for event in ("push", "workflow_dispatch"):
+            with self.subTest(event=event):
+                self.assertEqual(systems(event), native)
+        self.assertEqual(systems("pull_request"), native - {"x86_64-darwin"})
 
     def test_real_git_rename_and_deletion_retain_original_scope(self):
         with tempfile.TemporaryDirectory() as directory:

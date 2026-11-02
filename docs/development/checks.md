@@ -21,7 +21,7 @@ bash scripts/ci/flox.sh python3 scripts/checks/all.py
 | `docs` | Documentation tooling tests, Markdown, links and rendered diagrams |
 | `hygiene` | License digest, whitespace, LOC, external naming policy and workflow syntax |
 
-Use `--group rust`, for example, to run one group. `--fast` skips Rust test execution but retains lint and complete documentation validation. Before pushing, run the full suite. A missing tool or policy is an error, not an implicit skip.
+Use `--group rust`, for example, to run one group, or list several groups after `--group`. `--fast` skips Rust test execution but retains lint and complete documentation validation. Before pushing, run the full suite. A missing tool or policy is an error, not an implicit skip.
 
 Dependency checks use the pinned cargo-deny tool and `deny.toml`. Unresolved
 advisories fail the check; duplicate-version warnings remain visible. This group
@@ -48,11 +48,18 @@ bash scripts/ci/flox.sh pre-commit run --all-files
 Pre-commit runs the fast suite; pre-push runs the full suite. Main-branch pushes
 and manual CI runs execute all eight groups on Linux x64 and additionally require
 the integration group on Linux
-arm64 and macOS arm64. Those integration jobs build both executables and run the
+arm64 and macOS arm64. On Linux x64, `rust` and `integration` each get a job and
+the remaining short groups share one `quick` job, so setup is paid once. The
+integration jobs build both executables and run the
 real-helper tests that the ordinary Rust suite skips. The aggregate gate requires
 every matrix job to succeed. Four additional fresh native activation jobs require
 the complete pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon.
 These jobs also compile application dependencies and reject changed locks.
+Pull requests skip the macOS Intel activation job, the slowest runner; main-branch
+pushes still require it.
+
+Check jobs restore Cargo registry and `target/` caches keyed by the Flox and Cargo
+locks. Only main-branch pushes save them, and release builds never use them.
 Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
 

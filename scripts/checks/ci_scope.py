@@ -10,6 +10,13 @@ import subprocess
 GROUPS = ("rust", "dependencies", "python", "adapter", "integration", "mcp-sdk", "docs", "hygiene")
 CRATES = {"contracts", "store", "runtime", "mcp", "service", "network", "connectors", "tools"}
 SHARED = (".github/", ".flox/", "scripts/", "tests/", "vendor/", "crates/contracts/")
+# Groups that finish in a minute or two share one runner instead of each paying for setup.
+DEDICATED = ("rust", "integration")
+BUN_GROUPS = {"adapter", "integration", "docs"}
+ACTIVATION = (("x86_64-linux", "ubuntu-24.04"), ("aarch64-linux", "ubuntu-24.04-arm"),
+              ("aarch64-darwin", "macos-15"), ("x86_64-darwin", "macos-15-intel"))
+# Intel macOS runners are the slowest and scarcest; pull requests rely on main to cover them.
+MAIN_ONLY_SYSTEMS = {"x86_64-darwin"}
 
 
 def select_groups(event, paths):
@@ -33,12 +40,25 @@ def select_groups(event, paths):
     return tuple(group for group in GROUPS if group in selected)
 
 
+def job(name, checks, runner):
+    return {"group": name, "checks": " ".join(checks), "runner": runner,
+            "bun": any(check in BUN_GROUPS for check in checks), "browser": "docs" in checks}
+
+
 def matrix(groups):
-    jobs = [{"group": group, "runner": "ubuntu-24.04"} for group in groups]
+    jobs = [job(group, (group,), "ubuntu-24.04") for group in groups if group in DEDICATED]
+    quick = tuple(group for group in groups if group not in DEDICATED)
+    if quick:
+        jobs.append(job("quick", quick, "ubuntu-24.04"))
     if "integration" in groups:
-        jobs.extend({"group": "integration", "runner": runner}
+        jobs.extend(job("integration", ("integration",), runner)
                     for runner in ("ubuntu-24.04-arm", "macos-15"))
     return {"include": jobs}
+
+
+def activation_matrix(event):
+    return {"include": [{"system": system, "runner": runner} for system, runner in ACTIVATION
+                        if event != "pull_request" or system not in MAIN_ONLY_SYSTEMS]}
 
 
 def changed_paths(base, head, *, cwd=None):
@@ -55,10 +75,12 @@ def main():
     event = os.environ["CI_EVENT"]
     paths = changed_paths(os.environ["CI_BASE"], os.environ["CI_HEAD"]) if event == "pull_request" else []
     groups = select_groups(event, paths)
-    encoded = json.dumps(matrix(groups), separators=(",", ":"))
+    checks, activation = matrix(groups), activation_matrix(event)
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-        output.write(f"matrix={encoded}\n")
-    print(f"Selected {len(matrix(groups)['include'])} jobs for {len(paths)} changed paths: {', '.join(groups)}")
+        output.write(f"matrix={json.dumps(checks, separators=(',', ':'))}\n")
+        output.write(f"activation={json.dumps(activation, separators=(',', ':'))}\n")
+    print(f"Selected {len(checks['include'])} check and {len(activation['include'])} activation jobs "
+          f"for {len(paths)} changed paths: {', '.join(groups)}")
 
 
 if __name__ == "__main__":
