@@ -26,7 +26,7 @@ async fn actual_driver_pump_keeps_a_receipt_out_of_a_presence_backlog() {
     let (a, b) = (Node::open("amber").await, Node::open("birch").await);
     admit(&a, &b).await;
     let (cancel, _) = watch::channel(false);
-    let (session, mut remote) = pair(&a, &b, &cancel).await;
+    let (session, mut remote) = pair(&a, &b, &cancel, Duration::from_secs(10)).await;
     let outbox = outbox::Outbox::open(&a.state).await.unwrap();
     let (send, mut receive) = mpsc::channel(EVENT_BUDGET);
     let peer = b.state.endpoint.id();
@@ -55,10 +55,8 @@ async fn actual_driver_pump_keeps_a_receipt_out_of_a_presence_backlog() {
         .enqueue_transport(&view.team, peer, &message())
         .unwrap();
     drop(view);
-    let started = Instant::now();
-    dispatch::batch(&a.state, &outbox, &mut live).await.unwrap();
-    // The actor is deliberately not consuming events, while actual streams and
-    // the driver/pump continue. This burst fits both original bounded lanes.
+    // The actor deliberately consumes no events. The finite burst precedes the
+    // ACK on the wire and fits both bounded lanes; the deadline covers the send.
     for n in 0..16 {
         remote
             .publish_presence(Presence {
@@ -68,6 +66,8 @@ async fn actual_driver_pump_keeps_a_receipt_out_of_a_presence_backlog() {
             .await
             .unwrap();
     }
+    let started = Instant::now();
+    dispatch::batch(&a.state, &outbox, &mut live).await.unwrap();
     loop {
         if matches!(
             remote.receive().await.unwrap(),
@@ -153,8 +153,8 @@ async fn presence_projection_rotates_and_cannot_erase_a_newer_version_or_cross_r
     admit(&a, &b).await;
     admit(&a, &c).await;
     let (cancel, _) = watch::channel(false);
-    let (ab, mut rb) = pair(&a, &b, &cancel).await;
-    let (ac, mut rc) = pair(&a, &c, &cancel).await;
+    let (ab, mut rb) = pair(&a, &b, &cancel, Duration::from_secs(10)).await;
+    let (ac, mut rc) = pair(&a, &c, &cancel, Duration::from_secs(10)).await;
     let outbox = outbox::Outbox::open(&a.state).await.unwrap();
     let (send, receive) = mpsc::channel(EVENT_BUDGET);
     let mut live = BTreeMap::new();

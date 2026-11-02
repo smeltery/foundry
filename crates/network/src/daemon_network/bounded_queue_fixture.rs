@@ -152,10 +152,11 @@ pub(super) async fn pair(
     a: &Node,
     b: &Node,
     cancel: &watch::Sender<bool>,
+    wait: Duration,
 ) -> (PeerSession, PeerSession) {
-    let options = || SessionOptions {
+    let options = |deadline| SessionOptions {
         profile: a.state.settings.profile.clone(),
-        deadline: DEADLINE,
+        deadline,
         cancel: cancel.subscribe(),
     };
     let (a, b) = tokio::join!(
@@ -163,9 +164,9 @@ pub(super) async fn pair(
             &a.state.endpoint,
             b.state.endpoint.address(),
             a.state.authority.clone(),
-            options()
+            options(DEADLINE)
         ),
-        PeerSession::accept(&b.state.endpoint, b.state.authority.clone(), options())
+        PeerSession::accept(&b.state.endpoint, b.state.authority.clone(), options(wait))
     );
     (a.unwrap(), b.unwrap())
 }

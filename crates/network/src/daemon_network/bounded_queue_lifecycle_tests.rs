@@ -16,11 +16,11 @@ struct Link {
     receive: mpsc::Receiver<Event>,
     _cancel: watch::Sender<bool>,
 }
-async fn link(capacity: usize) -> Link {
+async fn link(capacity: usize, wait: Duration) -> Link {
     let (a, b) = (Node::open("amber").await, Node::open("birch").await);
     admit(&a, &b).await;
     let (cancel, _) = watch::channel(false);
-    let (session, remote) = pair(&a, &b, &cancel).await;
+    let (session, remote) = pair(&a, &b, &cancel, wait).await;
     let outbox = outbox::Outbox::open(&a.state).await.unwrap();
     let (send, receive) = mpsc::channel(capacity);
     let peer = b.state.endpoint.id();
@@ -98,7 +98,7 @@ async fn presence_then_eof_keeps_the_closed_watch_snapshot_only_as_offline_direc
         mut remote,
         mut receive,
         _cancel,
-    } = link(EVENT_BUDGET).await;
+    } = link(EVENT_BUDGET, Duration::from_secs(10)).await;
     let peer = b.state.endpoint.id();
     let snapshot = b
         .state
@@ -231,7 +231,7 @@ async fn settled(
 }
 #[tokio::test]
 async fn accepted_receipt_settles_on_eof_even_without_its_actor_notification() {
-    let mut link = link(EVENT_BUDGET).await;
+    let mut link = link(EVENT_BUDGET, Duration::from_secs(10)).await;
     let expected = send(&mut link).await;
     accept(&mut link.remote).await;
     let receipt = tokio::time::timeout(Duration::from_secs(10), link.receive.recv())
@@ -265,10 +265,9 @@ async fn accepted_receipt_settles_on_eof_even_without_its_actor_notification() {
 }
 #[tokio::test]
 async fn accepted_receipt_survives_actual_driver_event_overflow_without_notification() {
-    // One host slot plus the blocked pump plus the driver's32 slots hold34
-    // StateCommitted events. The following ACK validates/publishes, but its
-    // ordinary event cannot enter the full driver lane and that driver closes.
-    let mut link = link(1).await;
+    // One host slot, the blocked pump and 32 driver slots hold 34 StateCommitted events.
+    // The ACK publishes, overflows and closes the driver; the remote outwaits that work.
+    let mut link = link(1, Duration::from_secs(60)).await;
     let expected = send(&mut link).await;
     for _ in 0..34 {
         link.remote.publish_state().await.unwrap();
@@ -321,7 +320,7 @@ async fn retirement_closes_transport_before_waiting_for_a_busy_authority_gate() 
         mut remote,
         receive,
         _cancel,
-    } = link(EVENT_BUDGET).await;
+    } = link(EVENT_BUDGET, Duration::from_secs(10)).await;
     let peer = b.state.endpoint.id();
     let guard = a.state.authority.team_publication().await.unwrap();
     let connection = live.remove(&peer).unwrap();
