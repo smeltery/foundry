@@ -130,13 +130,13 @@ def hygiene():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", choices=("all", "rust", "dependencies", "python", "adapter", "integration", "mcp-sdk", "docs", "hygiene"), default="all")
+    parser.add_argument("--group", nargs="+", choices=("all", "rust", "dependencies", "python", "adapter", "integration", "mcp-sdk", "docs", "hygiene"), default=["all"])
     parser.add_argument("--fast", action="store_true", help="Skip Rust test execution; retain documentation validation")
     args = parser.parse_args()
     commands = {"rust": lambda: rust(args.fast), "dependencies": dependencies, "python": python_checks, "adapter": adapter, "integration": integration, "mcp-sdk": mcp_sdk, "docs": docs, "hygiene": hygiene}
     try:
         for name, check in commands.items():
-            if args.group in ("all", name):
+            if "all" in args.group or name in args.group:
                 check()
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Check failed: {error}", file=sys.stderr)
