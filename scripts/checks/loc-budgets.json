@@ -2,7 +2,7 @@
   "default_file_lines": 400,
   "components": {
     ".flox/toolchain/": 140,
-    "apps/cli/": 14251,
+    "apps/cli/": 14288,
     "crates/contracts/": 4717,
     "crates/store/": 14518,
     "crates/runtime/": 15592,
