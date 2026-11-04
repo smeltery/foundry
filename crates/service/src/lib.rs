@@ -6,6 +6,7 @@ mod context_cut;
 mod control;
 pub mod conversation;
 mod coordinated;
+mod event_wait;
 mod events;
 mod execution;
 pub mod fresh_capture_owner;

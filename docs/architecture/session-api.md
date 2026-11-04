@@ -402,6 +402,25 @@ terminal. Evidence:
 (`drains_multiple_pages_and_honors_exclusive_cursor`,
 `follows_concurrent_commits_and_streams_each_revision_once_before_terminal`).
 
+Delivery reads are also implemented in the store and service, not yet on the CLI
+or MCP surface. `Store::deliver_events` takes an exclusive delivery cursor
+(`-1`, the default, precedes the first event), a page size of 1 to 1,000
+(default 200) and a wait budget of 0 to 20,000 ms (default 0). Out-of-range values
+are `invalid_request`. Each event carries an attempt ordinal, an immutable
+position and a delivery sequence of `(attempt_ordinal - 1) * 2^32 + sequence`,
+held in `u64` throughout. The page returns the current session and `next_seq`, the
+last delivered value, or the request cursor when the page is empty.
+`Service::read_events` long-polls a queued or running session: it rechecks
+SQLite's commit marker every 20 ms, so a commit from another connection or
+process wakes it, and it returns an empty page when the budget ends. A settled
+session never waits. `transcript` keeps the highest-delivery copy of each event
+ID ordered by position. The [storage page](storage.md#event-delivery-fields)
+defines how rows without these fields are stamped. Evidence:
+[`event_delivery.rs`](../../crates/store/tests/event_delivery.rs) and
+[`event_wait.rs`](../../crates/service/tests/event_wait.rs)
+(`commit_from_another_process_wakes_a_long_poll`). The conversation filter and
+`invalid_cursor` for cursors from another view remain unimplemented.
+
 **Specified.**
 
 - Inputs: exclusive delivery cursor (the start value precedes the first event),
@@ -731,8 +750,9 @@ These need a user or owner decision before the held parts are built:
    today, or prompt-only conflict.
 5. Whether create starts execution or keeps Foundry's queued admission, and
    whether `queued` ever becomes public.
-6. Event cursor origin and representation, and how attempt-scaled delivery
-   cursors coexist with the stored sequence that feeds checkpoint cut hashes.
+6. The wire encoding of event cursors. The store now fixes the origin (`-1`) and
+   keeps attempt-scaled delivery sequences beside the stored sequence that
+   feeds checkpoint cut hashes.
 7. Withdrawal of a message that already left the queue: success or `conflict`.
 8. The default list page size: 50 specified, 100 in the CLI today.
 9. Ownership split for attachments, links, insights and trajectory (NIC-45),
