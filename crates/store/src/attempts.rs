@@ -1,3 +1,4 @@
+use crate::completion_decisions::{DecisionInput, Proposal};
 use crate::{Result, Store, conflict, now_ms, read_session, save_session};
 use foundry_contracts::{CancelMode, ContractError, Lifecycle, Outcome, Session};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -39,6 +40,8 @@ impl Store {
         Ok(())
     }
 
+    /// For `exit`, `outcome` is the adapter's proposal. The stored outcome is the
+    /// completion decision, which may only be lower without verified criteria.
     pub fn finish_attempt(
         &mut self,
         fence: &AttemptFence,
@@ -47,11 +50,48 @@ impl Store {
         result: Option<String>,
     ) -> Result<Session> {
         validate_terminal(lifecycle, outcome)?;
+        let proposal = Proposal::Adapter(outcome.unwrap_or(Outcome::ActionRequired));
+        self.finish_with_proposal(fence, lifecycle, outcome, result, proposal)
+    }
+
+    /// Finish a native permission stop. It is `action_required` regardless of criteria.
+    pub fn finish_permission_stop(
+        &mut self,
+        fence: &AttemptFence,
+        result: Option<String>,
+    ) -> Result<Session> {
+        let outcome = Some(Outcome::ActionRequired);
+        self.finish_with_proposal(
+            fence,
+            Lifecycle::Exit,
+            outcome,
+            result,
+            Proposal::PermissionStop,
+        )
+    }
+
+    fn finish_with_proposal(
+        &mut self,
+        fence: &AttemptFence,
+        lifecycle: Lifecycle,
+        outcome: Option<Outcome>,
+        result: Option<String>,
+        proposal: Proposal,
+    ) -> Result<Session> {
+        let stage = self.completion.clone();
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let session = finish_in_transaction(&tx, fence, lifecycle, outcome, result, |_, _| Ok(()))?;
+        let terminal = Terminal {
+            lifecycle,
+            outcome,
+            result,
+            decision: stage.input(fence, proposal),
+        };
+        let session = finish_in_transaction(&tx, fence, terminal, |_, _| Ok(()))?;
         tx.commit()?;
+        // Staging ends with the attempt's committed terminal.
+        self.completion = Default::default();
         Ok(session)
     }
 
@@ -186,16 +226,31 @@ fn check_terminal(
     Ok(())
 }
 
+/// A proposed terminal. For `exit`, the decision replaces the proposed outcome.
+pub(crate) struct Terminal<'a> {
+    pub lifecycle: Lifecycle,
+    pub outcome: Option<Outcome>,
+    pub result: Option<String>,
+    pub decision: DecisionInput<'a>,
+}
+
 pub(crate) fn finish_in_transaction(
     tx: &rusqlite::Transaction<'_>,
     fence: &AttemptFence,
-    lifecycle: Lifecycle,
-    outcome: Option<Outcome>,
-    result: Option<String>,
+    terminal: Terminal<'_>,
     before_deactivate: impl FnOnce(&rusqlite::Transaction<'_>, &Session) -> Result<()>,
 ) -> Result<Session> {
+    let Terminal {
+        lifecycle,
+        mut outcome,
+        result,
+        decision,
+    } = terminal;
     validate_terminal(lifecycle, outcome)?;
     check_terminal(tx, fence, lifecycle)?;
+    if lifecycle == Lifecycle::Exit {
+        outcome = Some(crate::completion_commit::commit(tx, fence, &decision)?);
+    }
     let mut session = read_session(tx, &fence.session_id)?;
     session.lifecycle = lifecycle;
     session.outcome = outcome;

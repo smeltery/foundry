@@ -45,7 +45,9 @@ execution target, tool profile, origin and completion criteria fields, and
 `Session` carries optional archive, title, origin, timestamp and lineage
 metadata. Absent fields are omitted from the encoding, so older requests keep
 their stored idempotency bytes. `Store::create` rejects any v2 option as
-`unsupported` until the ticket that owns it stores it. `CancelReceipt` is a DTO
+`unsupported` until the ticket that owns it stores it. Completion criteria are
+stored; a criteria profile reference stays `unsupported` (see the
+[completion policy](completion-policy.md)). `CancelReceipt` is a DTO
 only. Wire names are provisional; the terminal state for cancelling a suspended
 session, delete semantics and any HTTP transport are pending decisions.
 

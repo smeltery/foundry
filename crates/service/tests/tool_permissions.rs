@@ -67,7 +67,8 @@ fn allowed_call_consumes_permission_and_delivers_only_after_durable_receipt() {
     assert_eq!(tools.configuration_digest(), [7; 32]);
     assert_eq!(
         run(&mut f, tools, "read").unwrap().outcome,
-        Some(Outcome::Success)
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        Some(Outcome::ActionRequired)
     );
     let record = Store::open(&f.database)
         .unwrap()
@@ -91,7 +92,8 @@ fn explicit_denial_retains_denied_delivery_without_a_helper_claim() {
     );
     assert_eq!(
         run(&mut f, tools, "read").unwrap().outcome,
-        Some(Outcome::Success)
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        Some(Outcome::ActionRequired)
     );
     let observed: serde_json::Value =
         serde_json::from_slice(&std::fs::read(f.directory.path().join("observed")).unwrap())
@@ -242,7 +244,8 @@ fn real_toolhost_creation_consumes_permission_once() {
     let tools = PermissionTools::new(policy, permissions).unwrap();
     assert_eq!(
         run(&mut f, tools, "write").unwrap().outcome,
-        Some(Outcome::Success)
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        Some(Outcome::ActionRequired)
     );
     assert_eq!(
         std::fs::read_to_string(f.directory.path().join("output.txt")).unwrap(),

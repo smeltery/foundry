@@ -64,7 +64,8 @@ fn settled_result_and_events_survive_restart() {
         .run(&queued.id, queued.version, &spec("success", None))
         .unwrap();
     assert_eq!(result.lifecycle, Lifecycle::Exit);
-    assert_eq!(result.outcome, Some(Outcome::Success));
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(result.outcome, Some(Outcome::ActionRequired));
     drop(service);
     let service = Service::open(&path).unwrap();
     assert_eq!(service.get(&queued.id).unwrap(), result);

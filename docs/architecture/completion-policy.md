@@ -1,10 +1,9 @@
 # Task completion policy
 
-Status: **approved 2026-11-04; not yet implemented.** Policy identifier
+Status: **approved 2026-11-04; implemented (NIC-106).** Policy identifier
 `foundry.completion.v1`. This page defines when a finished attempt may be stored
-as `success`, `failure` or `action_required`. It separates what Foundry enforces
-today from what the policy adds. Until the policy is implemented, the current
-behavior described under "Implemented today" stays in place.
+as `success`, `failure` or `action_required`. "Implementation" below maps each
+rule to the code that enforces it and lists the known limitations.
 
 ## Scope and non-goals
 
@@ -129,7 +128,7 @@ process status or event history.
 MCP `isError` reports a failed tool invocation, such as an unknown session or a
 storage error. It never reports a task outcome.
 
-## Implemented today
+## Implementation
 
 - **Lifecycle and outcome are separate types.** `Lifecycle` and `Outcome` are
   distinct enums and `Session.outcome` is optional
@@ -139,47 +138,74 @@ storage error. It never reports a task outcome.
 - **Fenced finalization.** `check_terminal` checks the attempt fence. It forces
   `suspended` once cancellation is recorded and refuses `exit` while tool calls
   are unresolved or uncertain (`crates/store/src/attempts.rs`). The service
-  re-reads cancellation after the adapter settles and retries a failed finish as
-  `suspended` when cancellation won (`crates/service/src/execution.rs`). The test
-  `success_after_observed_cancellation_is_suppressed`
-  (`crates/service/tests/control.rs`) covers this.
+  re-reads cancellation after the adapter settles and after the checks, and
+  retries a failed finish as `suspended` when cancellation won.
+- **Criteria storage and admission.** `Store::create` accepts the `completion`
+  option and keeps it in the immutable creation record; a profile reference is
+  rejected as `unsupported` because no configuration profile source exists yet.
+  `completion::admit` (`crates/service/src/completion.rs`) fixes the attempt's
+  checks and configuration digest right after attempt admission. The merge rule
+  for profile defaults (inline check with the same `id` replaces it, others are
+  appended) is `admitted_checks`. A continuation inherits the session's criteria;
+  `Service::declare_next_criteria` replaces them for the next attempt only.
+- **Runtime checks.** After a `success` proposal, and only then, the service runs
+  each admitted check under the live fence (`crates/service/src/completion_check.rs`).
+  A command runs without a shell in the session directory, with no input,
+  discarded output and an environment reduced to `PATH`, in its own process
+  group that is killed at the timeout. Exiting 0 passes; any other status or the
+  timeout fails. A file check opens the path through a capability handle on the
+  workspace, so a path or symlink that leaves it is refused and counts as
+  unverified. Durable cancellation is polled while a check runs and stops it.
+- **Decision record.** Every `exit` terminal writes one `completion_decisions`
+  row in the terminal transaction (`crates/store/src/completion_decisions.rs`),
+  after the fence, cancellation and unresolved-tool checks. The row stores the
+  binding tuple, outcome, basis, cause code and per-criterion results; native
+  publication also stores the checkpoint ID. The checkpoint keeps the adapter's
+  terminal proposal as historical data, while `Session.outcome` is the decision.
+  Evidence is current only when its policy version, attempt, configuration
+  digest, criteria digest and work revision equal the values at finalization and
+  each result ID appears once. Results for checks that were not admitted are
+  ignored. Adapter text and events are never read as evidence.
+- **Cause codes.** `criteria_verified` (`verified`), `criterion_failed`
+  (`verified`), `criteria_unverified` and `newer_instruction_pending`
+  (`default`), and `adapter_failure`, `adapter_action_required` and
+  `permission_action_required` (`adapter_downgrade`).
+- **Presentation.** CLI exit codes and MCP outcomes read the stored session
+  unchanged. `session_get` adds a `completion` object; its `policy_version` is
+  null for a session without an outcome or with an outcome stored before the
+  policy, which is never rewritten.
 - **Attempt correlation.** Events naming another attempt are protocol errors.
   Adapter failures are stored with fixed, sanitized diagnostics
   (`crates/runtime/src/lib.rs`). Settling with outstanding tool work is rejected
   (`crates/runtime/src/coordinated/engine_events.rs`).
-- **Explicit outcomes are only transported.** The adapter rejects outcomes outside
-  the enum, pending tool calls and unaccepted messages. A missing completion
-  defaults to `action_required`. An explicit `success` passes through unverified
-  (`packages/adapter/src/controller.ts`; `packages/adapter/test/controller.test.ts`).
-- **Native terminal binding.** On the native path the outcome and result are
-  encoded into the checkpoint terminal digest
-  (`crates/runtime/src/coordinated/capture/terminal.rs`). A permission stop
-  becomes `action_required` with `permission_action_required`
-  (`crates/runtime/src/coordinated/engine_exit.rs`).
-- **Exit mapping.** `terminal_response` maps 0/1/3/130
-  (`apps/cli/src/runner.rs`) and `emit_result` adds 2 for `error`
-  (`apps/cli/src/watch.rs`). `outcomes_map_to_task_exit_codes` in
-  `apps/cli/tests/local_execution.rs` proves the **mapping only**: its fixture
-  adapter hard-codes the outcome, so the test is not evidence of classification.
+- **Adapter transport.** The adapter rejects outcomes outside the enum, pending
+  tool calls and unaccepted messages, and defaults a missing completion to
+  `action_required` (`packages/adapter/src/controller.ts`). Its `success` is only
+  a proposal to the runtime.
 
-## Not yet implemented
+Acceptance tests: `crates/store/tests/completion_decisions.rs` (stale, missing
+and forged evidence, downgrade, pending instruction, cancellation, pre-policy
+records), `crates/service/tests/completion.rs` (checks through the run path,
+timeout, workspace escape, cancellation and new-instruction races,
+continuation records), `crates/service/tests/publication_owner/completion.rs`
+(native publication) and
+`exit_zero_and_mcp_success_come_only_from_a_verified_decision` in
+`apps/cli/tests/local_execution.rs`.
 
-This list is the scope of the implementation child:
+## Known limitations
 
-1. Today an adapter's explicit `success` is stored as `success`. Under this
-   policy it requires verified criteria and otherwise becomes `action_required`.
-2. There is no criteria set, admission-time criteria digest or runtime-run
-   verification check.
-3. There is no persisted decision record: policy version, binding tuple, basis,
-   cause code and criterion results.
-4. The terminal transaction does not bind configuration digest or work revision,
-   except through the native checkpoint cut.
-5. The store does not check for pending or in-flight messages at finalization.
-   Today only the adapter rejects messages it received but never accepted.
-6. There are no acceptance tests for the policy cases: verified success with CLI 0
-   and matching MCP and checkpoint state; a failed criterion; a settled turn with
-   no criteria; forged and stale evidence; cancellation and new-instruction
-   races; continuation preserving the earlier record.
+- Named criteria profiles are unsupported until a configuration profile source
+  exists.
+- The admitted set and staged evidence live with the store connection that owns
+  the attempt. An attempt finished through another connection falls back to the
+  session's declared checks with no evidence, so it cannot be `success`.
+- The configuration digest covers the adapter command, its timeouts, the stored
+  model selection and whether tools and permissions were enabled. It does not
+  cover individual tool grants. Native publication uses the profile's digest.
+- On the native path, criteria are fixed at publication from the immutable
+  creation record, and a per-attempt override does not apply there.
+- The CLI and MCP have no option to declare criteria yet; sessions created
+  through them have none, so a settled turn is `action_required`.
 
 ## Approved decisions
 

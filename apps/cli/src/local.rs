@@ -46,9 +46,19 @@ impl LocalBackend {
         Ok(json!({"sessions":sessions,"limit":limit}))
     }
 
+    /// `completion.policy_version` is null for outcomes recorded before
+    /// foundry.completion.v1 and for sessions without an outcome.
     pub fn get(&mut self, id: &str) -> Result<Value, CommandError> {
         nonempty(id)?;
-        Ok(json!({"session":self.store()?.get(id).map_err(store_error)?}))
+        let store = self.store()?;
+        let session = store.get(id).map_err(store_error)?;
+        let completion = match store.current_completion_decision(id).map_err(store_error)? {
+            Some(decision) => json!({"policy_version":decision.policy_version,
+                "attempt_id":decision.attempt_id,"basis":decision.basis,"cause":decision.cause,
+                "criteria":decision.criterion_results}),
+            None => json!({"policy_version":null}),
+        };
+        Ok(json!({"session":session,"completion":completion}))
     }
 
     /// A durable cancellation request is not proof that a running process stopped.

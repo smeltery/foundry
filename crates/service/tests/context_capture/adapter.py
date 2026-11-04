@@ -24,7 +24,8 @@ emit(dict(begin, type="context_capture_ready"))
 start = read()
 assert start["type"] == "start"
 attempt = start["attempt_id"]
-emit({"type": "settled", "attempt_id": attempt, "outcome": "action_required", "result": result})
+outcome = sys.argv[3] if len(sys.argv) > 3 else "action_required"
+emit({"type": "settled", "attempt_id": attempt, "outcome": outcome, "result": result})
 export = read()
 assert export["type"] == "context_export"
 payload = b"\x00opaque\xff\n\x80fixture"

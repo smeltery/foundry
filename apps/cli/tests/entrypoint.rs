@@ -352,17 +352,24 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    let finished = task.wait_with_output().unwrap();
     assert_eq!(
-        success(task.wait_with_output().unwrap())["execution"],
-        "finished"
+        finished.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&finished.stderr)
     );
+    let finished: Value = serde_json::from_slice(&finished.stdout).unwrap();
+    assert_eq!(finished["execution"], "finished");
     let replay = run(
         path,
         &["session", "watch", &id, "--database", "state.db", "--json"],
     );
     for output in [watcher.wait_with_output().unwrap(), replay] {
-        assert!(
-            output.status.success(),
+        assert_eq!(
+            output.status.code(),
+            Some(3),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -376,7 +383,7 @@ fn main() {
         let result = lines.last().unwrap();
         assert_eq!(result["type"], "result");
         assert_eq!(result["session"]["result"], "done");
-        assert_eq!(result["exit_code"], 0);
+        assert_eq!(result["exit_code"], 3);
     }
     let output = run(
         path,

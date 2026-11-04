@@ -159,7 +159,9 @@ checkpoint requirements and the distinction between inspection and execution.
 
 The [application service](../architecture/service.md) persists events and the
 terminal session. Completion maps success to status 0, failure to 1,
-action-required to 3 and suspension to 130. Runtime or persistence errors fail
+action-required to 3 and suspension to 130. Success requires completion criteria
+that the runtime verified; a settled turn without them is action-required (see
+the [completion policy](../architecture/completion-policy.md)). Runtime or persistence errors fail
 explicitly. The synchronous result is not a live output-streaming interface.
 
 ## Watch and interrupt

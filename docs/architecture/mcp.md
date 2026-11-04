@@ -65,6 +65,13 @@ submission does not itself perform adapter delivery or establish that work
 finished. A separate running service can consume the same durable queue after
 receipt capability negotiation.
 
+`session_get` returns the stored session and a `completion` object. For a
+decision under the [completion policy](completion-policy.md) it carries
+`policy_version`, `attempt_id`, `basis`, `cause` and per-criterion results.
+Its `policy_version` is null when the session has no outcome or its outcome was
+stored before the policy. A stored `success` therefore always comes from
+verified criteria.
+
 Successful backend values are encoded as JSON inside MCP text content. Backend
 failures set `isError` and include a code and message. Backend implementations
 must keep sensitive diagnostic data out of these messages.

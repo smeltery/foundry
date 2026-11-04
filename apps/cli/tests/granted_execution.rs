@@ -5,13 +5,17 @@ use foundry_store::{Store, ToolOutcome};
 use serde_json::Value;
 use support::*;
 
+// The fixtures declare no completion criteria, so an unverified adapter success
+// is action_required (exit 3) under foundry.completion.v1.
+
 #[test]
 #[ignore = "requires freshly built f5y-toolhost via FOUNDRY_TEST_TOOLHOST"]
 fn granted_cli_write_uses_effective_directory_and_commits_receipt() {
     let fixture = Fixture::new("write");
     let output = fixture.task(&helper(), &["write.create", "write.create"]);
-    assert!(
-        output.status.success(),
+    assert_eq!(
+        output.status.code(),
+        Some(3),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -52,8 +56,9 @@ fn granted_cli_write_uses_effective_directory_and_commits_receipt() {
         ])
         .output()
         .unwrap();
-    assert!(
-        output.status.success(),
+    assert_eq!(
+        output.status.code(),
+        Some(3),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -76,8 +81,9 @@ fn granted_cli_write_uses_effective_directory_and_commits_receipt() {
             .args(["--tool-grant", "write.create"])
             .output()
             .unwrap();
-        assert!(
-            output.status.success(),
+        assert_eq!(
+            output.status.code(),
+            Some(3),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -101,8 +107,9 @@ fn read_list_and_overwrite_grants_are_independent() {
         std::fs::write(fixture.root().join("work/input.txt"), "hello").unwrap();
         std::fs::write(fixture.root().join("work/out.txt"), "previous").unwrap();
         let output = fixture.task(&helper(), &[grant]);
-        assert!(
-            output.status.success(),
+        assert_eq!(
+            output.status.code(),
+            Some(3),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );

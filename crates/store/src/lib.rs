@@ -10,6 +10,8 @@ mod checkpoint_limits;
 mod checkpoint_read;
 mod checkpoint_types;
 mod checkpoints;
+mod completion_commit;
+mod completion_decisions;
 mod continue_acceptance;
 mod continue_baseline;
 mod continue_codec;
@@ -53,6 +55,9 @@ pub use checkpoint_types::{
     CheckpointCut, CheckpointRef, ContextCheckpointId, ContextFormat, CoverageManifest,
     MAX_CHECKPOINT_BYTES, MAX_CHECKPOINT_COVERAGE_BYTES, MAX_CHECKPOINT_METADATA_BYTES,
     OpaqueCheckpointInput, PrivateCheckpoint,
+};
+pub use completion_decisions::{
+    CompletionAdmission, CompletionDecision, CompletionEvidence, CriterionResult, CriterionStatus,
 };
 pub use continue_intent::{
     ContinueAcceptanceInput, ContinueAcceptanceRef, RestoreContinueCodec, RestoreContinueIntentV1,
@@ -111,6 +116,7 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 pub struct Store {
     connection: Connection,
     lease_duration: Duration,
+    completion: completion_decisions::CompletionStage,
 }
 impl Store {
     /// Opening a database never recovers or cancels existing attempts.
@@ -135,14 +141,28 @@ impl Store {
         Ok(Self {
             connection,
             lease_duration,
+            completion: Default::default(),
         })
     }
 
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
         request.validate()?;
         // The contract accepts v2 options; each is unsupported until its owner stores it.
-        if let Some(option) = request.v2_options().first() {
+        // Completion criteria are stored in the creation record (NIC-106).
+        if let Some(option) = request
+            .v2_options()
+            .into_iter()
+            .find(|option| *option != "completion")
+        {
             return Err(ContractError::Unsupported(format!("session option {option}")).into());
+        }
+        if request
+            .completion
+            .as_ref()
+            .is_some_and(|criteria| criteria.profile.is_some())
+        {
+            // No configuration profile source exists yet; refuse rather than drop defaults.
+            return Err(ContractError::Unsupported("completion criteria profile".into()).into());
         }
         let encoded = serde_json::to_string(&request)?;
         let tx = self

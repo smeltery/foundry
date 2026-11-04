@@ -63,7 +63,8 @@ fn explicit_adapter_runs_literal_prompt_in_explicit_directory() {
     let response = backend(&db, true)
         .execute(prompt(directory.path(), &task))
         .unwrap();
-    assert_eq!(response.exit_code, 0);
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(response.exit_code, 3);
     assert!(!marker.exists());
     assert_eq!(response.json["session"]["prompt"], task);
     let cwd = directory.path().canonicalize().unwrap();
@@ -76,8 +77,9 @@ fn explicit_adapter_runs_literal_prompt_in_explicit_directory() {
 
 #[test]
 fn outcomes_map_to_task_exit_codes() {
+    // The fixture hard-codes its proposal, so success is never verified here.
     for (prompt_text, code) in [
-        ("test", 0),
+        ("test", 3),
         ("__fixture_failure__", 1),
         ("__fixture_action__", 3),
     ] {
@@ -134,7 +136,8 @@ fn run_and_configured_start_use_the_service() {
         let mut backend = backend(&directory.path().join("db"), true);
         let response = dispatch(Cli::parse_from(argv), &mut backend).unwrap();
         assert_eq!(response.json["execution"], "finished");
-        assert_eq!(response.exit_code, 0);
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        assert_eq!(response.exit_code, 3);
     }
 }
 
@@ -234,4 +237,55 @@ fn read_commands_delegate_to_local_backend() {
     backend.execute(prompt(directory.path(), "test")).unwrap();
     let response = dispatch(Cli::parse_from(["f5y", "ls"]), &mut backend).unwrap();
     assert_eq!(response.json["sessions"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn exit_zero_and_mcp_success_come_only_from_a_verified_decision() {
+    use foundry_contracts::{CompletionCheck, CompletionCriteria, CreateSession};
+    use foundry_mcp::Backend as McpBackend;
+    let notes = CompletionCheck::File {
+        id: "notes".into(),
+        path: "notes.txt".into(),
+        sha256: None,
+    };
+    for (checks, code, outcome, cause) in [
+        (vec![notes], 0, "success", "criteria_verified"),
+        (Vec::new(), 3, "action_required", "criteria_unverified"),
+    ] {
+        let directory = tempdir().unwrap();
+        std::fs::write(directory.path().join("notes.txt"), "notes").unwrap();
+        let db = directory.path().join("db");
+        let mut service = foundry_service::Service::open(&db).unwrap();
+        let session = service
+            .create(CreateSession {
+                prompt: "test".into(),
+                directory: directory.path().display().to_string(),
+                completion: (!checks.is_empty()).then_some(CompletionCriteria {
+                    profile: None,
+                    checks,
+                }),
+                ..Default::default()
+            })
+            .unwrap();
+        let mut backend = LocalBackend::new(&db);
+        let queued = backend
+            .call("session_get", json!({"session_id": session.id}))
+            .unwrap();
+        assert_eq!(queued["completion"]["policy_version"], Value::Null);
+        let spec = foundry_runtime::AdapterSpec::new(adapter());
+        service.run(&session.id, session.version, &spec).unwrap();
+        let watched = Command::new(env!("CARGO_BIN_EXE_f5y"))
+            .args(["session", "watch", &session.id, "--json", "--database"])
+            .arg(&db)
+            .env_remove("FOUNDRY_ADAPTER")
+            .output()
+            .unwrap();
+        assert_eq!(watched.status.code(), Some(code));
+        let got = backend
+            .call("session_get", json!({"session_id": session.id}))
+            .unwrap();
+        assert_eq!(got["session"]["outcome"], outcome);
+        assert_eq!(got["completion"]["policy_version"], "foundry.completion.v1");
+        assert_eq!(got["completion"]["cause"], cause);
+    }
 }

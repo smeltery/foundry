@@ -209,8 +209,11 @@ flag, title, origin, timestamps and parent or fork lineage), a `session_tags`
 table, nullable `events.attempt_ordinal` and `events.position` columns, a message
 reconciliation audit table and an empty `completion_decisions` table keyed by
 attempt and bound to the completion policy tuple. It never rewrites
-`events.sequence` or any other value that feeds checkpoint cut hashes. No store
-API reads or writes these columns and tables yet. Lineage columns carry no
+`events.sequence` or any other value that feeds checkpoint cut hashes. Every
+`exit` terminal writes one `completion_decisions` row in its transaction (see
+the [completion policy](completion-policy.md)); outcomes stored before that have
+no row and are not rewritten. No store API reads or writes the other columns and
+tables yet. Lineage columns carry no
 foreign key while delete semantics are undecided.
 
 ## Recovery limits
