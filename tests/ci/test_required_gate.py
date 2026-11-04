@@ -50,6 +50,12 @@ class RequiredGateTests(unittest.TestCase):
                 job("check (integration, macos-15)", "cancelled", runner=None)]
         self.assertFalse(self.decide("failure", "success", jobs, True))
 
+    def test_unsettled_job_blocks_and_names_its_state(self):
+        jobs = LINUX + [job("check (integration, macos-15)", None, runner=None)]
+        passed, explanation = required_gate.decide("success", "cancelled", "success", PLANNED, jobs, True)
+        self.assertFalse(passed)
+        self.assertIn("check (integration, macos-15) (None, runner none)", explanation)
+
     def test_unknown_failure_without_records_blocks(self):
         self.assertFalse(self.decide("failure", "success", [], True))
 

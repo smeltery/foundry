@@ -10,6 +10,7 @@ other job that did not succeed, still fails the gate.
 import json
 import os
 import sys
+import time
 import urllib.request
 
 LOCAL_STATUS = "bellows/verify"
@@ -36,7 +37,9 @@ def decide(plan, check, activation, activation_plan, jobs, local_verified):
                 and job.get("conclusion") not in ("success", "skipped")]
     excused = [job for job in blocking if unassigned_macos(job)]
     if not blocking or len(excused) != len(blocking):
-        names = ", ".join(sorted(job["name"] for job in blocking if job not in excused))
+        names = ", ".join(sorted("{} ({}, runner {})".format(
+            job["name"], job.get("conclusion"), job.get("runner_name") or "none")
+            for job in blocking if job not in excused))
         return False, "jobs did not succeed: " + (names or "unknown")
     if not local_verified:
         return False, "macOS jobs never got a runner and no " + LOCAL_STATUS + " status succeeded"
@@ -51,6 +54,16 @@ def api(path):
                  "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
+
+
+def settled_jobs(attempts=6, delay=5):
+    """The jobs API can lag a just-cancelled job; wait briefly for final records."""
+    for _ in range(attempts):
+        jobs = run_jobs()
+        if all(job.get("conclusion") for job in jobs if job.get("name") != GATE_JOB):
+            return jobs
+        time.sleep(delay)
+    return jobs
 
 
 def run_jobs():
@@ -77,7 +90,7 @@ def main():
     needs = (env["PLAN_RESULT"], env["CHECK_RESULT"], env["ACTIVATION_RESULT"], env["ACTIVATION_PLAN"])
     passed, explanation = decide(*needs, jobs=[], local_verified=False)
     if not passed and needs[0] == "success":
-        jobs = run_jobs()
+        jobs = settled_jobs()
         passed, explanation = decide(*needs, jobs=jobs,
                                      local_verified=locally_verified(env["HEAD_SHA"]))
     print(explanation)
