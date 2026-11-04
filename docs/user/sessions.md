@@ -20,8 +20,8 @@ record queues it; it does not start a process or call a model.
 | `suspended` | Execution was suspended or an expired attempt was recovered |
 
 An `exit` lifecycle does not itself mean success. Its outcome is separately
-`success`, `failure` or `action_required`. Error and suspended states have no
-outcome. This separation keeps an interrupted process from looking successful.
+`success`, `failure` or `action_required`. Error, suspended and cancelled states
+have no outcome. This separation keeps an interrupted process from looking successful.
 
 ```mermaid
 stateDiagram-v2
@@ -33,6 +33,7 @@ stateDiagram-v2
     Running --> Suspended: acknowledge cancellation
     Running --> Suspended: recover expired lease
     Suspended --> Running: explicit new attempt
+    Suspended --> Cancelled: cancel
     Exit --> Running: explicit new attempt
     Error --> Running: explicit new attempt
 ```
@@ -49,7 +50,17 @@ is active. For a running attempt, cancellation is first a durable request. It
 can escalate from graceful to hard;
 it cannot downgrade an existing hard request. Recording the request does not
 prove that a process has stopped. An execution owner must stop its process and
-finish the cancelled attempt as suspended.
+finish the cancelled attempt as suspended. A cancelled attempt publishes no
+checkpoint, so a later continuation starts from the last checkpoint published
+before the request.
+
+Cancelling a suspended session makes it `cancelled`. This state is terminal: the
+store refuses new attempts, restoration and new follow-up messages for it.
+Cancelling an exit, error or cancelled session changes nothing. Every cancel call
+reports a receipt with `ok`, `requested` (whether this call changed anything),
+the effective `mode` and the lifecycle `status` after the call. The CLI run and
+watch commands exit with 4 for a cancelled session, distinct from 130 for a
+suspended one.
 
 After a crash, opening the database preserves its state. Explicit recovery marks
 expired attempts suspended and retains their event history. It does not replay

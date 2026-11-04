@@ -9,7 +9,7 @@
     "unsupported"
   ],
   "results": ["ok", "created", "replayed", "accepted", "not_modified", "error"],
-  "lifecycles": ["queued", "running", "exit", "error", "suspended"],
+  "lifecycles": ["queued", "running", "exit", "error", "suspended", "cancelled"],
   "outcomes": ["success", "failure", "action_required"],
   "transitions": [
     {"from": "queued", "event": "admit", "to": "running"},
@@ -31,7 +31,8 @@
     {"from": "suspended", "event": "rewind", "to": "running"},
     {"from": "exit", "event": "cancel", "to": "exit"},
     {"from": "error", "event": "cancel", "to": "error"},
-    {"from": "suspended", "event": "cancel", "to": "suspended"}
+    {"from": "suspended", "event": "cancel", "to": "cancelled"},
+    {"from": "cancelled", "event": "cancel", "to": "cancelled"}
   ],
   "limits": {
     "prompt_bytes": {"kind": "range", "min": 1, "max": 262144, "below": "invalid_request", "above": "payload_too_large"},

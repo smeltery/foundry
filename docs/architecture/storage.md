@@ -211,9 +211,31 @@ reconciliation audit table and an empty `completion_decisions` table keyed by
 attempt and bound to the completion policy tuple. It never rewrites
 `events.sequence` or any other value that feeds checkpoint cut hashes. Create
 writes the title and origin columns and `session_tags`; the workspace selector
-and tool profile are read back from the stored request. No store API reads or
+and tool profile are read back from the stored request. Event writes and
+delivery reads use the event delivery fields below. No store API reads or
 writes the other new columns and tables yet. Lineage columns carry no
 foreign key while delete semantics are undecided.
+
+### Event delivery fields
+
+Every event write stamps `events.attempt_ordinal` and `events.position` in the
+same transaction. Rows without them, such as rows written before schema 12, are
+stamped by the same rule on the session's next event write or delivery read:
+
+- Walk the session's rows in `sequence` order. The first row has attempt
+  ordinal 1. A row keeps the previous row's ordinal while its attempt ID is
+  unchanged and takes the previous ordinal plus one when the attempt ID differs.
+- A row's position is the position of the earliest row with the same event ID.
+  For that earliest row it is its own `sequence`.
+- Stored values are kept. A stored ordinal lower than the previous row's is
+  reported as a conflict, not reordered.
+
+The rule depends only on earlier rows, so stamping is deterministic and gives the
+same values whenever it runs. The delivery sequence is
+`(attempt_ordinal - 1) * 2^32 + sequence`, increases with commit order, and equals
+the stored sequence during the first attempt. Ordinals above 2^32 and sequences at
+or above 2^32 are out of range and fail rather than wrap. Stamping updates only
+the two new columns, so checkpoint cut hashes are unchanged.
 
 ## Recovery limits
 

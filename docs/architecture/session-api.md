@@ -180,8 +180,10 @@ values, a narrower bound tracked by NIC-42; see the [MCP boundary](mcp.md).
 
 ## Session lifecycle
 
-Lifecycle (`running`, `exit`, `error`, `suspended`) and outcome (`success`,
-`failure`, `action_required`) are separate. Only `exit` carries an outcome.
+Lifecycle (`running`, `exit`, `error`, `suspended`, `cancelled`) and outcome
+(`success`, `failure`, `action_required`) are separate. Only `exit` carries an
+outcome. `cancelled` is terminal: it is reached only by cancelling a suspended
+session and is never resumed or continued.
 Foundry additionally has an internal `queued` admission state; it must not
 become part of the public lifecycle vocabulary by inference. Session identity is
 stable across attempts; each admitted execution is a new attempt.
@@ -200,7 +202,8 @@ stateDiagram-v2
     Exit --> Running: follow-up, retry or rewind
     Error --> Running: follow-up, retry or rewind
     Suspended --> Running: follow-up, retry or rewind
-    Suspended --> Suspended: cancel, decision pending
+    Suspended --> Cancelled: cancel
+    Cancelled --> Cancelled: cancel
 ```
 
 Fork is absent from the diagram on purpose: it creates a separate session that
@@ -219,13 +222,17 @@ change lifecycle; it is accepted only for a settled session.
 | running | steer | running | Specified |
 | exit, error, suspended | follow-up, retry, rewind | running | Specified; suspended continuation exists only as owner-fenced restoration |
 | exit, error | cancel | unchanged | Implemented as a no-op |
-| suspended | cancel | suspended | Held: terminal marking is an open decision |
+| suspended | cancel | cancelled | Implemented: terminal; admission, restoration and new messages are refused |
+| cancelled | cancel | cancelled | Implemented as a no-op |
 
 The implemented transitions are covered by
 [`crates/store/tests/durability.rs`](../../crates/store/tests/durability.rs)
 (`cancel_only_upgrades_and_requires_suspended_completion`,
 `expired_owner_is_fenced_and_recovery_does_not_invent_success`,
-`forged_fence_and_stale_version_cannot_write`) and
+`forged_fence_and_stale_version_cannot_write`),
+[`crates/store/tests/cancel_contract.rs`](../../crates/store/tests/cancel_contract.rs)
+(`cancelling_a_suspended_session_is_terminal_and_blocks_later_continuation`,
+`cancelling_a_settled_session_is_a_reported_no_op`) and
 [`crates/service/tests/application.rs`](../../crates/service/tests/application.rs)
 (`settled_result_and_events_survive_restart`,
 `adapter_failure_is_durably_error_and_returns_error`). Restoration continuation
@@ -449,6 +456,25 @@ terminal. Evidence:
 (`drains_multiple_pages_and_honors_exclusive_cursor`,
 `follows_concurrent_commits_and_streams_each_revision_once_before_terminal`).
 
+Delivery reads are also implemented in the store and service, not yet on the CLI
+or MCP surface. `Store::deliver_events` takes an exclusive delivery cursor
+(`-1`, the default, precedes the first event), a page size of 1 to 1,000
+(default 200) and a wait budget of 0 to 20,000 ms (default 0). Out-of-range values
+are `invalid_request`. Each event carries an attempt ordinal, an immutable
+position and a delivery sequence of `(attempt_ordinal - 1) * 2^32 + sequence`,
+held in `u64` throughout. The page returns the current session and `next_seq`, the
+last delivered value, or the request cursor when the page is empty.
+`Service::read_events` long-polls a queued or running session: it rechecks
+SQLite's commit marker every 20 ms, so a commit from another connection or
+process wakes it, and it returns an empty page when the budget ends. A settled
+session never waits. `transcript` keeps the highest-delivery copy of each event
+ID ordered by position. The [storage page](storage.md#event-delivery-fields)
+defines how rows without these fields are stamped. Evidence:
+[`event_delivery.rs`](../../crates/store/tests/event_delivery.rs) and
+[`event_wait.rs`](../../crates/service/tests/event_wait.rs)
+(`commit_from_another_process_wakes_a_long_poll`). The conversation filter and
+`invalid_cursor` for cursors from another view remain unimplemented.
+
 **Specified.**
 
 - Inputs: exclusive delivery cursor (the start value precedes the first event),
@@ -570,13 +596,35 @@ Steering a queued message is not implemented. Evidence:
 Audit rows (external `capabilities.json`, group GAP-005): API-005, API-X028, AG-05.
 Vectors: `tests/session_api/vectors/cancel.json`.
 
-**Foundry today.** Cancelling a queued session marks it suspended at once. For a
-running attempt, cancellation is a durable request that can upgrade from graceful
-to hard but never downgrade, and it does not change lifecycle until the owner
-settles the attempt as suspended. A success reported after observed cancellation
-is suppressed. Graceful cleanup records a workspace snapshot artifact before
-suspension; hard cancellation records a skip without copying. Cancelling an
-already settled session is a no-op. Evidence:
+**Foundry today.** `Service::cancel` (`crates/service/src/cancel.rs`) returns
+the `CancelReceipt` `{ok, requested, mode, status}`, and the CLI and MCP cancel
+output include it as `receipt`. Cancelling a queued session marks it suspended at
+once. For a running attempt or a live restore owner, cancellation is a durable
+request that can upgrade from graceful to hard but never downgrade, and it does
+not change lifecycle until the owner settles the attempt as suspended; the
+receipt reports `running` (or `suspended` for a restore owner). A cancelled
+attempt cannot publish a checkpoint, so after a hard cancel the head stays the
+last checkpoint published before the request. A success reported after observed
+cancellation is suppressed. Graceful cleanup records a workspace snapshot
+artifact before suspension; hard cancellation records a skip without copying.
+Cancelling a suspended session with no live owner makes it `cancelled`, a
+terminal state: attempt admission, restoration and new messages are then
+refused with the typed `ContractError::Cancelled`, reported as `conflict`.
+Cancelling an exit, error or cancelled session is a no-op with
+`requested: false`. The CLI and watch map `cancelled` to its own exit code 4 with the
+text `Session cancelled`; MCP `session_get` reports `lifecycle: "cancelled"`.
+Evidence:
+[`cancel_contract.rs`](../../crates/store/tests/cancel_contract.rs)
+(`graceful_then_hard_upgrade_while_running_reports_each_receipt`,
+`cancelling_a_suspended_session_is_terminal_and_blocks_later_continuation`,
+`hard_cancel_keeps_the_last_published_checkpoint_and_publishes_nothing`,
+`cancelling_a_settled_session_is_a_reported_no_op`),
+[service `cancel.rs`](../../crates/service/tests/cancel.rs)
+(`graceful_then_hard_upgrade_settles_suspended_and_a_later_cancel_is_terminal`),
+[`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
+(`cli_and_mcp_report_cancel_receipts_and_the_terminal_cancelled_state`),
+[`watch.rs`](../../apps/cli/tests/watch.rs)
+(`cancelled_session_has_its_own_exit_code_and_names_the_state`),
 [`durability.rs`](../../crates/store/tests/durability.rs)
 (`cancel_only_upgrades_and_requires_suspended_completion`),
 [`control.rs`](../../crates/service/tests/control.rs)
@@ -602,7 +650,9 @@ already settled session is a no-op. Evidence:
 - Graceful stops the agent and attempts a final snapshot; hard stops immediately
   and later continuation uses the last verified checkpoint. A hard request
   upgrades a graceful one in progress.
-- An explicitly cancelled session ends `suspended`, never `error`.
+- An explicitly cancelled running session ends `suspended`, never `error`.
+  Cancelling a suspended session makes it `cancelled`, which is terminal and
+  never resumed or continued.
 - Idempotency: repeating the same mode reports "not newly requested".
 - Errors: `invalid_request`, `unauthenticated`, `forbidden`, `not_found`,
   `rate_limited`.
@@ -772,14 +822,16 @@ These need a user or owner decision before the held parts are built:
 
 1. Whether to ship a local HTTP session transport, and its wire names (NIC-34,
    NIC-36 for authentication).
-2. The terminal state for cancelling a suspended session.
+2. Resolved 2026-11-04: cancelling a suspended session makes it the terminal
+   `cancelled` state (implemented).
 3. Delete semantics: hard delete or tombstone, and the retention protections.
 4. Create idempotency equivalence: the complete-request comparison Foundry uses
    today, or prompt-only conflict.
 5. Whether create starts execution or keeps Foundry's queued admission, and
    whether `queued` ever becomes public.
-6. Event cursor origin and representation, and how attempt-scaled delivery
-   cursors coexist with the stored sequence that feeds checkpoint cut hashes.
+6. The wire encoding of event cursors. The store now fixes the origin (`-1`) and
+   keeps attempt-scaled delivery sequences beside the stored sequence that
+   feeds checkpoint cut hashes.
 7. Withdrawal of a message that already left the queue: success or `conflict`.
 8. The default list page size: 50 specified, 100 in the CLI today.
 9. Ownership split for attachments, links, insights and trajectory (NIC-45),

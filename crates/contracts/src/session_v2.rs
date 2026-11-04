@@ -138,8 +138,8 @@ pub struct SessionMetadata {
 }
 
 /// Result of a cancel call. Cancellation of a running attempt is asynchronous:
-/// callers poll until the session is no longer running. The status reported for
-/// cancelling an already suspended session is pending a user decision.
+/// callers poll until the session is no longer running. Cancelling a suspended
+/// session reports the terminal `cancelled` status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CancelReceipt {
     pub ok: bool,

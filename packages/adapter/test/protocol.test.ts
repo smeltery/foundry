@@ -20,6 +20,19 @@ test("UTF-8 JSONL survives arbitrary byte boundaries and multiple frames", async
   expect(parsed).toEqual([value, value]);
 });
 
+test("session lifecycle accepts the additive cancelled state and rejects unknown values", async () => {
+  const lifecycles = ["queued", "running", "exit", "error", "suspended", "cancelled"] as const;
+  for (const lifecycle of lifecycles) {
+    const value = { ...start, session: { ...start.session, lifecycle } };
+    const bytes = new TextEncoder().encode(JSON.stringify(value) + "\n");
+    expect(await parse(bytes)).toEqual([value]);
+  }
+  const unknown = { ...start, session: { ...start.session, lifecycle: "archived" } };
+  await expect(
+    parse(new TextEncoder().encode(JSON.stringify(unknown) + "\n")),
+  ).rejects.toThrow();
+});
+
 test("2 MiB bound is inclusive and enforced before unbounded buffering", async () => {
   const message = { type: "message", attempt_id: "attempt", message_id: "m", text: "", receipt: "opaque-tail-challenge" };
   const overhead = new TextEncoder().encode(JSON.stringify(message)).length;
