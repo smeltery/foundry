@@ -157,7 +157,8 @@ fn cancelling_a_settled_session_is_a_reported_no_op() {
     let mut store = Store::open(":memory:").unwrap();
     let (id, _) = capture(&mut store);
     let before = store.get(&id).unwrap();
-    assert_eq!(before.outcome, Some(Outcome::Success));
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(before.outcome, Some(Outcome::ActionRequired));
     assert_eq!(
         cancel(&mut store, &id, CancelMode::Graceful),
         receipt(false, CancelMode::Graceful, Lifecycle::Exit)

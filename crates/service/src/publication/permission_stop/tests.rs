@@ -1,6 +1,8 @@
 use super::*;
 use crate::{control::RunControl, permission::*};
-use foundry_contracts::{CancelMode, CreateSession, context::ContextFormat, permission::*};
+use foundry_contracts::{
+    CancelMode, CreateSession, Lifecycle, Outcome, context::ContextFormat, permission::*,
+};
 use foundry_runtime::{AdapterSpec, coordinated::*};
 use foundry_tools::host;
 use std::{

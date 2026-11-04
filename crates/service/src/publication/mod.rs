@@ -272,6 +272,10 @@ impl Publication {
         {
             return Err(ServiceError::Coordination("prepared finalization changed"));
         }
+        // The checkpoint keeps the adapter's proposal; only checks can make it success.
+        if terminal.outcome == Some(foundry_contracts::Outcome::Success) {
+            self.verify_completion(store, fence)?;
+        }
         let input = WitnessedCheckpointInput {
             checkpoint,
             witness,
@@ -288,6 +292,23 @@ impl Publication {
                 }
             }
         }
+    }
+    /// Native owners admit attempts outside the run path, so criteria are fixed
+    /// here from the session's immutable creation record and the profile's
+    /// configuration digest, then checked under the live fence.
+    fn verify_completion(&self, store: &mut Store, fence: &AttemptFence) -> Result<()> {
+        if store.completion_admission(fence).is_none() {
+            let digest = self.configuration.profile.configuration_digest;
+            crate::completion::admit(store, fence, digest, None)?;
+        }
+        let workspace = std::path::PathBuf::from(store.get(&fence.session_id)?.directory);
+        let control = &self.control;
+        let stopped = || {
+            control.expired.load(std::sync::atomic::Ordering::Acquire)
+                || control.signals.relay(&control.cancellation).is_some()
+        };
+        crate::completion::verify(store, fence, &workspace, &stopped)?;
+        self.live(store, fence)
     }
     fn live(&self, store: &Store, fence: &AttemptFence) -> Result<()> {
         if self

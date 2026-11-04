@@ -210,10 +210,13 @@ table, nullable `events.attempt_ordinal` and `events.position` columns, a messag
 reconciliation audit table and an empty `completion_decisions` table keyed by
 attempt and bound to the completion policy tuple. It never rewrites
 `events.sequence` or any other value that feeds checkpoint cut hashes. Create
-writes the title and origin columns and `session_tags`; the workspace selector
-and tool profile are read back from the stored request. Event writes and
-delivery reads use the event delivery fields below. No store API reads or
-writes the other new columns and tables yet. Lineage columns carry no
+writes the title and origin columns and `session_tags`; the workspace selector,
+tool profile and completion criteria are read back from the stored request.
+Every `exit` terminal writes one `completion_decisions` row in its transaction
+(see the [completion policy](completion-policy.md)); outcomes stored before that
+have no row and are not rewritten. Event writes and delivery reads use the event
+delivery fields below. No store API reads or writes the other new columns and
+tables yet. Lineage columns carry no
 foreign key while delete semantics are undecided.
 
 ### Event delivery fields

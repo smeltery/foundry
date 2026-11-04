@@ -189,10 +189,30 @@ impl crate::Service {
             self.store.request_cancel(&session.id, *mode)?;
         }
         let expired = lease.expired();
+        let mut verified = false;
         loop {
             let snapshot_recorded = self.snapshot_cancelled(fence, session, requested, &expired)?;
             let cancelled = self.store.cancellation(fence)?.is_some();
             if cancelled && !snapshot_recorded {
+                continue;
+            }
+            // Only a success proposal needs evidence; lower proposals stand as reported.
+            if !cancelled
+                && !verified
+                && matches!(
+                    runtime,
+                    RunResult::Completed {
+                        outcome: foundry_contracts::Outcome::Success,
+                        ..
+                    }
+                )
+            {
+                verified = true;
+                let stopped =
+                    || requested.load(Ordering::Acquire) > 0 || expired.load(Ordering::Acquire);
+                let workspace = std::path::Path::new(&session.directory);
+                crate::completion::verify(&mut self.store, fence, workspace, &stopped)?;
+                // Re-read cancellation after the checks before choosing a terminal.
                 continue;
             }
             let (lifecycle, outcome, text) = match &runtime {

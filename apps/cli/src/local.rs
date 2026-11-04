@@ -46,9 +46,19 @@ impl LocalBackend {
         Ok(json!({"sessions":sessions,"limit":limit}))
     }
 
+    /// `completion.policy_version` is null for outcomes recorded before
+    /// foundry.completion.v1 and for sessions without an outcome.
     pub fn get(&mut self, id: &str) -> Result<Value, CommandError> {
         nonempty(id)?;
-        Ok(json!({"session":self.store()?.get(id).map_err(store_error)?}))
+        let store = self.store()?;
+        let session = store.get(id).map_err(store_error)?;
+        let completion = match store.current_completion_decision(id).map_err(store_error)? {
+            Some(decision) => json!({"policy_version":decision.policy_version,
+                "attempt_id":decision.attempt_id,"basis":decision.basis,"cause":decision.cause,
+                "criteria":decision.criterion_results}),
+            None => json!({"policy_version":null}),
+        };
+        Ok(json!({"session":session,"completion":completion}))
     }
 
     /// A durable cancellation request is not proof that a running process stopped.
@@ -95,7 +105,11 @@ impl LocalBackend {
             .ok_or_else(|| invalid("arguments must be an object"))?;
         match operation {
             "start" => {
-                fields(args, &["prompt"], &["repo", "provider", "model", "effort"])?;
+                fields(
+                    args,
+                    &["prompt", "completion"],
+                    &["repo", "provider", "model", "effort"],
+                )?;
                 let prompt = string(args, "prompt")?.to_owned();
                 nonempty(&prompt)?;
                 let directory = std::env::current_dir()
@@ -109,6 +123,9 @@ impl LocalBackend {
                     directory,
                     model: None,
                     idempotency_key: None,
+                    completion: crate::runner::completion(
+                        args.get("completion").unwrap_or(&Value::Null),
+                    )?,
                     ..Default::default()
                 })
             }
@@ -200,7 +217,11 @@ impl LocalBackend {
             .ok_or_else(|| invalid("arguments must be an object"))?;
         match name {
             "session_create" => {
-                fields(args, &["prompt", "directory", "idempotency_key"], &[])?;
+                fields(
+                    args,
+                    &["prompt", "directory", "idempotency_key", "completion"],
+                    &[],
+                )?;
                 let key = args
                     .get("idempotency_key")
                     .map(|value| {
@@ -215,6 +236,9 @@ impl LocalBackend {
                     directory: string(args, "directory")?.into(),
                     model: None,
                     idempotency_key: key,
+                    completion: crate::runner::completion(
+                        args.get("completion").unwrap_or(&Value::Null),
+                    )?,
                     ..Default::default()
                 })
             }

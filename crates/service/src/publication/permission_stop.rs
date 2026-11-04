@@ -1,6 +1,6 @@
 //! Nonpublication finalization consumes runtime cleanup, not native evidence.
 use super::*;
-use foundry_contracts::{Lifecycle, Outcome, Session};
+use foundry_contracts::Session;
 use foundry_runtime::coordinated::CaptureActionRequired;
 
 impl Publication {
@@ -76,12 +76,7 @@ impl AdmittedActionRequired {
         // cancellation, configuration revocation or conservative expiry may lose;
         // they cannot roll back an already committed terminal outcome.
         store
-            .finish_attempt(
-                fence,
-                Lifecycle::Exit,
-                Some(Outcome::ActionRequired),
-                Some("permission_action_required".into()),
-            )
+            .finish_permission_stop(fence, Some("permission_action_required".into()))
             .map_err(Into::into)
     }
 }

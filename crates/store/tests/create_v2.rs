@@ -275,7 +275,7 @@ fn every_rejection_is_typed_and_writes_nothing() {
         ..full_request()
     };
     assert!(unsupported(store.create_session(machine.clone())));
-    // Completion stays unsupported until its owner stores it.
+    // A completion criteria profile stays unsupported; inline checks are stored.
     let completion = CreateSession {
         completion: Some(CompletionCriteria {
             profile: Some("tests".into()),

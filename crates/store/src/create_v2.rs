@@ -126,8 +126,14 @@ fn check_available(request: &CreateSession) -> Result<()> {
             }
         }
     }
-    if request.completion.is_some() {
-        return Err(ContractError::Unsupported("session option completion".into()).into());
+    // Inline criteria are stored in the creation record and admitted per attempt
+    // (completion-policy.md). No configuration profile source exists yet.
+    if request
+        .completion
+        .as_ref()
+        .is_some_and(|criteria| criteria.profile.is_some())
+    {
+        return Err(ContractError::Unsupported("completion criteria profile".into()).into());
     }
     Ok(())
 }

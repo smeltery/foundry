@@ -41,13 +41,14 @@ sequenceDiagram
 
 | Tool | Required fields | Optional fields |
 | --- | --- | --- |
-| `session_create` | `prompt`, `directory` | `idempotency_key` |
+| `session_create` | `prompt`, `directory` | `idempotency_key`, `completion` |
 | `session_list` | None | None |
 | `session_get` | `session_id` | None |
 | `session_send` | `session_id`, `message`, `message_id` | None |
 | `session_cancel` | `session_id`, `mode` | None |
 
-Fields are strings. Cancellation mode is `graceful` or `hard`. Prompts and
+Fields are strings, except `completion`: an object with a `checks` array in the
+[completion policy](completion-policy.md) contract shape. Cancellation mode is `graceful` or `hard`. Prompts and
 messages accept 1 to 65,536 Unicode scalar values at this interface. Backend
 validation can be stricter, including rejecting blank prompts or lifecycle
 conflicts. A schema-valid call does not imply the backend implements it. The executable
@@ -64,6 +65,13 @@ already marked delivered. Completion remains unconfirmed even then. Queue
 submission does not itself perform adapter delivery or establish that work
 finished. A separate running service can consume the same durable queue after
 receipt capability negotiation.
+
+`session_get` returns the stored session and a `completion` object. For a
+decision under the [completion policy](completion-policy.md) it carries
+`policy_version`, `attempt_id`, `basis`, `cause` and per-criterion results.
+Its `policy_version` is null when the session has no outcome or its outcome was
+stored before the policy. A stored `success` therefore always comes from
+verified criteria.
 
 Successful backend values are encoded as JSON inside MCP text content. Backend
 failures set `isError` and include a code and message. Backend implementations

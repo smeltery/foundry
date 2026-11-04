@@ -129,7 +129,8 @@ fn follows_concurrent_commits_and_streams_each_revision_once_before_terminal() {
     });
     let code = follow(&fixture, options(WatchFormat::JsonLines), &mut output).unwrap();
     producer.join().unwrap();
-    assert_eq!(code, 0);
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(code, 3);
     let records = lines(&output.bytes);
     assert_eq!(records.len(), 4);
     assert_eq!(
@@ -176,7 +177,8 @@ fn remains_queued_until_a_producer_starts_and_finishes() {
         .unwrap();
     let (result, output) = completion.recv_timeout(Duration::from_secs(5)).unwrap();
     follower.join().unwrap();
-    assert_eq!(result.unwrap(), 0);
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(result.unwrap(), 3);
     assert_eq!(String::from_utf8(output).unwrap(), "finished\n");
 }
 
@@ -202,7 +204,8 @@ fn drains_multiple_pages_and_honors_exclusive_cursor() {
     let mut config = options(WatchFormat::JsonLines);
     config.after_sequence = 10;
     let mut output = Vec::new();
-    assert_eq!(follow(&fixture, config, &mut output).unwrap(), 0);
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(follow(&fixture, config, &mut output).unwrap(), 3);
     let records = lines(&output);
     assert_eq!(records.len(), 511);
     assert_eq!(records[0]["event"]["sequence"], 11);
@@ -236,7 +239,8 @@ fn text_progress_and_terminal_output_use_separate_sinks() {
             &mut stderr
         )
         .unwrap(),
-        0
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        3
     );
     assert_eq!(String::from_utf8(stdout).unwrap(), "answer\n");
     assert_eq!(String::from_utf8(stderr).unwrap(), "[1] text: working\n");
