@@ -20,7 +20,7 @@ is underway; each page distinguishes tested functionality from planned features.
 
 - [Session and backend contracts](architecture/contracts.md)
 - [Session API behavior specification](architecture/session-api.md)
-- [Task completion policy (proposed)](architecture/completion-policy.md)
+- [Task completion policy](architecture/completion-policy.md)
 - [Live loading observations](architecture/live-observation.md)
 - [Complete CLI target contract](architecture/cli-contract.md)
 - [CLI configuration boundary](architecture/cli-configuration.md)

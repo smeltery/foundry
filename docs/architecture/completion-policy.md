@@ -1,10 +1,10 @@
 # Task completion policy
 
-Status: **proposed, pending user approval.** Policy identifier
+Status: **approved 2026-11-04; not yet implemented.** Policy identifier
 `foundry.completion.v1`. This page defines when a finished attempt may be stored
 as `success`, `failure` or `action_required`. It separates what Foundry enforces
-today from what the policy adds. Until the policy is approved and implemented,
-the current conservative behavior stays in place.
+today from what the policy adds. Until the policy is implemented, the current
+behavior described under "Implemented today" stays in place.
 
 ## Scope and non-goals
 
@@ -181,24 +181,25 @@ This list is the scope of the implementation child:
    no criteria; forged and stale evidence; cancellation and new-instruction
    races; continuation preserving the earlier record.
 
-## Open questions for the user
+## Approved decisions
 
-Approval of this policy requires answers to:
+The user approved these on 2026-11-04:
 
-1. **Adapter attestation.** Should an explicitly configured adapter's `success`
-   ever count without runtime-verified criteria, for example as a separate
-   `attested` basis? This draft says no. That changes current behavior: an
-   adapter-reported success without criteria would become `action_required`.
-2. **Criteria source.** Where do criteria come from: a field on session creation,
-   a configuration profile, or both? Which check kinds are allowed in v1, such as
-   a bounded command with an exit status or a file digest?
-3. **Newer instruction.** Should a pending message at settlement yield
-   `action_required`, as drafted, or keep the attempt running to deliver it?
-4. **Continuation criteria.** Does a continuation inherit the session's criteria,
-   or must each new instruction declare its own?
-5. **Adapter downgrade.** Is an adapter's explicit `failure` acceptable without
-   verified evidence, as drafted, or should it also become `action_required`
-   unless a criterion failed?
-6. **Existing records.** Should records written before this policy expose an
-   explicit `policy_version: null` or legacy basis? This draft never rewrites
-   them.
+1. **No adapter attestation.** An adapter's `success` never counts without
+   runtime-verified criteria. With no criteria checked, the attempt is stored as
+   `action_required` with cause `criteria_unverified`. This changes current
+   behavior, where adapter-reported success is stored as `success`.
+2. **Criteria source and v1 check kinds.** A configuration profile supplies default
+   criteria, and the session create request may add to or override them. The
+   admitted set is fixed when the attempt is admitted. v1 allows two check kinds:
+   a bounded command that must exit with status 0, and a file that must exist or
+   match a recorded digest.
+3. **Newer instruction.** A message pending at settlement ends the attempt as
+   `action_required` with cause `newer_instruction_pending`. The message stays
+   queued for the next continuation and is never redelivered automatically.
+4. **Continuation criteria.** A continuation inherits the session's criteria unless
+   its new instruction declares its own.
+5. **Adapter downgrade.** An adapter's explicit `failure` is accepted without
+   verified evidence, because adapter reports may only lower an outcome.
+6. **Existing records.** Records written before this policy keep their stored
+   outcome and expose `policy_version: null`. They are never rewritten.
