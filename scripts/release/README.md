@@ -100,6 +100,35 @@ Native CI builds and smoke tests remain required for each supported platform.
 Notice collection includes both executable packages and their target dependency
 graphs. The naming scan and dependency-notice publication blocker remain in force.
 
+## Dependency notice bundle
+
+`notices.py --output <new-external-dir>` collects notice evidence outside the
+repository. After an external review elects a license per package, generation
+writes the elected texts and a hashed manifest under `<root>/licenses/rust/`:
+
+```sh
+python3 scripts/release/notices.py --evidence <evidence-dir> --review <review.json> --output <root>
+```
+
+The review record repeats the collection's `lock_sha256` and `graph_sha256` and
+lists every registry package once with its `package_sha256`, `expression`,
+`elected` alternative and every collected file as `source_path`, `sha256` and
+`covers`: one license term of the expression, or `notice` for attribution text
+that is always kept. The election must be exactly one alternative of the package
+expression, so `MIT` from `MIT OR Apache-2.0` writes the MIT text and notices only.
+A legacy `MIT/Apache-2.0` expression is read as `MIT OR Apache-2.0`. Generation
+fails if an elected term has no text, a file is unclassified or hashes differ,
+the package set or checksums drift from the evidence, or a bundle already exists.
+Workspace packages are covered by the root license and are not listed.
+
+`notice_inventory()` requires the committed `licenses/rust/manifest.json` to match
+`Cargo.lock`, its recorded target graphs and every committed file under
+`licenses/rust/`, with no missing or extra file. Packaging also compares the
+packaged target's current Cargo graph with the recorded graph. Archives must carry
+the root license, `notices.json` and the bundle manifest. Parity is not rights
+approval: no third-party texts are committed yet, and `publication_checks()`
+still blocks publication until the license-election and naming decisions land.
+
 ## Current-state and workflow revision gates
 
 Every release snapshot validates both the supplied historical CI attempt and the
