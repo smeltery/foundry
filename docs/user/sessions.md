@@ -57,7 +57,8 @@ tools, invent a successful result or undo external side effects. An application
 must reconcile uncertain work before starting a replacement attempt.
 
 The subprocess supervisor supports graceful cancellation with a deadline and
-hard cancellation of the owned Unix process group. It suppresses a settlement
+hard cancellation of the owned Unix process group and the
+[descendants it can reach](../architecture/runtime.md#descendant-cleanup). It suppresses a settlement
 received after cancellation has been observed. The [application service](../architecture/service.md)
 renews leases, observes durable cancellation through another connection, and
 persists terminal state after supervision returns. Its offline integration tests and CLI wiring

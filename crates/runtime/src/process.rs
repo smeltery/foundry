@@ -120,6 +120,10 @@ impl Process {
         {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
+            #[cfg(target_os = "linux")]
+            unsafe {
+                command.pre_exec(cleanup::adopt_orphans);
+            }
         }
         let mut child = command.spawn()?;
         let stdin = child.stdin.take().expect("piped stdin");
@@ -243,8 +247,15 @@ impl Process {
             return Ok(());
         }
         #[cfg(unix)]
+        self.check_child_ownership()?;
+        // Descendants outside the owned group go first; group kill and reap still run.
+        let descendants = cleanup::stop_descendants(self.child.id() as i32);
+        self.kill_owned_group().and(descendants)
+    }
+
+    fn kill_owned_group(&mut self) -> Result<(), RuntimeError> {
+        #[cfg(unix)]
         {
-            self.check_child_ownership()?;
             // The unreaped direct child reserves this PID, which is also the PGID.
             // Kill descendants even when the leader has already exited.
             let result = unsafe { libc::kill(-(self.child.id() as i32), libc::SIGKILL) };

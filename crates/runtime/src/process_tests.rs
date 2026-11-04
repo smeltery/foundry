@@ -78,10 +78,21 @@ if pid==0:
     pathlib.Path('detached').write_text(str(os.getpid()))
     time.sleep(10)
     os._exit(0)
-time.sleep(10)
 "#,
     );
     fixture.detached = Some(fixture.wait_file("detached").parse().unwrap());
+    // The leader exits right after forking, orphaning the holder outside any
+    // parent chain that cleanup follows. Keep the leader unreaped meanwhile.
+    let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+    let waited = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            process.child.id(),
+            &mut info,
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(waited, 0);
     process
         .send(&AdapterCommand::Message {
             attempt_id: "a".into(),
@@ -97,7 +108,7 @@ time.sleep(10)
     assert_eq!(process.workers.remaining(), 0);
     assert!(process.commands.is_none());
     assert!(process.child.try_wait().unwrap().is_some());
-    // The detached process is deliberately outside the owned group. Its live
+    // The detached process is deliberately beyond cleanup's reach. Its live
     // descriptors cannot hold our joins hostage; the fixture cleans it up.
     assert_eq!(unsafe { libc::kill(fixture.detached.unwrap(), 0) }, 0);
 }
