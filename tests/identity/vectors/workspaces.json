@@ -1,0 +1,133 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "workspaces",
+  "cases": [
+    {
+      "name": "bound_credential_lists_only_its_workspace",
+      "operation": "workspace.list",
+      "rows": ["API-E27CB8EB997A3"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "viewer", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "given": {"memberships": ["ws-a", "ws-b"]},
+      "request": {},
+      "expect": {"result": "ok", "items": [{"id": "ws-a", "role": "viewer"}], "next": null}
+    },
+    {
+      "name": "create_makes_caller_owner_and_derives_handle",
+      "operation": "workspace.create",
+      "rows": ["API-E0D1C7603B534"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"name": "Team B", "handle": "ignored-handle"},
+      "expect": {"result": "created", "workspace": {"name": "Team B", "handle": "team-b", "role": "owner"}, "invited": 0, "caller_binding": "ws-a"}
+    },
+    {
+      "name": "create_from_bound_login_grant_is_forbidden",
+      "operation": "workspace.create",
+      "rows": ["API-E0D1C7603B534"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"name": "Team B"},
+      "expect": {"result": "error", "error": "forbidden", "cause": "grant_workspace_bound"}
+    },
+    {
+      "name": "create_with_blank_name_is_invalid",
+      "operation": "workspace.create",
+      "rows": ["API-E0D1C7603B534"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"name": "   "},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "get_reports_caller_role",
+      "operation": "workspace.get",
+      "rows": ["API-E0E38EF1D33B5"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "workspace": {"id": "ws-a", "role": "member"}}
+    },
+    {
+      "name": "admin_rename_rederives_handle",
+      "operation": "workspace.rename",
+      "rows": ["API-EAF0E25F70675"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team A"},
+      "request": {"name": "Team Alpha", "handle": "ignored"},
+      "expect": {"result": "ok", "state": "active", "workspace": {"name": "Team Alpha", "handle": "team-alpha"}}
+    },
+    {
+      "name": "repeated_rename_reports_same_state",
+      "operation": "workspace.rename",
+      "rows": ["API-EAF0E25F70675"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team Alpha"},
+      "request": {"name": "Team Alpha"},
+      "expect": {"result": "ok", "state": "active", "workspace": {"name": "Team Alpha"}}
+    },
+    {
+      "name": "owner_delete_with_matching_name_revokes_credentials",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team A"},
+      "request": {"confirm_name": "Team A"},
+      "expect": {"result": "ok", "state": "deleted", "bound_credentials": "revoked"}
+    },
+    {
+      "name": "delete_with_wrong_name_is_invalid",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team A"},
+      "request": {"confirm_name": "team a"},
+      "expect": {"result": "error", "error": "invalid_request", "cause": "name_mismatch", "state": "active"}
+    },
+    {
+      "name": "personal_workspace_cannot_be_deleted",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Personal", "personal": true},
+      "request": {"confirm_name": "Personal"},
+      "expect": {"result": "error", "error": "forbidden", "cause": "personal_workspace"}
+    },
+    {
+      "name": "retained_records_block_deletion",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team A", "pending_settlement": true},
+      "request": {"confirm_name": "Team A"},
+      "expect": {"result": "error", "error": "conflict", "cause": "deletion_blocked", "state": "active"}
+    },
+    {
+      "name": "large_workspace_erases_in_steps",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "active", "name": "Team A", "size": "large"},
+      "request": {"confirm_name": "Team A"},
+      "expect": {"result": "error", "error": "unavailable", "state": "erasing"}
+    },
+    {
+      "name": "repeated_delete_finishes_erasing",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "erasing", "name": "Team A"},
+      "request": {"confirm_name": "Team A"},
+      "expect": {"result": "ok", "state": "deleted"}
+    }
+  ]
+}

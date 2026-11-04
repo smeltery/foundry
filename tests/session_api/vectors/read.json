@@ -91,26 +91,28 @@
       "name": "list_is_newest_created_first",
       "operation": "session.list",
       "rows": ["API-002", "API-X019"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::newest_created_first_and_updates_do_not_reorder"],
       "given": {"created_order": ["session-a", "session-b"], "updated_last": "session-a"},
       "request": {},
-      "expect": {"result": "ok", "order": ["session-b", "session-a"]},
-      "note": "The store query already orders this way; no test asserts multi-session order yet."
+      "expect": {"result": "ok", "order": ["session-b", "session-a"]}
     },
     {
       "name": "list_default_page_is_fifty",
       "operation": "session.list",
       "rows": ["API-002", "API-X019"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::page_size_defaults_caps_and_alias"],
       "request": {},
       "expect": {"result": "ok", "effective_page": 50},
-      "note": "The CLI default is 100 today."
+      "note": "The service list default; the CLI list command still defaults to 100."
     },
     {
       "name": "list_page_is_capped",
       "operation": "session.list",
       "rows": ["API-002"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::page_size_defaults_caps_and_alias"],
       "limit": {"name": "list_page", "value": 500},
       "request": {"limit": 500},
       "expect": {"result": "ok", "effective_page": 200}
@@ -119,7 +121,8 @@
       "name": "primary_page_size_wins_over_alias",
       "operation": "session.list",
       "rows": ["API-002"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::page_size_defaults_caps_and_alias"],
       "request": {"page_size": 10, "limit": 30},
       "expect": {"result": "ok", "effective_page": 10}
     },
@@ -127,7 +130,8 @@
       "name": "default_filter_hides_archived",
       "operation": "session.list",
       "rows": ["API-002", "API-X019"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::archive_filter_defaults_to_active"],
       "given": {"archived": ["session-a"], "active": ["session-b"]},
       "request": {},
       "expect": {"result": "ok", "order": ["session-b"]}
@@ -136,7 +140,8 @@
       "name": "short_title_search_is_invalid",
       "operation": "session.list",
       "rows": ["API-002"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::page_search_and_origin_bounds", "crates/service/tests/session_query.rs::page_size_defaults_caps_and_alias"],
       "limit": {"name": "search_chars", "value": 2},
       "request": {"search": "ab"},
       "expect": {"result": "error", "error": "invalid_request"}
@@ -145,7 +150,8 @@
       "name": "search_page_is_capped",
       "operation": "session.list",
       "rows": ["API-002"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::page_size_defaults_caps_and_alias"],
       "limit": {"name": "search_page", "value": 50},
       "request": {"search": "sample", "limit": 50},
       "expect": {"result": "ok", "effective_page": 24}
@@ -154,10 +160,50 @@
       "name": "unchanged_page_is_not_modified",
       "operation": "session.list",
       "rows": ["API-002", "API-X019"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::etag_is_stable_until_a_visible_change"],
       "given": {"page_validator": "w-1", "changed": false},
       "request": {"if_none_match": "w-1"},
       "expect": {"result": "not_modified"}
+    },
+    {
+      "name": "long_title_search_is_invalid",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::page_search_and_origin_bounds"],
+      "limit": {"name": "search_chars", "value": 501},
+      "request": {"search": {"chars": 501}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "list_origin_filter_selects_interface",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::origin_filter_selects_kinds_and_interfaces"],
+      "given": {"origins": {"session-a": "interactive", "session-b": "external:cli", "session-c": "external:mcp"}},
+      "request": {"origin": ["external:cli", "interactive"]},
+      "expect": {"result": "ok", "order": ["session-b", "session-a"]}
+    },
+    {
+      "name": "list_cursor_skips_sessions_created_later",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_query.rs::cursor_pages_stay_stable_under_concurrent_creates", "crates/service/tests/session_query.rs::cursor_paging_walks_every_session_once"],
+      "given": {"created_order": ["session-a", "session-b"], "created_after_first_page": ["session-c"]},
+      "request": {"page_size": 1, "after": "cursor-after-session-b"},
+      "expect": {"result": "ok", "order": ["session-a"]}
+    },
+    {
+      "name": "list_sparse_fields_keep_session_id",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_query.rs::sparse_fields_always_keep_the_session_id"],
+      "request": {"fields": ["lifecycle"]},
+      "expect": {"result": "ok", "present_fields": ["session_id", "lifecycle"]}
     }
   ]
 }

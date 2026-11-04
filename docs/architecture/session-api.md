@@ -258,6 +258,22 @@ winner. Evidence:
 [`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
 (`start_is_explicitly_a_local_queued_record`, `validation_and_error_codes`).
 
+Contract v2 options are validated before any write. A workspace is scratch or a
+repository with exactly one checkout selector (branch, reference or positive
+change request); a second selector fails decoding as `invalid_request`. Tags are
+at most 64 distinct labels of 1 to 64 bytes, a title has 1 to 200 characters, and
+a tool profile is a reference of `/`-separated lowercase segments of letters,
+digits, `-`, `_` and `.`. A machine target needs a name and is then
+`unsupported` with no fallback; completion criteria are also `unsupported`. The
+stored request remains the idempotency comparison, so changing any field
+conflicts, and a replay reports that it replayed with the original metadata and
+associations. Evidence:
+[`create_v2.rs`](../../crates/store/tests/create_v2.rs)
+(`legacy_and_v2_requests_replay_after_restart_and_conflict_on_any_changed_field`,
+`every_rejection_is_typed_and_writes_nothing`) and
+[`create.rs`](../../crates/service/tests/create.rs)
+(`exclusive_checkout_selectors_are_invalid`).
+
 **Specified.**
 
 - Inputs: required nonblank prompt. Optional repository, branch, reference or
@@ -364,12 +380,43 @@ stay separate: an expired or failed attempt never becomes success. Evidence:
 Audit rows (external `capabilities.json`, group GAP-005): API-002, API-X019.
 Vectors: `tests/session_api/vectors/read.json`.
 
-**Foundry today.** `list` returns newest created sessions first; later updates do
-not reorder them. No test yet asserts that order across several sessions. The
-CLI default limit is 100 and zero is `invalid_request`; there is no cursor,
-filter or cap. Evidence:
+**Foundry today.** The CLI `list` returns newest created sessions first with a
+default limit of 100; zero is `invalid_request`, and it has no cursor, filter or
+cap. Evidence:
 [`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
 (`durable_create_list_get_and_snapshot`, `validation_and_error_codes`).
+
+The service operation `Service::list_sessions` implements the specified query
+but is not yet wired to the CLI, MCP or any transport:
+
+- Order is newest created first; updates never reorder. The cursor names the
+  last returned session and is bound to the archive, origin and search filter,
+  so sessions created while a reader pages never shift or repeat later pages.
+  A cursor from another filter, a forged cursor or one naming an unknown
+  session fails with `invalid_request`; the contract has no distinct
+  `invalid_cursor` class yet.
+- Archive filter `active` (default), `archived` or `all`, and origin filters
+  for interactive, any external, or one external interface. Filters read the
+  schema v12 metadata columns. Sessions written before origins existed match
+  no origin filter.
+- Page size `page_size`, with `limit` as its alias, defaults to 50 and is capped
+  at 200, or 24 with a title search; zero is `invalid_request`.
+- Title search is a literal, case-insensitive substring of 3 to 500 characters
+  over the stored title, or the first 200 prompt characters when none is set.
+  It scans the filtered sessions in order, so its cost grows with the store.
+- Sparse fields always keep `id`; an unknown name is `invalid_request`.
+- Each page carries a weak validator over the query and the selected rows. It
+  changes only when a selected value, the page membership or the next cursor
+  changes, and a matching `if_none_match` returns "not modified".
+
+Evidence: [`store session_query.rs`](../../crates/store/tests/session_query.rs)
+(`cursor_pages_stay_stable_under_concurrent_creates`,
+`title_search_is_literal_case_insensitive_and_title_only`,
+`page_search_and_origin_bounds`),
+[`service session_query.rs`](../../crates/service/tests/session_query.rs)
+(`page_size_defaults_caps_and_alias`, `etag_is_stable_until_a_visible_change`).
+Project grouping, the older archive spelling, account and workspace keyed
+caching and search capacity limits are not implemented.
 
 **Specified.**
 
@@ -408,6 +455,25 @@ terminal. Evidence:
 [`watch.rs`](../../apps/cli/tests/watch.rs)
 (`drains_multiple_pages_and_honors_exclusive_cursor`,
 `follows_concurrent_commits_and_streams_each_revision_once_before_terminal`).
+
+Delivery reads are also implemented in the store and service, not yet on the CLI
+or MCP surface. `Store::deliver_events` takes an exclusive delivery cursor
+(`-1`, the default, precedes the first event), a page size of 1 to 1,000
+(default 200) and a wait budget of 0 to 20,000 ms (default 0). Out-of-range values
+are `invalid_request`. Each event carries an attempt ordinal, an immutable
+position and a delivery sequence of `(attempt_ordinal - 1) * 2^32 + sequence`,
+held in `u64` throughout. The page returns the current session and `next_seq`, the
+last delivered value, or the request cursor when the page is empty.
+`Service::read_events` long-polls a queued or running session: it rechecks
+SQLite's commit marker every 20 ms, so a commit from another connection or
+process wakes it, and it returns an empty page when the budget ends. A settled
+session never waits. `transcript` keeps the highest-delivery copy of each event
+ID ordered by position. The [storage page](storage.md#event-delivery-fields)
+defines how rows without these fields are stamped. Evidence:
+[`event_delivery.rs`](../../crates/store/tests/event_delivery.rs) and
+[`event_wait.rs`](../../crates/service/tests/event_wait.rs)
+(`commit_from_another_process_wakes_a_long_poll`). The conversation filter and
+`invalid_cursor` for cursors from another view remain unimplemented.
 
 **Specified.**
 
@@ -763,8 +829,9 @@ These need a user or owner decision before the held parts are built:
    today, or prompt-only conflict.
 5. Whether create starts execution or keeps Foundry's queued admission, and
    whether `queued` ever becomes public.
-6. Event cursor origin and representation, and how attempt-scaled delivery
-   cursors coexist with the stored sequence that feeds checkpoint cut hashes.
+6. The wire encoding of event cursors. The store now fixes the origin (`-1`) and
+   keeps attempt-scaled delivery sequences beside the stored sequence that
+   feeds checkpoint cut hashes.
 7. Withdrawal of a message that already left the queue: success or `conflict`.
 8. The default list page size: 50 specified, 100 in the CLI today.
 9. Ownership split for attachments, links, insights and trajectory (NIC-45),
