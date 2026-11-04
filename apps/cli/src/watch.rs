@@ -232,6 +232,7 @@ fn emit_result(
         (Lifecycle::Exit, Some(Outcome::ActionRequired)) => (3, "Session requires action"),
         (Lifecycle::Error, None) => (2, "Session ended with an error"),
         (Lifecycle::Suspended, None) => (130, "Session suspended"),
+        (Lifecycle::Cancelled, None) => (130, "Session cancelled"),
         _ => {
             return Err(WatchError::Invalid(
                 "inconsistent terminal session state".into(),

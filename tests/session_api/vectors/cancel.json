@@ -33,7 +33,9 @@
       "implemented": true,
       "evidence": [
         "crates/store/tests/durability.rs::cancel_only_upgrades_and_requires_suspended_completion",
-        "crates/service/tests/control.rs::second_control_escalates_before_graceful_deadline"
+        "crates/service/tests/control.rs::second_control_escalates_before_graceful_deadline",
+        "crates/store/tests/cancel_contract.rs::graceful_then_hard_upgrade_while_running_reports_each_receipt",
+        "crates/service/tests/cancel.rs::graceful_then_hard_upgrade_settles_suspended_and_a_later_cancel_is_terminal"
       ],
       "given": {"lifecycle": "running", "cancel_mode": "hard"},
       "request": {"mode": "graceful"},
@@ -94,7 +96,8 @@
       "name": "repeated_mode_is_not_newly_requested",
       "operation": "session.cancel",
       "rows": ["API-X028"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/cancel_contract.rs::graceful_then_hard_upgrade_while_running_reports_each_receipt"],
       "given": {"lifecycle": "running", "cancel_mode": "graceful"},
       "request": {"mode": "graceful"},
       "expect": {"result": "ok", "requested": false, "cancel_mode": "graceful", "lifecycle": "running"}
@@ -103,20 +106,47 @@
       "name": "cancel_after_exit_is_a_no_op",
       "operation": "session.cancel",
       "rows": ["API-X028"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/cancel_contract.rs::cancelling_a_settled_session_is_a_reported_no_op"],
       "given": {"lifecycle": "exit", "outcome": "success"},
       "request": {"mode": "graceful"},
-      "expect": {"result": "ok", "requested": false, "lifecycle": "exit", "outcome": "success"},
-      "note": "The store already behaves this way; no dedicated test."
+      "expect": {"result": "ok", "requested": false, "lifecycle": "exit", "outcome": "success"}
     },
     {
-      "name": "cancel_suspended_session_pending_decision",
+      "name": "hard_cancel_keeps_the_last_published_checkpoint",
       "operation": "session.cancel",
       "rows": ["API-005", "AG-05"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/cancel_contract.rs::hard_cancel_keeps_the_last_published_checkpoint_and_publishes_nothing"],
+      "given": {"lifecycle": "running", "checkpoint_head": "published"},
+      "request": {"mode": "hard", "settle": true},
+      "expect": {"result": "ok", "lifecycle": "suspended", "checkpoint_head": "published", "checkpoints_added": 0}
+    },
+    {
+      "name": "cancel_suspended_session_is_terminal",
+      "operation": "session.cancel",
+      "rows": ["API-005", "AG-05"],
+      "implemented": true,
+      "evidence": [
+        "crates/store/tests/cancel_contract.rs::cancelling_a_suspended_session_is_terminal_and_blocks_later_continuation",
+        "apps/cli/tests/local_backend.rs::cli_and_mcp_report_cancel_receipts_and_the_terminal_cancelled_state"
+      ],
       "given": {"lifecycle": "suspended"},
       "request": {"mode": "graceful"},
-      "expect": {"result": "ok", "lifecycle": "suspended", "continuation_allowed": "decision_pending"}
+      "expect": {"result": "ok", "requested": true, "lifecycle": "cancelled", "continuation_allowed": false}
+    },
+    {
+      "name": "cancelled_session_refuses_continuation",
+      "operation": "session.cancel",
+      "rows": ["API-005", "AG-05"],
+      "implemented": true,
+      "evidence": [
+        "crates/store/tests/cancel_contract.rs::cancelling_a_suspended_session_is_terminal_and_blocks_later_continuation",
+        "crates/service/tests/cancel.rs::graceful_then_hard_upgrade_settles_suspended_and_a_later_cancel_is_terminal"
+      ],
+      "given": {"lifecycle": "cancelled"},
+      "request": {"then": "follow_up"},
+      "expect": {"result": "error", "error": "conflict"}
     }
   ]
 }

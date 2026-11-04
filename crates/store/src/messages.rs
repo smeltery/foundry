@@ -14,13 +14,14 @@ impl Store {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        read_session(&tx, session_id)?;
+        let session = read_session(&tx, session_id)?;
         if let Some(existing) = find(&tx, session_id, id)? {
             if existing.text != text {
                 return Err(conflict("message ID already has different content"));
             }
             return Ok(existing);
         }
+        crate::attempts::refuse_cancelled(&session)?;
         let last: i64 = tx.query_row(
             "SELECT COALESCE(MAX(sequence),0) FROM messages WHERE session_id=?1",
             [session_id],

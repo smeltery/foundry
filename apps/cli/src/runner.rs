@@ -250,6 +250,7 @@ fn terminal_response(session: Session) -> Result<Response, CommandError> {
             (code, session.result.clone().unwrap_or_default())
         }
         (Lifecycle::Suspended, None) => (130, "Session suspended".into()),
+        (Lifecycle::Cancelled, None) => (130, "Session cancelled".into()),
         _ => {
             return Err(CommandError::new(
                 "execution",
@@ -288,6 +289,8 @@ fn contract_error(error: ContractError) -> CommandError {
         ContractError::Conflict(_) => "conflict",
         ContractError::NotFound(_) => "not_found",
         ContractError::Unsupported(_) => "unsupported",
+        // The neutral class for a state that refuses the operation.
+        ContractError::Cancelled(_) => "conflict",
     };
     CommandError::new(code, error.to_string())
 }

@@ -125,6 +125,7 @@ process status or event history.
 | `exit` + `action_required` | 3 | 3 | `isError: false`, `outcome: "action_required"` |
 | `error` | 2 (execution error) | 2 | `isError: false`, `lifecycle: "error"`, no outcome |
 | `suspended` | 130 | 130 | `isError: false`, `lifecycle: "suspended"`, no outcome |
+| `cancelled` | 130 | 130 | `isError: false`, `lifecycle: "cancelled"`, no outcome |
 
 MCP `isError` reports a failed tool invocation, such as an unknown session or a
 storage error. It never reports a task outcome.

@@ -11,7 +11,7 @@ export interface Session {
   prompt: string;
   directory: string;
   model: { provider: string; model: string; effort: string | null } | null;
-  lifecycle: "queued" | "running" | "exit" | "error" | "suspended";
+  lifecycle: "queued" | "running" | "exit" | "error" | "suspended" | "cancelled";
   outcome: Outcome | null;
   result: string | null;
   active_attempt_id: string | null;
@@ -122,6 +122,7 @@ function session(value: unknown): Session {
       "exit",
       "error",
       "suspended",
+      "cancelled",
     ]),
     outcome:
       source.outcome == null

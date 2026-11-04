@@ -282,3 +282,33 @@ fn concurrent_terminal_failures_never_return_success() {
         );
     }
 }
+
+#[test]
+fn cancelled_session_maps_to_interruption_exit_and_names_the_state() {
+    let fixture = Fixture::new();
+    let mut store = Store::open(&fixture.database).unwrap();
+    for _ in 0..2 {
+        store
+            .request_cancel(&fixture.session.id, foundry_contracts::CancelMode::Graceful)
+            .unwrap();
+    }
+    assert_eq!(
+        store.get(&fixture.session.id).unwrap().lifecycle,
+        Lifecycle::Cancelled
+    );
+    let mut text = Vec::new();
+    assert_eq!(
+        follow(&fixture, options(WatchFormat::Text), &mut text).unwrap(),
+        130
+    );
+    assert_eq!(String::from_utf8(text).unwrap(), "Session cancelled\n");
+    let mut json_lines = Vec::new();
+    assert_eq!(
+        follow(&fixture, options(WatchFormat::JsonLines), &mut json_lines).unwrap(),
+        130
+    );
+    let result = lines(&json_lines).pop().unwrap();
+    assert_eq!(result["exit_code"], 130);
+    assert_eq!(result["session"]["lifecycle"], "cancelled");
+    assert_eq!(result["session"]["outcome"], Value::Null);
+}
