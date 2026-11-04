@@ -24,6 +24,12 @@ roots may be supplied as DER certificates. TLS verification cannot be bypassed.
 No public relay or discovery service is selected implicitly.
 
 `connect(peer, channel, timeout)` and `accept(timeout)` return Iroh connections.
+For `accept`, one timeout covers waiting and the handshake. Accept loops that may
+drop the accept future, such as a `select!` branch or a repeating window, call
+`incoming(timeout)` instead. That timeout covers only the wait for a peer. Then
+run `complete(deadline)` or `complete_routed(deadline)` in a task the loop owns,
+so a handshake already in progress is not cancelled. `refuse()` turns the peer
+away without a handshake when the owner is at capacity.
 The authenticated remote endpoint ID is available on the connection. Callers must
 perform membership authorization before accepting application messages. Use
 `online(timeout)` to await relay availability and `shutdown().await` to close the

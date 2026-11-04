@@ -309,3 +309,8 @@ async fn refused_incoming_handshake_keeps_the_network_owner_and_local_controls_a
 
 #[path = "daemon_runtime/connections.rs"]
 mod connections;
+
+#[path = "handshake_hold/mod.rs"]
+mod handshake_hold;
+#[path = "daemon_runtime/handshakes.rs"]
+mod handshakes;
