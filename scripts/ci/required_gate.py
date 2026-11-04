@@ -56,8 +56,8 @@ def api(path):
         return json.load(response)
 
 
-def settled_jobs(attempts=6, delay=5):
-    """The jobs API can lag a just-cancelled job; wait briefly for final records."""
+def settled_jobs(attempts=24, delay=10):
+    """The jobs API can lag finished jobs, even for minutes; wait for final records."""
     for _ in range(attempts):
         jobs = run_jobs()
         if all(job.get("conclusion") for job in jobs if job.get("name") != GATE_JOB):
@@ -67,12 +67,13 @@ def settled_jobs(attempts=6, delay=5):
 
 
 def run_jobs():
-    repository, run, attempt = (os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_RUN_ID"],
-                                os.environ["GITHUB_RUN_ATTEMPT"])
+    repository, run = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_RUN_ID"]
     jobs, page = [], 1
     while True:
-        body = api(f"/repos/{repository}/actions/runs/{run}/attempts/{attempt}/jobs"
-                   f"?per_page=100&page={page}")
+        # filter=latest keeps each job's newest attempt, so a rerun of this
+        # gate still sees the original matrix results.
+        body = api(f"/repos/{repository}/actions/runs/{run}/jobs"
+                   f"?filter=latest&per_page=100&page={page}")
         jobs += body["jobs"]
         if len(jobs) >= body["total_count"] or not body["jobs"]:
             return jobs

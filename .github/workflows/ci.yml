@@ -200,7 +200,7 @@ jobs:
     if: always()
     needs: [plan, check, activation]
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 6
     permissions:
       actions: read
       contents: read
