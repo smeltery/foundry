@@ -71,6 +71,9 @@ jobs:
             echo "Expected a fresh runner without Nix or Flox" >&2
             exit 1
           fi
+      # The install action retries its download for only about 20 seconds.
+      - name: Wait for the Flox download host
+        run: bash scripts/ci/await-host.sh https://downloads.flox.dev/by-env/stable/
       - id: flox
         name: Install pinned Flox
         uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
@@ -81,6 +84,9 @@ jobs:
           github-token: ""
           floxhub-token: ""
           use-cache: "false"
+          # Nix doubles its delay between download attempts: ten attempts outlast
+          # a few minutes of DNS failure where the default five lasted under one.
+          extra-nix-config: download-attempts = 10
       - name: Verify the selected environment
         env:
           FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
@@ -164,6 +170,9 @@ jobs:
             echo "Expected a fresh runner without Nix or Flox" >&2
             exit 1
           fi
+      # The install action retries its download for only about 20 seconds.
+      - name: Wait for the Flox download host
+        run: bash scripts/ci/await-host.sh https://downloads.flox.dev/by-env/stable/
       - id: flox
         name: Install pinned Flox
         uses: flox/install-flox-action@61d86f71ca9fc8061fea04e5bc5e3a8206423dca
@@ -174,6 +183,9 @@ jobs:
           github-token: ""
           floxhub-token: ""
           use-cache: "false"
+          # Nix doubles its delay between download attempts: ten attempts outlast
+          # a few minutes of DNS failure where the default five lasted under one.
+          extra-nix-config: download-attempts = 10
       - name: Activate and exercise the locked toolchain
         env:
           FOUNDRY_FLOX: ${{ steps.flox.outputs.flox-path }}
