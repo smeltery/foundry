@@ -38,7 +38,12 @@ The configuration must be a regular, single-link file owned by your account and
 not writable by other accounts. Unknown fields, invalid values and malformed
 JSON fail explicitly. No personal profile or default hosted service is loaded.
 An empty folder list allows existing repositories. Folder rules contain `path`
-and `allow`; the deepest canonical matching directory rule wins.
+and `allow`; the deepest matching directory rule wins. A session repository is
+checked twice: as written (absolute, with `.` and `..` folded without following
+links) and as resolved. It is excluded if either check excludes it, so a link
+inside an excluded folder cannot carry a session out of it. A rule matches
+under either its written or its resolved form. A repository that does not
+exist is rejected as an invalid path before any rule applies.
 
 With the [pinned development tools](../development/environment.md), run:
 

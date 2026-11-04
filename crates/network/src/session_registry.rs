@@ -9,7 +9,7 @@ mod policy;
 #[path = "session_registry/types.rs"]
 mod types;
 pub use policy::FolderPolicy;
-use policy::directory;
+use policy::{directory, lexical};
 use std::collections::BTreeMap;
 pub use types::*;
 use types::{identity, text};
@@ -17,6 +17,9 @@ use types::{identity, text};
 #[derive(Clone)]
 struct Session {
     registration: Registration,
+    /// The repository as given at registration; policy judges it with the
+    /// resolved repository so a link cannot move a session across a rule.
+    given: std::path::PathBuf,
     credential: SessionCredential,
     associations: BTreeMap<ConnectionId, DeliveryCapability>,
     status: String,
@@ -40,8 +43,9 @@ impl SessionRegistry {
     /// their stable names cannot be silently reassigned to another conversation.
     pub fn register(&mut self, mut registration: Registration) -> Result<Registered> {
         identity(&registration.conversation)?;
+        let given = lexical(&registration.repository)?;
         registration.repository = directory(&registration.repository)?;
-        if !self.policy.permits(&registration.repository) {
+        if !self.policy.permits(&given, &registration.repository) {
             return Err(RegistryError::Excluded);
         }
         if self
@@ -63,6 +67,7 @@ impl SessionRegistry {
         };
         self.sessions.push(Session {
             registration,
+            given,
             credential,
             associations: BTreeMap::new(),
             status: String::new(),
@@ -97,10 +102,10 @@ impl SessionRegistry {
         capability: DeliveryCapability,
     ) -> Result<()> {
         let index = self.authorized(conversation, credential)?;
-        let session = &mut self.sessions[index];
-        if !self.policy.permits(&session.registration.repository) {
+        if !self.permitted(&self.sessions[index]) {
             return Err(RegistryError::Excluded);
         }
+        let session = &mut self.sessions[index];
         if !session.associations.contains_key(&connection)
             && session.associations.len() >= MAX_ASSOCIATIONS
         {
@@ -125,7 +130,7 @@ impl SessionRegistry {
     ) -> Result<()> {
         let index = self.authorized(conversation, credential)?;
         let session = &self.sessions[index];
-        if !self.policy.permits(&session.registration.repository) {
+        if !self.permitted(session) {
             return Err(RegistryError::Excluded);
         }
         if !session.associations.contains_key(&connection) {
@@ -204,15 +209,20 @@ impl SessionRegistry {
 
     /// Infer association only when this connection owns exactly one visible session.
     pub fn linked(&self, connection: ConnectionId) -> Result<DeliveryTarget> {
-        let mut matches = self.sessions.iter().filter(|s| {
-            s.associations.contains_key(&connection)
-                && self.policy.permits(&s.registration.repository)
-        });
+        let mut matches = self
+            .sessions
+            .iter()
+            .filter(|s| s.associations.contains_key(&connection) && self.permitted(s));
         let first = matches.next().ok_or(RegistryError::NotFound)?;
         if matches.next().is_some() {
             return Err(RegistryError::Ambiguous);
         }
         Ok(target(first))
+    }
+
+    fn permitted(&self, session: &Session) -> bool {
+        self.policy
+            .permits(&session.given, &session.registration.repository)
     }
 
     fn matching(&self, filter: &DirectoryFilter) -> Result<Vec<&Session>> {
@@ -232,7 +242,7 @@ impl SessionRegistry {
             .iter()
             .filter(|s| {
                 let r = &s.registration;
-                self.policy.permits(&r.repository)
+                self.permitted(s)
                     && (!filter.online_only || !s.associations.is_empty())
                     && filter
                         .person
