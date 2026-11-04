@@ -1,0 +1,53 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "workspace-settings",
+  "cases": [
+    {
+      "name": "list_omits_unset_and_sensitive_namespaces",
+      "operation": "settings.list",
+      "rows": ["API-ECC992D1449F3"],
+      "implemented": false,
+      "given": {"stored": {"defaults": {"model": "fixture"}, "sensitive": {"x": 1}}, "sensitive": ["sensitive"]},
+      "request": {},
+      "expect": {"result": "ok", "settings": {"defaults": {"model": "fixture"}}}
+    },
+    {
+      "name": "unset_namespace_reads_null",
+      "operation": "settings.get",
+      "rows": ["API-E4FC8A3AFAC6D"],
+      "implemented": false,
+      "request": {"namespace": "defaults"},
+      "expect": {"result": "ok", "namespace": "defaults", "value": null}
+    },
+    {
+      "name": "sensitive_namespace_is_not_found",
+      "operation": "settings.get",
+      "rows": ["API-E4FC8A3AFAC6D"],
+      "implemented": false,
+      "given": {"sensitive": ["sensitive"]},
+      "request": {"namespace": "sensitive"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "admin_replaces_whole_value",
+      "operation": "settings.replace",
+      "rows": ["API-EA06C6C5F5B80"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"stored": {"defaults": {"model": "fixture", "effort": "low"}}, "writable": ["defaults"]},
+      "request": {"namespace": "defaults", "value": {"model": "other"}},
+      "expect": {"result": "ok", "namespace": "defaults", "value": {"model": "other"}}
+    },
+    {
+      "name": "unknown_namespace_is_invalid",
+      "operation": "settings.replace",
+      "rows": ["API-EA06C6C5F5B80"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"writable": ["defaults"]},
+      "request": {"namespace": "unlisted", "value": {}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    }
+  ]
+}

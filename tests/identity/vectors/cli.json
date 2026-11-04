@@ -1,0 +1,171 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "cli-login-logout-and-whoami",
+  "cases": [
+    {
+      "name": "login_parses_to_unit_route_without_authenticating",
+      "operation": "cli.login",
+      "rows": ["CLI-024"],
+      "implemented": true,
+      "evidence": [
+        "apps/cli/tests/computer_contract.rs::account_desktop_and_queue_commands_parse",
+        "apps/cli/tests/computer_routes.rs::desktop_permissions_accounts_and_update_routes_preserve_exact_shapes"
+      ],
+      "request": {"argv": ["login"]},
+      "expect": {"result": "routed", "route": {"operation": "login"}, "authenticated": false}
+    },
+    {
+      "name": "logout_parses_to_unit_route",
+      "operation": "cli.logout",
+      "rows": ["CLI-024"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/computer_routes.rs::desktop_permissions_accounts_and_update_routes_preserve_exact_shapes"],
+      "request": {"argv": ["logout"]},
+      "expect": {"result": "routed", "route": {"operation": "logout"}}
+    },
+    {
+      "name": "whoami_parses_to_unit_route",
+      "operation": "cli.whoami",
+      "rows": ["CLI-024"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/computer_routes.rs::desktop_permissions_accounts_and_update_routes_preserve_exact_shapes"],
+      "request": {"argv": ["whoami"]},
+      "expect": {"result": "routed", "route": {"operation": "whoami"}}
+    },
+    {
+      "name": "login_stores_revocable_grant_after_browser_approval",
+      "operation": "cli.login",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"approval": "approved", "workspace": "ws-a"},
+      "request": {"argv": ["login"]},
+      "expect": {"result": "ok", "stored": {"kind": "login_grant", "workspace": "ws-a", "state": "active"}}
+    },
+    {
+      "name": "login_with_elapsed_approval_stores_nothing",
+      "operation": "cli.login",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"approval": "expired"},
+      "request": {"argv": ["login"]},
+      "expect": {"result": "error", "error": "unauthenticated", "stored": null}
+    },
+    {
+      "name": "logout_revokes_only_own_login",
+      "operation": "cli.logout",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"logins": [{"account": "user-a", "state": "active"}, {"account": "user-b", "state": "active"}], "current": "user-a"},
+      "request": {"argv": ["logout"]},
+      "expect": {"result": "ok", "logins": [{"account": "user-a", "state": "revoked"}, {"account": "user-b", "state": "active"}]}
+    },
+    {
+      "name": "logout_without_login_reports_nothing_removed",
+      "operation": "cli.logout",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"logins": []},
+      "request": {"argv": ["logout"]},
+      "expect": {"result": "ok", "removed": false}
+    },
+    {
+      "name": "whoami_reports_identity_without_credential_bytes",
+      "operation": "cli.whoami",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"login": {"account": "user-a", "workspace": "ws-a", "scopes": ["workspace.read"]}},
+      "request": {"argv": ["whoami", "--json"]},
+      "expect": {"result": "ok", "principal": "user", "workspace": "ws-a", "scopes": ["workspace.read"], "credential_echoed": false}
+    },
+    {
+      "name": "environment_key_is_selected_ahead_of_login",
+      "operation": "credential.select",
+      "rows": ["CLI-049", "CLI-024"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::session_selection_reaches_consumer_for_each_supported_route"],
+      "given": {"environment_key": "private-key-a", "selected_login": "private-login-b"},
+      "request": {"scope": "session"},
+      "expect": {"result": "ok", "origin": "environment_key", "workspace_from": "account_lookup"}
+    },
+    {
+      "name": "absent_key_selects_login",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::session_selection_reaches_consumer_for_each_supported_route"],
+      "given": {"selected_login": "private-login-b"},
+      "request": {"scope": "session"},
+      "expect": {"result": "ok", "origin": "selected_login", "workspace_from": "account_lookup"}
+    },
+    {
+      "name": "empty_key_stays_pending_for_owner",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::empty_and_absent_identity_remain_unresolved_owner_inputs"],
+      "given": {"environment_key": "", "selected_login": "private-login-b"},
+      "request": {"scope": "session"},
+      "expect": {"result": "pending", "pending_cause": "owner_policy", "candidates": ["environment_key", "selected_login"]}
+    },
+    {
+      "name": "account_lookup_failure_never_falls_back",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::injected_failures_are_safe_and_never_fallback_or_invoke_executor"],
+      "given": {"environment_key": "private-key-a", "selected_login": "private-login-b", "account_lookup": "fails"},
+      "request": {"scope": "session"},
+      "expect": {"result": "error", "error": "unavailable", "code": "configuration", "tried": ["environment_key"]}
+    },
+    {
+      "name": "competing_connection_inputs_stay_unresolved",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::unresolved_connect_candidates_are_consumed_without_precedence_or_coalescing"],
+      "given": {"explicit_key": "private-key-a", "environment_key": "private-key-a"},
+      "request": {"scope": "connect"},
+      "expect": {"result": "pending", "pending_cause": "competing", "coalesced": false}
+    },
+    {
+      "name": "connection_transport_excludes_ambient_proxy",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/configuration_dispatch.rs::connect_single_keys_and_proxy_exclusion_reach_consumer"],
+      "given": {"environment_key": "private-key-a", "ambient_https_proxy": "private-ambient-a"},
+      "request": {"scope": "connect"},
+      "expect": {"result": "ok", "origin": "environment_key", "ambient_proxy_used": false}
+    },
+    {
+      "name": "enrollment_token_is_consumed_opaque",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/serve_configuration.rs::private_tokens_are_consumed_without_decoding_or_forwarding"],
+      "given": {"environment_token": "private-opaque-token"},
+      "request": {"scope": "serve"},
+      "expect": {"result": "ok", "origin": "environment_token", "decoded": false, "forwarded": false}
+    },
+    {
+      "name": "local_login_access_is_separate_from_plain_login",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/connect_profile.rs::key_and_unknown_authentication_leave_login_on_unresolved"],
+      "given": {"environment_key": "private-key-a", "local_logins": "unset"},
+      "request": {"scope": "connect", "local_logins": "on"},
+      "expect": {"result": "pending", "local_logins": "explicit", "inferred_from_login": false}
+    },
+    {
+      "name": "refresh_tokens_are_never_retained",
+      "operation": "credential.select",
+      "rows": ["CLI-049"],
+      "implemented": false,
+      "given": {"approval_response": {"access": "private-access", "refresh": "private-refresh"}},
+      "request": {"scope": "session"},
+      "expect": {"result": "ok", "retained": ["access"]}
+    }
+  ]
+}

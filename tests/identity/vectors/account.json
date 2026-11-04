@@ -1,0 +1,106 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "caller-identity",
+  "cases": [
+    {
+      "name": "scoped_key_reports_service_principal_and_binding",
+      "operation": "identity.self",
+      "rows": ["API-X001"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["sessions.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "principal": "service", "scopes": ["sessions.read"], "workspace": {"id": "ws-a", "name": "Team A", "handle": "team-a"}}
+    },
+    {
+      "name": "login_grant_reports_user_principal",
+      "operation": "identity.self",
+      "rows": ["API-X001"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "principal": "user", "email": "member@team.example", "workspace": {"id": "ws-a"}}
+    },
+    {
+      "name": "identity_needs_a_valid_credential",
+      "operation": "identity.self",
+      "rows": ["API-X001"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "state": "expired", "scopes": [], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "deployment_identity_needs_its_scope",
+      "operation": "service.deployment",
+      "rows": ["API-EAB209C8A1D60"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "api_description_is_readable_with_any_credential",
+      "operation": "service.api_description",
+      "rows": ["API-EC4FFB7B71B06"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": [], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "cacheable": true}
+    },
+    {
+      "name": "api_description_unavailable",
+      "operation": "service.api_description",
+      "rows": ["API-EC4FFB7B71B06"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": [], "workspace": "ws-a"},
+      "given": {"document": "absent"},
+      "request": {},
+      "expect": {"result": "error", "error": "unavailable"}
+    },
+    {
+      "name": "feedback_is_accepted_without_scopes",
+      "operation": "feedback.submit",
+      "rows": ["API-E0586F6A81366"],
+      "implemented": false,
+      "caller": {"kind": "machine_token", "scopes": ["sessions.run"], "workspace": "ws-a"},
+      "request": {"kind": "documentation_mismatch", "text": "The listed field was absent."},
+      "expect": {"result": "ok", "accepted": true, "report_id": "report-1"}
+    },
+    {
+      "name": "feedback_text_above_limit",
+      "operation": "feedback.submit",
+      "rows": ["API-E0586F6A81366"],
+      "implemented": false,
+      "limit": {"name": "feedback_chars", "value": 4001},
+      "request": {"kind": "defect"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "feedback_empty_text_is_invalid",
+      "operation": "feedback.submit",
+      "rows": ["API-E0586F6A81366"],
+      "implemented": false,
+      "limit": {"name": "feedback_chars", "value": 0},
+      "request": {"kind": "other"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "feedback_unknown_kind_is_invalid",
+      "operation": "feedback.submit",
+      "rows": ["API-E0586F6A81366"],
+      "implemented": false,
+      "request": {"kind": "complaint", "text": "Unclear."},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "feedback_sink_failure_is_reported",
+      "operation": "feedback.submit",
+      "rows": ["API-E0586F6A81366"],
+      "implemented": false,
+      "given": {"sink": "down"},
+      "request": {"kind": "friction", "text": "Slow."},
+      "expect": {"result": "error", "error": "sink_failed"}
+    }
+  ]
+}
