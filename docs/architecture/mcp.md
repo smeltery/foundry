@@ -41,13 +41,14 @@ sequenceDiagram
 
 | Tool | Required fields | Optional fields |
 | --- | --- | --- |
-| `session_create` | `prompt`, `directory` | `idempotency_key` |
+| `session_create` | `prompt`, `directory` | `idempotency_key`, `completion` |
 | `session_list` | None | None |
 | `session_get` | `session_id` | None |
 | `session_send` | `session_id`, `message`, `message_id` | None |
 | `session_cancel` | `session_id`, `mode` | None |
 
-Fields are strings. Cancellation mode is `graceful` or `hard`. Prompts and
+Fields are strings, except `completion`: an object with a `checks` array in the
+[completion policy](completion-policy.md) contract shape. Cancellation mode is `graceful` or `hard`. Prompts and
 messages accept 1 to 65,536 Unicode scalar values at this interface. Backend
 validation can be stricter, including rejecting blank prompts or lifecycle
 conflicts. A schema-valid call does not imply the backend implements it. The executable

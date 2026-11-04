@@ -103,7 +103,11 @@ impl LocalBackend {
             .ok_or_else(|| invalid("arguments must be an object"))?;
         match operation {
             "start" => {
-                fields(args, &["prompt"], &["repo", "provider", "model", "effort"])?;
+                fields(
+                    args,
+                    &["prompt", "completion"],
+                    &["repo", "provider", "model", "effort"],
+                )?;
                 let prompt = string(args, "prompt")?.to_owned();
                 nonempty(&prompt)?;
                 let directory = std::env::current_dir()
@@ -117,6 +121,9 @@ impl LocalBackend {
                     directory,
                     model: None,
                     idempotency_key: None,
+                    completion: crate::runner::completion(
+                        args.get("completion").unwrap_or(&Value::Null),
+                    )?,
                     ..Default::default()
                 })
             }
@@ -208,7 +215,11 @@ impl LocalBackend {
             .ok_or_else(|| invalid("arguments must be an object"))?;
         match name {
             "session_create" => {
-                fields(args, &["prompt", "directory", "idempotency_key"], &[])?;
+                fields(
+                    args,
+                    &["prompt", "directory", "idempotency_key", "completion"],
+                    &[],
+                )?;
                 let key = args
                     .get("idempotency_key")
                     .map(|value| {
@@ -223,6 +234,9 @@ impl LocalBackend {
                     directory: string(args, "directory")?.into(),
                     model: None,
                     idempotency_key: key,
+                    completion: crate::runner::completion(
+                        args.get("completion").unwrap_or(&Value::Null),
+                    )?,
                     ..Default::default()
                 })
             }

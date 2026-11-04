@@ -5,6 +5,7 @@ mod native;
 mod native_registration;
 mod prepared;
 mod task;
+pub(crate) use task::completion;
 mod tool_policy;
 use crate::{Backend, CommandError, Request, Response};
 use foundry_contracts::{ContractError, CreateSession, Lifecycle, Outcome, Session};
@@ -223,6 +224,7 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
                 directory: task.directory,
                 model: None,
                 idempotency_key: None,
+                completion: task.completion,
                 ..Default::default()
             },
             task.grants,

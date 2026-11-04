@@ -23,6 +23,16 @@ An `exit` lifecycle does not itself mean success. Its outcome is separately
 `success`, `failure` or `action_required`. Error and suspended states have no
 outcome. This separation keeps an interrupted process from looking successful.
 
+A session can declare completion criteria when it is created: commands that must
+exit 0 and workspace files that must exist or match a digest. An outcome is
+`success` only when the runtime ran every declared check after the attempt and
+all of them passed. Without criteria a finished attempt is `action_required`. A
+failing check gives `failure`, and an instruction still queued at the end of the
+attempt gives `action_required`. Each attempt keeps its own decision record; a
+continuation reuses the session's criteria. See the
+[CLI flags](cli.md#completion-criteria) and the
+[completion policy](../architecture/completion-policy.md).
+
 ```mermaid
 stateDiagram-v2
     [*] --> Queued: create record

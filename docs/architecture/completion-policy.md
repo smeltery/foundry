@@ -204,8 +204,8 @@ continuation records), `crates/service/tests/publication_owner/completion.rs`
   cover individual tool grants. Native publication uses the profile's digest.
 - On the native path, criteria are fixed at publication from the immutable
   creation record, and a per-attempt override does not apply there.
-- The CLI and MCP have no option to declare criteria yet; sessions created
-  through them have none, so a settled turn is `action_required`.
+- The CLI `--verify-*` flags and MCP `session_create` `completion` declare
+  inline criteria only; without them a settled turn is `action_required`.
 
 ## Approved decisions
 

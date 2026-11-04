@@ -10,6 +10,7 @@ pub mod plugin_args;
 mod plugin_cli;
 pub mod runner;
 pub mod session;
+pub mod verify_args;
 pub mod watch;
 
 use args::{Cli, Command, OutputFormat};
@@ -120,6 +121,15 @@ pub fn normalize_and_validate(cli: &mut Cli) -> Result<(), CommandError> {
             return Err(CommandError::new("usage", "task must not be empty"));
         }
     }
+    // Typed criteria errors before the request is encoded.
+    match &cli.command {
+        None => cli.options.verify.criteria()?,
+        Some(Command::Run(options)) => options.verify.criteria()?,
+        Some(Command::Session(session::SessionCommand::Start { verify, .. })) => {
+            verify.criteria()?
+        }
+        Some(_) => None,
+    };
     if let Some(Command::Network(options)) = &mut cli.command {
         network_cli::normalize(options, &mut cli.output)?;
     }

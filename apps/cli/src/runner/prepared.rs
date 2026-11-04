@@ -73,6 +73,7 @@ pub(super) fn resolve(
             effort: Some(selection.effort.clone()),
         }),
         idempotency_key: None,
+        completion: task.completion,
         ..Default::default()
     };
     request.validate().map_err(contract_error)?;

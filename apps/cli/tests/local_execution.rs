@@ -241,51 +241,142 @@ fn read_commands_delegate_to_local_backend() {
 
 #[test]
 fn exit_zero_and_mcp_success_come_only_from_a_verified_decision() {
-    use foundry_contracts::{CompletionCheck, CompletionCriteria, CreateSession};
     use foundry_mcp::Backend as McpBackend;
-    let notes = CompletionCheck::File {
-        id: "notes".into(),
-        path: "notes.txt".into(),
-        sha256: None,
-    };
-    for (checks, code, outcome, cause) in [
-        (vec![notes], 0, "success", "criteria_verified"),
-        (Vec::new(), 3, "action_required", "criteria_unverified"),
+    let notes = json!({"checks":[{"kind":"file","id":"notes","path":"notes.txt"}]});
+    for (completion, code, outcome, cause) in [
+        (Some(notes), 0, "success", "criteria_verified"),
+        (None, 3, "action_required", "criteria_unverified"),
     ] {
         let directory = tempdir().unwrap();
         std::fs::write(directory.path().join("notes.txt"), "notes").unwrap();
         let db = directory.path().join("db");
-        let mut service = foundry_service::Service::open(&db).unwrap();
-        let session = service
-            .create(CreateSession {
-                prompt: "test".into(),
-                directory: directory.path().display().to_string(),
-                completion: (!checks.is_empty()).then_some(CompletionCriteria {
-                    profile: None,
-                    checks,
-                }),
-                ..Default::default()
-            })
-            .unwrap();
         let mut backend = LocalBackend::new(&db);
+        let mut create = json!({"prompt":"test","directory":directory.path()});
+        if let Some(completion) = completion {
+            create["completion"] = completion;
+        }
+        let created = backend.call("session_create", create).unwrap();
+        let id = created["session"]["id"].as_str().unwrap().to_owned();
         let queued = backend
-            .call("session_get", json!({"session_id": session.id}))
+            .call("session_get", json!({"session_id": id}))
             .unwrap();
         assert_eq!(queued["completion"]["policy_version"], Value::Null);
+        let mut service = foundry_service::Service::open(&db).unwrap();
         let spec = foundry_runtime::AdapterSpec::new(adapter());
-        service.run(&session.id, session.version, &spec).unwrap();
+        service.run(&id, 0, &spec).unwrap();
         let watched = Command::new(env!("CARGO_BIN_EXE_f5y"))
-            .args(["session", "watch", &session.id, "--json", "--database"])
+            .args(["session", "watch", &id, "--json", "--database"])
             .arg(&db)
             .env_remove("FOUNDRY_ADAPTER")
             .output()
             .unwrap();
         assert_eq!(watched.status.code(), Some(code));
         let got = backend
-            .call("session_get", json!({"session_id": session.id}))
+            .call("session_get", json!({"session_id": id}))
             .unwrap();
         assert_eq!(got["session"]["outcome"], outcome);
         assert_eq!(got["completion"]["policy_version"], "foundry.completion.v1");
         assert_eq!(got["completion"]["cause"], cause);
     }
+}
+
+fn verified_run(directory: &Path, extra: &[&str]) -> Result<f5y::Response, f5y::CommandError> {
+    let mut argv = vec!["f5y", "test", "--dir", directory.to_str().unwrap()];
+    argv.extend_from_slice(extra);
+    let cli = Cli::try_parse_from(argv)
+        .map_err(|error| f5y::CommandError::new("parse", error.to_string()))?;
+    dispatch(cli, &mut backend(&directory.join("db"), true))
+}
+
+#[test]
+fn verify_flags_declare_criteria_for_cli_runs() {
+    let directory = tempdir().unwrap();
+    std::fs::write(directory.path().join("notes.txt"), "verified\n").unwrap();
+    let digest = "672eb8316fec83f94119a4193f9fc552513d56a147502f8be4830e017d817831";
+    for (extra, code) in [
+        (vec!["--verify-command", "sh", "-c", "test -f notes.txt"], 0),
+        (
+            vec!["--verify-command", "false", ";", "--verify-timeout", "5"],
+            1,
+        ),
+        (
+            vec!["--verify-file", "notes.txt", "--verify-sha256", digest],
+            0,
+        ),
+        (vec!["--verify-file", "missing.txt"], 1),
+        (vec![], 3),
+    ] {
+        let response = verified_run(directory.path(), &extra).unwrap();
+        assert_eq!(response.exit_code, code, "{extra:?}");
+    }
+    let response = verified_run(
+        directory.path(),
+        &["--verify-command", "true", ";", "--verify-command", "true"],
+    )
+    .unwrap();
+    let id = response.json["session"]["id"].as_str().unwrap();
+    let decision = foundry_store::Store::open(directory.path().join("db"))
+        .unwrap()
+        .current_completion_decision(id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(decision.criterion_results[1]["id"], "command-2");
+    // The run and session start forms accept the same flags.
+    for argv in [
+        vec!["f5y", "run", "--task", "test", "--verify-command", "true"],
+        vec![
+            "f5y",
+            "session",
+            "start",
+            "--prompt",
+            "test",
+            "--verify-command",
+            "true",
+        ],
+    ] {
+        let mut backend = backend(&directory.path().join("db"), true);
+        let response = dispatch(Cli::parse_from(argv), &mut backend).unwrap();
+        assert_eq!(response.exit_code, 0);
+    }
+}
+
+#[test]
+fn invalid_verify_flags_fail_with_typed_errors() {
+    let directory = tempdir().unwrap();
+    for (extra, code) in [
+        (vec!["--verify-timeout", "5"], "usage"),
+        (vec!["--verify-sha256", &"a".repeat(64)], "usage"),
+        (vec!["--verify-file", "../outside"], "invalid"),
+        (vec!["--verify-file", "/etc/hosts"], "invalid"),
+        (
+            vec!["--verify-file", "x", "--verify-sha256", "ABC"],
+            "invalid",
+        ),
+        (
+            vec!["--verify-command", "true", ";", "--verify-timeout", "0"],
+            "parse",
+        ),
+    ] {
+        let error = verified_run(directory.path(), &extra).err().unwrap();
+        assert_eq!(error.code, code, "{extra:?}");
+    }
+    assert!(!directory.path().join("db").exists());
+    use foundry_mcp::Backend as McpBackend;
+    let mut backend = LocalBackend::new(directory.path().join("db"));
+    let bad = json!({"checks":[{"kind":"file","id":"x","path":"../x"}]});
+    let error = backend
+        .call(
+            "session_create",
+            json!({"prompt":"x","directory":"/tmp","completion":bad}),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "invalid");
+    let shell = json!({"checks":[{"kind":"command","id":"x","argv":"true","timeout_ms":1}]});
+    let error = backend
+        .call(
+            "session_create",
+            json!({"prompt":"x","directory":"/tmp","completion":shell}),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, "invalid");
 }
