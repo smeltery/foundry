@@ -8,7 +8,7 @@
     "crates/runtime/": 15592,
     "crates/mcp/": 3000,
     "crates/service/": 15834,
-    "crates/network/": 46040,
+    "crates/network/": 46033,
     "crates/connectors/": 3000,
     "crates/tools/": 3000,
     "packages/adapter/": 4000,
