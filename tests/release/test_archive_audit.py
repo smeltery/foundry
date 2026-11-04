@@ -168,16 +168,47 @@ class ArchiveAuditTests(Fixture):
         with self.assertRaisesRegex(InvalidSnapshot, "Binary scan of f5y was incomplete"):
             self.audit()
 
-    def test_publication_audits_every_target_and_stays_blocked(self):
-        for target in snapshot.TARGETS:
-            self.pack(target=target)
+    def publication_checks(self, message):
+        """Run publication checks with the ephemeral policy supplied the way the workflow does."""
         with patch.object(snapshot, "notice_inventory", return_value=self.inventory), \
                 patch.object(snapshot, "command", return_value=self.lock), \
                 patch.dict(os.environ, {"FOUNDRY_NAMING_POLICY": self.policy.read_text()}), \
                 patch.object(archive_audit, "audit", wraps=archive_audit.audit) as audit:
-            with self.assertRaisesRegex(InvalidSnapshot, "publication remains blocked"):
+            with self.assertRaisesRegex(InvalidSnapshot, message):
                 snapshot.publication_checks("assets", self.args.tag)
-        self.assertEqual([call.args[2] for call in audit.call_args_list], list(snapshot.TARGETS))
+        return [call.args[2] for call in audit.call_args_list]
+
+    def test_publication_audits_every_target_and_stays_blocked(self):
+        for target in snapshot.TARGETS:
+            self.pack(target=target)
+        self.assertEqual(self.publication_checks("publication remains blocked"), list(snapshot.TARGETS))
+
+    def test_policy_hit_in_sidecar_or_other_asset_fails_publication(self):
+        for target in snapshot.TARGETS:
+            self.pack(target=target)
+        sidecar = self.archive.with_name(self.archive.name + ".sha256")
+        clean = sidecar.read_text()
+        for path, text in ((sidecar, f"{TOKEN} {clean}"), (self.base / "assets/notes.txt", f"{TOKEN}\n")):
+            with self.subTest(path=path.name):
+                path.write_text(text)
+                # The asset-directory scan runs before any archive audit.
+                self.assertEqual(self.publication_checks("Naming scan found policy matches in release files"), [])
+        sidecar.write_text(clean)
+        (self.base / "assets/notes.txt").unlink()
+        self.assertEqual(len(self.publication_checks("publication remains blocked")), len(snapshot.TARGETS))
+
+
+class PublicationTests(unittest.TestCase):
+    def test_publication_checks_fail_closed(self):
+        for failure in (None, InvalidSnapshot("archive audit failed")):
+            with patch.object(archive_audit, "audit", side_effect=failure) as audit, \
+                    patch.object(archive_audit, "naming_scan") as scan, patch.object(snapshot, "command"), \
+                    patch.object(snapshot, "notice_inventory"), patch.object(snapshot, "snapshot") as remote, \
+                    self.assertRaises(InvalidSnapshot):
+                snapshot.publish(argparse.Namespace(directory="artifacts", tag="v0.1.0"))
+            remote.assert_not_called()
+            scan.assert_called_once()
+            self.assertEqual(audit.call_count, len(snapshot.TARGETS) if failure is None else 1)
 
 
 if __name__ == "__main__":

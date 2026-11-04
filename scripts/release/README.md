@@ -131,8 +131,10 @@ still blocks publication until the license-election and naming decisions land.
 
 ## Archive audit
 
-Before any publication step, `publication_checks()` runs `archive_audit.audit()`
-on each target archive. The archive must contain exactly the executables,
+Before any publication step, `publication_checks()` runs
+`naming.py --mode release` over the whole asset directory, including checksum
+sidecars and any other asset. Only the archived executables may be deferred
+there. It then runs `archive_audit.audit()` on each target archive. The archive must contain exactly the executables,
 `build.json` and the committed notice inventory. Its `licenses/**` and
 `notices.json` bytes must equal the committed tree. The archived bundle manifest
 must pass `verify_bundle()` against `Cargo.lock`, and `notices.json` must
@@ -147,7 +149,7 @@ every check passes.
 pinned `cc`: ELF on Linux CI and Mach-O on macOS. It packs them with
 `artifacts.pack()` and uses a temporary policy with a neutral synthetic token.
 The tests fail on a missing notice, a stale or edited notice, and a policy match
-inside an executable or a text member. PE output is not built because no
+inside an executable, a text member, a checksum sidecar or another asset. PE output is not built because no
 Windows target is packaged.
 
 ## Current-state and workflow revision gates

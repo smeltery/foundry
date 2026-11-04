@@ -103,6 +103,9 @@ def require_target_graph(inventory, target):
 
 def publication_checks(directory, tag):
     inventory, lock = notice_inventory(), command("git", "show", "HEAD:Cargo.lock", binary=True)
+    # Every asset, checksum sidecars included, gets a text scan; archived executables go to binary.py below.
+    archive_audit.naming_scan(directory, {f"f5y-{tag}-{target}.tar.gz!/{name}"
+                                          for target in TARGETS for name in artifacts.BINARIES})
     for target in TARGETS:
         archive_audit.audit(directory, tag, target, inventory, lock)
     # Parity checks cannot settle license elections, naming scope or binary distribution rights.
@@ -352,15 +355,6 @@ class SnapshotTests(unittest.TestCase):
             checksum.write_text("invalid\n")
             with self.assertRaises(InvalidSnapshot):
                 verified_build(directory, "v0.1.0", self.sha)
-
-    def test_publication_checks_fail_closed(self):
-        for failure in (None, InvalidSnapshot("archive audit failed")):
-            with patch.object(archive_audit, "audit", side_effect=failure) as audit, patch(__name__ + ".command"), \
-                    patch(__name__ + ".notice_inventory"), patch(__name__ + ".snapshot") as remote, \
-                    self.assertRaises(InvalidSnapshot):
-                publish(argparse.Namespace(directory="artifacts", tag="v0.1.0"))
-            remote.assert_not_called()
-            self.assertEqual(audit.call_count, len(TARGETS) if failure is None else 1)
 
 
 def main():

@@ -16,7 +16,7 @@ SECRET_POLICY = ("--policy-json-env", "FOUNDRY_NAMING_POLICY")
 # Release executables exceed the scanners' source-file defaults; explicit bounds still apply.
 LIMITS = {"naming.py": ("--max-bytes", str(512 << 20), "--max-total-bytes", str(2 << 30)),
           "binary.py": ("--max-bytes", str(512 << 20), "--max-records", str(1 << 24))}
-DEFERRED = {"binary_requires_external_inspection", "file_size_limit"}
+DEFERRAL_CODES = {"binary_requires_external_inspection", "file_size_limit"}
 
 
 def check_notices(files, committed, lock_bytes):
@@ -44,13 +44,23 @@ def scan(script, policy, *arguments):
         raise InvalidSnapshot(f"{script} produced no report") from error
 
 
+def naming_scan(path, executables, policy=SECRET_POLICY):
+    """Text-scan every release file; only the listed executables may defer to binary.py."""
+    _, report = scan("naming.py", policy, "--mode", "release", "--release", str(path))
+    if report.get("status") == "violations":
+        raise InvalidSnapshot("Naming scan found policy matches in release files")
+    if report.get("errors") or any(item["path"] not in executables or item["code"] not in DEFERRAL_CODES
+                                   for item in report.get("uninspected", [])):
+        raise InvalidSnapshot("Naming scan of release files was incomplete")
+
+
 def audit(directory, tag, target, committed, lock_bytes, policy=SECRET_POLICY):
     """Return executable formats; an exact member inventory keeps extraction to known safe paths."""
     with tarfile.open(Path(directory) / f"f5y-{tag}-{target}.tar.gz", "r:gz") as bundle:
         items = bundle.getmembers()
-        names = [item.name for item in items]
-        if (len(set(names)) != len(names) or set(names) != {*BINARIES, "build.json", *committed}
-                or any(not item.isfile() for item in items)):
+        # Sorted lists also reject duplicates; a link or directory maps to "" and never matches.
+        expected = sorted({*BINARIES, "build.json", *committed})
+        if sorted(item.name if item.isfile() else "" for item in items) != expected:
             raise InvalidSnapshot("Archive members differ from the release inventory")
         files = {item.name: bundle.extractfile(item).read() for item in items}
     check_notices(files, committed, lock_bytes)
@@ -58,13 +68,7 @@ def audit(directory, tag, target, committed, lock_bytes, policy=SECRET_POLICY):
         for name, data in files.items():
             Path(temporary, name).parent.mkdir(parents=True, exist_ok=True)
             Path(temporary, name).write_bytes(data)
-        _, report = scan("naming.py", policy, "--mode", "release", "--release", temporary)
-        if report.get("status") == "violations":
-            raise InvalidSnapshot("Naming scan found policy matches in archive members")
-        # Only executables may defer text inspection, and binary.py must then cover them.
-        if report.get("errors") or any(item["path"] not in BINARIES or item["code"] not in DEFERRED
-                                       for item in report.get("uninspected", [])):
-            raise InvalidSnapshot("Naming scan of archive members was incomplete")
+        naming_scan(temporary, BINARIES, policy)
         formats = {}
         for name in BINARIES:
             code, result = scan("binary.py", policy, str(Path(temporary, name)))
