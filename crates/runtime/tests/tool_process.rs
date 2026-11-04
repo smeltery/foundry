@@ -207,10 +207,7 @@ fn exited_leader_keeps_pid_reserved_until_owned_descendant_cleanup() {
 #[test]
 fn detached_pipe_holder_cannot_block_cooperative_worker_join() {
     let fixture = Fixture::new("detached");
-    let mut spec = fixture.spec();
-    spec.timeout = Duration::from_millis(350);
-    let mut process =
-        ToolProcess::start(spec, request(), Arc::new(AtomicBool::new(false))).unwrap();
+    let mut process = fixture.start();
     let leader = fixture.pid("started");
     let descendant = fixture.pid("descendant");
     assert!(matches!(
