@@ -166,11 +166,44 @@ and escalates when its deadline expires. Group cleanup also runs after normal
 settlement so children do not become an implied persistent worker. A disconnected
 cancellation channel does not cancel an attempt.
 
-Process-group supervision is implemented for Unix. This is not containment for
-hostile programs that escape their group, and it does not prevent an adapter
-from making its own external calls. Descendants that detach into another process
-group are outside the cleanup guarantee. SIGKILL cannot trigger cleanup.
-Windows process supervision is unsupported.
+Process supervision is implemented for Unix; Windows is unsupported. It does not
+prevent an adapter from making its own external calls.
+
+### Descendant cleanup
+
+Every cleanup path (hard cancellation, an expired graceful deadline, settlement
+or failure) first stops the adapter with SIGSTOP. It then lists the processes
+whose parent chain leads to the adapter and stops each one. It repeats until two
+consecutive listings find no new process and every process stopped. It kills
+them deepest first, then signals the owned group and reaps the adapter. A process
+that left the group or session with `setsid` or `setpgid` is still reached
+while its parent chain leads to the adapter.
+
+| Platform | Orphaned descendants, such as a double-forked daemon |
+| --- | --- |
+| Linux | Reached. The adapter becomes a child subreaper before exec, so orphans reparent to it instead of init. |
+| macOS | Not reached. macOS has no subreaper; orphans reparent to launchd and survive cleanup. |
+| Other Unix | Not reached. Only the owned group is signalled. |
+
+Regression tests cover `setsid` and a forked chain in a new session on Linux
+and macOS, and a double fork on Linux.
+
+On every platform these limits apply:
+
+- Containment needs a live adapter when cleanup starts. If the adapter has
+  already exited, the kernel has reparented its children to init or launchd.
+- Processes that another service starts on the adapter's behalf, for example
+  through launchd, systemd or another daemon, are not descendants.
+- A process that cannot be signalled, for example after a setuid exec, or that
+  does not stop within one second, for example in uninterruptible sleep, makes
+  cleanup return an error. Every reachable process is still killed.
+- On Linux each listing reads every `/proc` entry, so cost grows with the
+  host's process count. On macOS each listing queries only the children of
+  known processes.
+- SIGKILL of the supervising process cannot trigger cleanup.
+
+Live descendants that cleanup cannot reach may keep inherited pipes open; they
+cannot keep the supervisor's pipe workers waiting for end-of-file.
 
 ## Integration boundary
 
