@@ -35,6 +35,7 @@ impl Fixture {
                 result: None,
                 active_attempt_id: Some("a".into()),
                 version: 1,
+                metadata: Default::default(),
             },
         )
         .unwrap()

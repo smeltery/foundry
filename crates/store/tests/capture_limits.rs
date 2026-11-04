@@ -10,6 +10,7 @@ fn fixture(store: &mut Store) -> AttemptFence {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     store.begin_attempt(&session.id, 0).unwrap()

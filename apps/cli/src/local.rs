@@ -107,6 +107,7 @@ impl LocalBackend {
                     directory,
                     model: None,
                     idempotency_key: None,
+                    ..Default::default()
                 })
             }
             "list" | "ls" => {
@@ -212,6 +213,7 @@ impl LocalBackend {
                     directory: string(args, "directory")?.into(),
                     model: None,
                     idempotency_key: key,
+                    ..Default::default()
                 })
             }
             "session_list" => {

@@ -22,6 +22,7 @@ fn create(service: &mut Service, directory: &Path) -> foundry_contracts::Session
             directory: directory.to_string_lossy().into(),
             model: None,
             idempotency_key: Some("test".into()),
+            ..Default::default()
         })
         .unwrap()
 }

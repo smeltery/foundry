@@ -1,3 +1,5 @@
+mod support_schema;
+use support_schema::UNDO_V12;
 mod support_acceptance;
 use foundry_store::Store;
 use support_acceptance::Fixture;
@@ -29,7 +31,7 @@ fn corrupt_immutable_rows_and_associations_reject_historical_and_mutating_recove
         "UPDATE context_witnesses SET body_digest=zeroblob(32)",
         "UPDATE context_witnesses SET association_digest=zeroblob(32)",
         "DELETE FROM context_witnesses",
-        "INSERT INTO events SELECT session_id,sequence+1,id,attempt_id,revision+1,kind,data FROM events",
+        "INSERT INTO events(session_id,sequence,id,attempt_id,revision,kind,data) SELECT session_id,sequence+1,id,attempt_id,revision+1,kind,data FROM events",
     ] {
         let mut f = Fixture::new();
         f.accept().unwrap();
@@ -97,13 +99,15 @@ fn schema10_migration_is_explicit_preserves_legacy_rows_and_creates_no_acceptanc
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
-    db.execute_batch("DROP TABLE context_continue_acceptances; PRAGMA user_version=10")
-        .unwrap();
+    db.execute_batch(&format!(
+        "{UNDO_V12}DROP TABLE context_continue_acceptances; PRAGMA user_version=10"
+    ))
+    .unwrap();
     f.store = Store::open(f.dir.path().join("db")).unwrap();
     assert_eq!(
         db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        11
+        12
     );
     assert!(f.lookup().unwrap().is_none());
     let after: (Vec<u8>, Vec<u8>, Vec<u8>) = db

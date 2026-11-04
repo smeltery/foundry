@@ -35,6 +35,7 @@ fn create() -> CreateSession {
         directory: "/tmp".into(),
         model: None,
         idempotency_key: Some("stable-key".into()),
+        ..Default::default()
     }
 }
 fn cli(backend: &mut LocalBackend, args: &[&str]) -> Result<Value, f5y::CommandError> {

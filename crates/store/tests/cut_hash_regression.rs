@@ -21,6 +21,7 @@ fn cut_preserves_legacy_field_order_lengths_domains_and_optional_result_tags() {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
         .id;
@@ -144,6 +145,7 @@ fn bundled_sqlite_decodes_escaped_prompt_bytes_without_changing_frozen_hashes() 
                 directory: "/tmp".into(),
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             })
             .unwrap()
             .id;

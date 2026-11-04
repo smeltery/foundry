@@ -24,6 +24,7 @@ fn setup(path: &Path, directory: &Path) -> (Service, String) {
             directory: directory.to_string_lossy().into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     (service, session.id)

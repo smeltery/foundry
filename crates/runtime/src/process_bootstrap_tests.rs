@@ -28,6 +28,7 @@ impl Fixture {
             result: None,
             active_attempt_id: Some("a".into()),
             version: 1,
+            metadata: Default::default(),
         }
     }
     fn spec(&self, mode: &str, body: Vec<u8>) -> AdapterSpec {

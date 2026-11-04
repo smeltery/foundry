@@ -39,6 +39,7 @@ fn fixture() -> Fixture {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let (fence, _) = store

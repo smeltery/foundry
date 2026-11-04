@@ -34,6 +34,7 @@ fn fixture(scenario: &str) -> (AdapterSpec, Session) {
         result: None,
         active_attempt_id: Some("attempt".into()),
         version: 1,
+        metadata: Default::default(),
     };
     (spec, session)
 }

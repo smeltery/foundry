@@ -5,9 +5,14 @@ pub mod context;
 pub mod context_observation;
 pub mod context_v2;
 pub mod permission;
+pub mod session_v2;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+pub use session_v2::{
+    CancelReceipt, Checkout, CompletionCheck, CompletionCriteria, SessionMetadata, SessionOrigin,
+    SessionTarget, TargetKind, WorkspaceSelector,
+};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MESSAGE_ACK_CAPABILITY: &str = "message_ack_v2";
@@ -46,13 +51,30 @@ pub struct ModelConfig {
     pub effort: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Fields after `idempotency_key` are v2 options (`session_v2`). They are
+/// omitted when absent so an older request keeps its stored replay bytes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateSession {
     pub prompt: String,
     pub directory: String,
     pub model: Option<ModelConfig>,
     pub idempotency_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<WorkspaceSelector>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<SessionTarget>,
+    /// Named tool profile and execution policy reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<SessionOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion: Option<CompletionCriteria>,
 }
 
 impl CreateSession {
@@ -76,7 +98,7 @@ impl CreateSession {
                 "idempotency key must not be empty".into(),
             ));
         }
-        Ok(())
+        self.validate_v2()
     }
 }
 
@@ -91,6 +113,10 @@ pub struct Session {
     pub result: Option<String>,
     pub active_attempt_id: Option<String>,
     pub version: u64,
+    /// Boxed: usually empty, and it would otherwise double the inline size of
+    /// every `Session` and of `AdapterCommand::Start`.
+    #[serde(flatten)]
+    pub metadata: Box<SessionMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -206,6 +232,7 @@ mod tests {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         };
         assert!(request.validate().is_err());
         request.prompt = "x".repeat(MAX_PROMPT_BYTES);

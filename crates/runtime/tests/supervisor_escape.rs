@@ -157,6 +157,7 @@ fn session(directory: &Path) -> Session {
         result: None,
         active_attempt_id: Some("attempt".into()),
         version: 1,
+        metadata: Default::default(),
     }
 }
 
