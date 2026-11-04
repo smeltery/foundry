@@ -14,9 +14,9 @@
     "packages/adapter/": 4000,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
-    "scripts/ci/": 520,
+    "scripts/ci/": 615,
     "scripts/release/": 1200,
-    "tests/": 5000,
+    "tests/": 5375,
     "vendor/netwatch/": 5695
   },
   "files": {

@@ -132,6 +132,25 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(self.run_scan("--mode", "history", "--root", str(self.release),
                                        "--max-commits", "1")[0], 2)
 
+    def test_history_counts_each_unchanged_entry_once(self):
+        self.repo()
+        for name in ("a.txt", "b.txt", "c.txt"):
+            (self.release / name).write_text("safe " + name)
+        self.commit()
+        for _ in range(20):
+            self.git("commit", "-q", "--allow-empty", "-m", "fixture")
+        # 21 commit objects plus 3 unique entries; counting per commit would be 84.
+        code, report, _ = self.run_scan("--mode", "history", "--root", str(self.release),
+                                        "--max-files", "30")
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report["files"], 24)
+        (self.release / "d.txt").write_text("violetwidget")
+        self.commit()
+        code, report, _ = self.run_scan("--mode", "history", "--root", str(self.release),
+                                        "--max-files", "30")
+        self.assertEqual(code, 1, report)
+        self.assertEqual(report["match_count"], 1)
+
     def test_history_tag_object_and_shallow_guard(self):
         self.repo()
         (self.release / "item.txt").write_text("safe")

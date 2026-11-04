@@ -1,0 +1,54 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "network-policy",
+  "cases": [
+    {
+      "name": "get_returns_saved_hosts",
+      "operation": "network_policy.get",
+      "rows": ["API-E7E243FCBA7B1"],
+      "implemented": false,
+      "given": {"hosts": ["registry.example"]},
+      "request": {},
+      "expect": {"result": "ok", "hosts": ["registry.example"]}
+    },
+    {
+      "name": "owner_replaces_whole_list",
+      "operation": "network_policy.replace",
+      "rows": ["API-EAA5699B6D3B4"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["network_policy.write"], "workspace": "ws-a"},
+      "given": {"hosts": ["registry.example"]},
+      "request": {"hosts": ["mirror.example"]},
+      "expect": {"result": "ok", "hosts": ["mirror.example"], "running_execution_revoked": false, "applies": "next_execution_start"}
+    },
+    {
+      "name": "empty_list_clears_but_keeps_baseline",
+      "operation": "network_policy.replace",
+      "rows": ["API-EAA5699B6D3B4"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["network_policy.write"], "workspace": "ws-a"},
+      "limit": {"name": "policy_hosts", "value": 0},
+      "request": {"hosts": []},
+      "expect": {"result": "ok", "hosts": [], "baseline": "unchanged"}
+    },
+    {
+      "name": "host_list_above_limit",
+      "operation": "network_policy.replace",
+      "rows": ["API-EAA5699B6D3B4"],
+      "implemented": false,
+      "limit": {"name": "policy_hosts", "value": 51},
+      "request": {},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "disabled_writes_are_unavailable",
+      "operation": "network_policy.replace",
+      "rows": ["API-EAA5699B6D3B4"],
+      "implemented": false,
+      "given": {"writes": "disabled"},
+      "request": {"hosts": ["mirror.example"]},
+      "expect": {"result": "error", "error": "unavailable"}
+    }
+  ]
+}

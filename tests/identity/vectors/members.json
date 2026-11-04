@@ -1,0 +1,153 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "membership",
+  "cases": [
+    {
+      "name": "admin_list_includes_pending_invitations",
+      "operation": "member.list",
+      "rows": ["API-E33A028E187F8"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "given": {"members": ["user-a", "user-b"], "invitations": ["new@team.example"]},
+      "request": {},
+      "expect": {"result": "ok", "items": ["user-a", "user-b"], "invitations": ["new@team.example"], "next": null}
+    },
+    {
+      "name": "member_list_hides_invitations",
+      "operation": "member.list",
+      "rows": ["API-E33A028E187F8"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "given": {"members": ["user-a", "user-b"], "invitations": ["new@team.example"]},
+      "request": {},
+      "expect": {"result": "ok", "items": ["user-a", "user-b"], "invitations": []}
+    },
+    {
+      "name": "invite_defaults_to_admin_and_counts_deliveries",
+      "operation": "member.invite",
+      "rows": ["API-EC9FBB1DF9FC2"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"notice_sink": "local"},
+      "request": {"emails": ["one@team.example", "two@team.example"]},
+      "expect": {"result": "ok", "role": "admin", "invited": 2, "delivered": 0}
+    },
+    {
+      "name": "invite_as_owner_is_invalid",
+      "operation": "member.invite",
+      "rows": ["API-EC9FBB1DF9FC2"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"emails": ["one@team.example"], "role": "owner"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "member_cannot_invite",
+      "operation": "member.invite",
+      "rows": ["API-EC9FBB1DF9FC2"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"emails": ["one@team.example"]},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "get_member_by_user",
+      "operation": "member.get",
+      "rows": ["API-E2B9A6E28934A"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"user": "user-b"},
+      "expect": {"result": "ok", "user": "user-b", "role": "admin", "email": "b@team.example"}
+    },
+    {
+      "name": "get_non_member_is_not_found",
+      "operation": "member.get",
+      "rows": ["API-E2B9A6E28934A"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"user": "user-z"},
+      "expect": {"result": "error", "error": "not_found", "cause": "not_member"}
+    },
+    {
+      "name": "admin_removes_member_without_deleting_account",
+      "operation": "member.remove",
+      "rows": ["API-E601F50E4D8E6"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "member"},
+      "request": {"user": "user-c"},
+      "expect": {"result": "ok", "state": "removed", "account_deleted": false, "login_grants": "revoked"}
+    },
+    {
+      "name": "admin_cannot_remove_owner",
+      "operation": "member.remove",
+      "rows": ["API-E601F50E4D8E6"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "owner", "owners": 2},
+      "request": {"user": "user-a"},
+      "expect": {"result": "error", "error": "forbidden", "cause": "owner_required", "state": "member"}
+    },
+    {
+      "name": "removing_last_owner_conflicts",
+      "operation": "member.remove",
+      "rows": ["API-E601F50E4D8E6"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "owner", "owners": 1},
+      "request": {"user": "user-a"},
+      "expect": {"result": "error", "error": "conflict", "cause": "last_owner", "state": "member"}
+    },
+    {
+      "name": "repeated_removal_is_not_member",
+      "operation": "member.remove",
+      "rows": ["API-E601F50E4D8E6"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "removed"},
+      "request": {"user": "user-c"},
+      "expect": {"result": "error", "error": "not_found", "cause": "not_member"}
+    },
+    {
+      "name": "owner_promotes_member_to_owner",
+      "operation": "member.set_role",
+      "rows": ["API-E60D270D99806"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "member"},
+      "request": {"user": "user-c", "role": "owner"},
+      "expect": {"result": "ok", "state": "member", "role": "owner", "scopes_changed": false}
+    },
+    {
+      "name": "admin_cannot_grant_owner",
+      "operation": "member.set_role",
+      "rows": ["API-E60D270D99806"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "member"},
+      "request": {"user": "user-c", "role": "owner"},
+      "expect": {"result": "error", "error": "forbidden", "cause": "owner_required"}
+    },
+    {
+      "name": "demoting_last_owner_conflicts",
+      "operation": "member.set_role",
+      "rows": ["API-E60D270D99806"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "owner", "owners": 1},
+      "request": {"user": "user-a", "role": "admin"},
+      "expect": {"result": "error", "error": "conflict", "cause": "last_owner"}
+    },
+    {
+      "name": "repeating_same_role_reports_same_state",
+      "operation": "member.set_role",
+      "rows": ["API-E60D270D99806"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "member", "target_role": "member"},
+      "request": {"user": "user-c", "role": "member"},
+      "expect": {"result": "ok", "state": "member", "role": "member"}
+    }
+  ]
+}
