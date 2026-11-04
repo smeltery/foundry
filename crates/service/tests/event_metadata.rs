@@ -59,6 +59,7 @@ fn exercise(coordinated: bool, granted: bool, failed: bool, name: &str, input: V
             directory: root.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let python = Command::new("python3")

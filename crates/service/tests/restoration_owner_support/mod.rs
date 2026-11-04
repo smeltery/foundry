@@ -39,6 +39,7 @@ impl Fixture {
                         directory: path.display().to_string(),
                         model: None,
                         idempotency_key: None,
+                        ..Default::default()
                     })
                     .unwrap()
                     .id

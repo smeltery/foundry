@@ -25,6 +25,7 @@ fn session() -> Session {
         result: None,
         active_attempt_id: Some("new".into()),
         version: 2,
+        metadata: Default::default(),
     }
 }
 #[test]

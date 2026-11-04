@@ -57,6 +57,7 @@ pub fn fresh(result: &str) -> Fixture {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, session.version).unwrap();

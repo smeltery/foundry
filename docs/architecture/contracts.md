@@ -20,7 +20,7 @@ The shipped ordinary process protocol is unchanged by these additions.
 | Message delivery | `message_ack_v2` with exact message/attempt/private receipt | Acknowledgement proves receipt, not completion; absent/legacy support cannot authorize delivery |
 | Private capture | `context` codec and its capability | Bounded opaque content and exact bindings; capture support grants neither restore nor Continue |
 | Private loading | `context_v2` codec and load scope without an attempt | Separate phase/direction validation; ordinary protocol acceptance is insufficient |
-| Durable store | Schema 11, concrete `Store` APIs | Migrations preserve historical records; current ownership is required for mutation |
+| Durable store | Schema 12, concrete `Store` APIs | Migrations preserve historical records; current ownership is required for mutation |
 | Capability/permission helpers | Additive owned pure contracts | Not new ordinary wire frames, runtime advertisement or automatic tool authority |
 | Product profiles | Current/legacy target contract | Explicit profile acknowledgement; include effective profile in execution/restore compatibility before those targets are integrated |
 
@@ -38,6 +38,16 @@ lifecycle, optional outcome/result, active attempt ID and version. Its current
 result is an optional string. General structured results, associations, archive
 metadata and independent conversation/turn DTOs are target work; do not infer
 their support from a directory or stringify unknown results as a conversion.
+
+Session contract v2 (`crates/contracts/src/session_v2.rs`) is an interface gate
+for that work. `CreateSession` accepts optional workspace selector, tags, title,
+execution target, tool profile, origin and completion criteria fields, and
+`Session` carries optional archive, title, origin, timestamp and lineage
+metadata. Absent fields are omitted from the encoding, so older requests keep
+their stored idempotency bytes. `Store::create` rejects any v2 option as
+`unsupported` until the ticket that owns it stores it. `CancelReceipt` is a DTO
+only. Wire names are provisional; the terminal state for cancelling a suspended
+session, delete semantics and any HTTP transport are pending decisions.
 
 | Operation/state | Contract |
 | --- | --- |

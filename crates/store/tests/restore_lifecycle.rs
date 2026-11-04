@@ -1,3 +1,5 @@
+mod support_schema;
+use support_schema::UNDO_V12;
 mod support_restore;
 use foundry_contracts::{CancelMode, Lifecycle};
 use foundry_store::{BeginRestoreResult, ContinueDecision, RestoreClose, RestorePhase, Store};
@@ -232,7 +234,7 @@ fn migration_seven_adds_no_restore_authority() {
     drop(store);
     Connection::open(&path)
         .unwrap()
-        .execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; PRAGMA user_version=7;")
+        .execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; PRAGMA user_version=7;"))
         .unwrap();
     let mut store = Store::open(&path).unwrap();
     assert_eq!(store.get(&id).unwrap(), before);

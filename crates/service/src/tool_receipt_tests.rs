@@ -11,6 +11,7 @@ fn shared_reply_retains_exact_ledger_digest_and_unknown_effect_evidence() {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, 0).unwrap();
@@ -63,6 +64,7 @@ fn shared_evidence_does_not_relax_identity_or_size_checks() {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, 0).unwrap();
@@ -170,6 +172,7 @@ fn evidence_receipt_matches_committed_ledger_for_every_completion_kind() {
                 directory: "/tmp".into(),
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             })
             .unwrap();
         let fence = store.begin_attempt(&session.id, 0).unwrap();
@@ -296,6 +299,7 @@ fn capture_ready_persists_without_opening_message_admission() {
                 directory: "/tmp".into(),
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             })
             .unwrap();
         let fence = store.begin_attempt(&session.id, 0).unwrap();
