@@ -1,0 +1,230 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "provider-oauth-logins",
+  "cases": [
+    {
+      "name": "start_uses_default_method_and_returns_next_action",
+      "operation": "oauth_logins.start",
+      "rows": ["API-EFAE326F7F539"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-a"},
+      "expect": {"result": "accepted", "state": "pending", "method": "device_code", "next_action": "device_code",
+                 "expires_at": "2026-01-01T00:15:00Z"}
+    },
+    {
+      "name": "start_rejects_unlisted_method",
+      "operation": "oauth_logins.start",
+      "rows": ["API-EFAE326F7F539"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-a", "method": "interactive"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "start_for_provider_without_login_is_unsupported",
+      "operation": "oauth_logins.start",
+      "rows": ["API-EFAE326F7F539"],
+      "implemented": false,
+      "request": {"provider_id": "fixture"},
+      "expect": {"result": "error", "error": "unsupported_provider"}
+    },
+    {
+      "name": "api_key_caller_cannot_start_login",
+      "operation": "oauth_logins.start",
+      "rows": ["API-EFAE326F7F539"],
+      "implemented": false,
+      "given": {"caller_credential": "api_key"},
+      "request": {"provider_id": "hosted-a"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "new_start_supersedes_only_callers_previous_login",
+      "operation": "oauth_login.state",
+      "rows": ["API-EFAE326F7F539"],
+      "implemented": false,
+      "given": {"state": "pending", "started_by": "caller"},
+      "request": {"event": "superseded"},
+      "expect": {"state": "cancelled"},
+      "note": "Another user's pending login for the same provider is unaffected."
+    },
+    {
+      "name": "keyed_replay_returns_same_login_without_new_exchange",
+      "operation": "oauth_logins.start_keyed",
+      "rows": ["API-E40CE908FFC7A"],
+      "implemented": false,
+      "given": {"prior_requests": [{"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-1"}],
+                "state": "succeeded", "expires_at": "2026-01-01T00:15:00Z"},
+      "request": {"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-1"},
+      "expect": {"result": "replayed", "state": "succeeded", "same_login": true, "expires_at": "2026-01-01T00:15:00Z",
+                 "provider_exchanges": 0}
+    },
+    {
+      "name": "keyed_start_with_changed_intent_conflicts",
+      "operation": "oauth_logins.start_keyed",
+      "rows": ["API-E40CE908FFC7A"],
+      "implemented": false,
+      "given": {"prior_requests": [{"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-1"}],
+                "state": "pending"},
+      "request": {"provider_id": "hosted-a", "method": "device_code", "idempotency_key": "key-1"},
+      "expect": {"result": "error", "error": "conflict", "original_state": "pending"}
+    },
+    {
+      "name": "keyed_replay_after_purge_is_gone",
+      "operation": "oauth_logins.start_keyed",
+      "rows": ["API-E40CE908FFC7A"],
+      "implemented": false,
+      "given": {"prior_requests": [{"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-1"}],
+                "state": "purged", "receipt_retained": true},
+      "request": {"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-1"},
+      "expect": {"result": "error", "error": "gone", "cause": "login_result_expired", "provisional_http": 410}
+    },
+    {
+      "name": "keyed_start_unknown_reconnect_account_is_not_found",
+      "operation": "oauth_logins.start_keyed",
+      "rows": ["API-E40CE908FFC7A"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-a", "method": "browser", "idempotency_key": "key-2", "account_key": "account-9"},
+      "expect": {"result": "error", "error": "not_found", "unkeyed_fallback": false}
+    },
+    {
+      "name": "pending_list_is_metadata_only_and_ordered",
+      "operation": "oauth_logins.list_pending",
+      "rows": ["API-E90F0EE28B9DB"],
+      "implemented": false,
+      "given": {"logins": [
+        {"login_id": "login-2", "provider_id": "hosted-b", "state": "pending", "started_by": "caller"},
+        {"login_id": "login-1", "provider_id": "hosted-a", "state": "pending", "started_by": "caller"},
+        {"login_id": "login-3", "provider_id": "hosted-a", "state": "succeeded", "started_by": "caller"},
+        {"login_id": "login-4", "provider_id": "hosted-a", "state": "pending", "started_by": "member-b"}
+      ]},
+      "request": {},
+      "expect": {"result": "ok", "login_ids": ["login-1", "login-2"], "item_fields": ["login_id", "provider_id", "method", "status", "expires_at"],
+                 "contains_challenges": false, "renews_expiry": false}
+    },
+    {
+      "name": "pending_list_filters_by_provider",
+      "operation": "oauth_logins.list_pending",
+      "rows": ["API-E90F0EE28B9DB"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-b"},
+      "expect": {"result": "ok", "login_ids": ["login-2"]}
+    },
+    {
+      "name": "get_reports_prompt_and_next_action",
+      "operation": "oauth_logins.get",
+      "rows": ["API-E2A7C9B425D67"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"login_id": "login-1"},
+      "expect": {"result": "ok", "state": "pending", "prompt": {"id": 1, "type": "manual_code"}, "next_action": "prompt"}
+    },
+    {
+      "name": "get_purged_or_foreign_login_is_not_found",
+      "operation": "oauth_logins.get",
+      "rows": ["API-E2A7C9B425D67"],
+      "implemented": false,
+      "given": {"started_by": "member-b"},
+      "request": {"login_id": "login-4"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "uncertain_exchange_fails_with_restart_required",
+      "operation": "oauth_login.state",
+      "rows": ["API-E2A7C9B425D67"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"event": "exchange_uncertain"},
+      "expect": {"state": "failed", "failure_code": "restart_required", "exchange_replayed": false}
+    },
+    {
+      "name": "deadline_expires_pending_login",
+      "operation": "oauth_login.state",
+      "rows": ["API-E2A7C9B425D67"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"event": "deadline_passed"},
+      "expect": {"state": "expired"}
+    },
+    {
+      "name": "respond_accepts_current_prompt_without_echo",
+      "operation": "oauth_logins.respond",
+      "rows": ["API-E2CBA38EEBB25"],
+      "implemented": false,
+      "given": {"state": "pending", "prompt_id": 1},
+      "request": {"login_id": "login-1", "prompt_id": 1, "answer": "fixture-code-canary"},
+      "expect": {"result": "accepted", "state": "pending"}
+    },
+    {
+      "name": "respond_to_stale_prompt_conflicts",
+      "operation": "oauth_logins.respond",
+      "rows": ["API-E2CBA38EEBB25"],
+      "implemented": false,
+      "given": {"state": "pending", "prompt_id": 2},
+      "request": {"login_id": "login-1", "prompt_id": 1, "answer": "fixture-code-canary"},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "respond_to_finished_login_conflicts",
+      "operation": "oauth_logins.respond",
+      "rows": ["API-E2CBA38EEBB25"],
+      "implemented": false,
+      "given": {"state": "succeeded"},
+      "request": {"login_id": "login-1", "prompt_id": 1, "answer": "fixture-code-canary"},
+      "expect": {"result": "error", "error": "conflict", "state": "succeeded"}
+    },
+    {
+      "name": "oversize_answer_is_invalid",
+      "operation": "oauth_logins.respond",
+      "rows": ["API-E2CBA38EEBB25"],
+      "implemented": false,
+      "limit": {"name": "prompt_answer_bytes", "value": 8193},
+      "request": {"login_id": "login-1", "prompt_id": 1, "answer_bytes": 8193},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "answer_keeps_login_pending",
+      "operation": "oauth_login.state",
+      "rows": ["API-E2CBA38EEBB25"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"event": "respond"},
+      "expect": {"state": "pending"}
+    },
+    {
+      "name": "cancel_pending_login",
+      "operation": "oauth_logins.cancel",
+      "rows": ["API-E4881077B6501"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"login_id": "login-1"},
+      "expect": {"result": "ok", "state": "cancelled"}
+    },
+    {
+      "name": "cancel_succeeded_login_is_idempotent_and_keeps_account",
+      "operation": "oauth_logins.cancel",
+      "rows": ["API-E4881077B6501"],
+      "implemented": false,
+      "given": {"state": "succeeded", "account_connected": true},
+      "request": {"login_id": "login-1"},
+      "expect": {"result": "ok", "state": "succeeded", "account_connected": true}
+    },
+    {
+      "name": "cancel_terminal_login_leaves_it_unchanged",
+      "operation": "oauth_login.state",
+      "rows": ["API-E4881077B6501"],
+      "implemented": false,
+      "given": {"state": "expired"},
+      "request": {"event": "cancel"},
+      "expect": {"state": "expired"}
+    },
+    {
+      "name": "login_storage_outage_is_unavailable",
+      "operation": "oauth_logins.cancel",
+      "rows": ["API-E4881077B6501"],
+      "implemented": false,
+      "given": {"login_store_available": false},
+      "request": {"login_id": "login-1"},
+      "expect": {"result": "error", "error": "unavailable"}
+    }
+  ]
+}

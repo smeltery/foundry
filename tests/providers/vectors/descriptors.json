@@ -1,0 +1,71 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "provider-catalog-and-inference-status",
+  "cases": [
+    {
+      "name": "catalog_lists_secret_free_descriptors_in_id_order",
+      "operation": "providers.catalog",
+      "rows": ["API-E5297A5569474"],
+      "implemented": false,
+      "request": {},
+      "expect": {
+        "result": "ok",
+        "items": [
+          {"provider_id": "fixture", "kind": "fixture", "auth_kinds": ["none"], "config_fields": [],
+           "oauth_login": {"available": false, "cause": "not_supported"}, "efforts": ["off", "low", "high"]},
+          {"provider_id": "hosted-a", "kind": "hosted_api", "auth_kinds": ["api_key", "oauth"],
+           "config_fields": [{"name": "region", "label": "Region", "required": false}],
+           "oauth_login": {"available": true, "methods": ["browser", "device_code"], "default_method": "device_code", "account_mode": "multiple"},
+           "efforts": ["minimal", "low", "medium", "high"]}
+        ],
+        "contains_credentials": false
+      }
+    },
+    {
+      "name": "registry_support_without_public_login_is_not_enabled",
+      "operation": "providers.catalog",
+      "rows": ["API-E5297A5569474"],
+      "implemented": false,
+      "given": {"provider_supports_oauth": true, "public_login_enabled": false},
+      "request": {"provider_id": "hosted-b"},
+      "expect": {"result": "ok", "oauth_login": {"available": false, "cause": "not_enabled"}}
+    },
+    {
+      "name": "catalog_requires_authentication",
+      "operation": "providers.catalog",
+      "rows": ["API-E5297A5569474"],
+      "implemented": false,
+      "given": {"caller_credential": null},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "status_reports_observed_availability_without_credentials",
+      "operation": "providers.status",
+      "rows": ["API-E1BC704592670"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "kinds": {"fixture": "available", "hosted_api": "unknown", "local_endpoint": "unavailable"},
+                 "observed_at": "2026-01-01T00:00:00Z", "contains_credentials": false}
+    },
+    {
+      "name": "unknown_status_is_never_available",
+      "operation": "providers.status",
+      "rows": ["API-E1BC704592670"],
+      "implemented": false,
+      "given": {"health_check_ran": false},
+      "request": {},
+      "expect": {"result": "ok", "kinds": {"hosted_api": "unknown"}, "available_kinds": []}
+    },
+    {
+      "name": "status_is_rate_limited_with_delay",
+      "operation": "providers.status",
+      "rows": ["API-E1BC704592670"],
+      "implemented": false,
+      "given": {"throttled": true},
+      "request": {},
+      "expect": {"result": "error", "error": "rate_limited", "retry_after_seconds": 5}
+    }
+  ]
+}

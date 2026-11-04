@@ -1,0 +1,196 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "budgets-reservations-deadlines-and-review-rounds",
+  "cases": [
+    {
+      "name": "reservation_within_ceiling_succeeds",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"unit": "money", "currency": "USD", "ceiling": "1.00", "committed": "0.40", "reserved": "0.10"},
+      "request": {"amounts": ["0.50"]},
+      "expect": {"result": "ok", "winners": 1}
+    },
+    {
+      "name": "reservation_over_ceiling_is_budget_exhausted",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"unit": "money", "currency": "USD", "ceiling": "1.00", "committed": "0.40", "reserved": "0.10"},
+      "request": {"amounts": ["0.500000001"]},
+      "expect": {"result": "error", "error": "budget_exhausted", "winners": 0, "dispatched": 0}
+    },
+    {
+      "name": "concurrent_reservations_have_one_winner_when_one_fits",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"unit": "money", "currency": "USD", "ceiling": "1.00", "committed": "0.30", "reserved": "0"},
+      "request": {"amounts": ["0.40", "0.40"]},
+      "expect": {"result": "error", "error": "budget_exhausted", "winners": 1}
+    },
+    {
+      "name": "decimal_money_is_exact",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"unit": "money", "currency": "USD", "ceiling": "0.3", "committed": "0.1", "reserved": "0"},
+      "request": {"amounts": ["0.2"]},
+      "expect": {"result": "ok", "winners": 1},
+      "note": "Binary floats would refuse this reservation."
+    },
+    {
+      "name": "token_ceiling_uses_integer_units",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"unit": "output_tokens", "ceiling": "10000", "committed": "9000", "reserved": "500"},
+      "request": {"amounts": ["500", "500"]},
+      "expect": {"result": "error", "error": "budget_exhausted", "winners": 1}
+    },
+    {
+      "name": "float_money_is_invalid",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "request": {"ceiling": 1.5},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "child_budget_cannot_widen_parent",
+      "operation": "budget.reserve",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"parent_ceiling": "1.00", "delegated": true},
+      "request": {"child_ceiling": "2.00"},
+      "expect": {"result": "error", "error": "invalid_request", "effective_ceiling": "1.00"}
+    },
+    {
+      "name": "settle_below_reservation_releases_rest",
+      "operation": "budget.settle",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"currency": "USD", "committed": "0.40", "reservation": "0.50"},
+      "request": {"actual": "0.20"},
+      "expect": {"result": "ok", "committed": "0.60", "released": "0.30", "overrun": false, "dispatch_allowed": true}
+    },
+    {
+      "name": "settle_above_reservation_records_overrun",
+      "operation": "budget.settle",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"currency": "USD", "committed": "0.40", "reservation": "0.50"},
+      "request": {"actual": "0.55"},
+      "expect": {"result": "ok", "committed": "0.95", "released": "0", "overrun": true, "dispatch_allowed": false}
+    },
+    {
+      "name": "cancelled_call_settles_consumed_amount",
+      "operation": "budget.settle",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"currency": "USD", "committed": "0", "reservation": "0.50", "call": "cancelled"},
+      "request": {"actual": "0.05"},
+      "expect": {"result": "ok", "committed": "0.05", "released": "0.45", "overrun": false, "dispatch_allowed": true}
+    },
+    {
+      "name": "deadline_expiry_suspends_and_never_succeeds",
+      "operation": "budget.deadline",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"wall_clock_ms": 60000, "elapsed_ms": 60001, "includes_recovery_wait": true},
+      "request": {},
+      "expect": {"result": "ok", "lifecycle": "suspended", "cause": "deadline_exceeded", "new_dispatches": 0}
+    },
+    {
+      "name": "zero_deadline_means_none",
+      "operation": "budget.deadline",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "limit": {"name": "wall_clock_ms", "value": 0},
+      "request": {"wall_clock_ms": 0},
+      "expect": {"result": "ok", "deadline": null}
+    },
+    {
+      "name": "deadline_below_one_minute_is_invalid",
+      "operation": "budget.deadline",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "limit": {"name": "wall_clock_ms", "value": 59999},
+      "request": {"wall_clock_ms": 59999},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "deadline_above_one_thousand_hours_is_invalid",
+      "operation": "budget.deadline",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "limit": {"name": "wall_clock_ms", "value": 3600000001},
+      "request": {"wall_clock_ms": 3600000001},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "unverifiable_review_end_needs_review",
+      "operation": "budget.review",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"long_running": true, "rounds_max": 4, "rounds_used": 4, "criteria_verified": false},
+      "request": {},
+      "expect": {"result": "ok", "lifecycle": "exit", "outcome": "failure", "cause": "needs_review"}
+    },
+    {
+      "name": "review_rounds_default_to_four_including_first_pass",
+      "operation": "budget.review",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "request": {"long_running": true},
+      "expect": {"result": "ok", "rounds_max": 4, "first_pass_counted": true}
+    },
+    {
+      "name": "review_rounds_above_cap_are_invalid",
+      "operation": "budget.review",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "limit": {"name": "review_rounds", "value": 17},
+      "request": {"long_running": true, "rounds_max": 17},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "follow_up_runs_single_pass",
+      "operation": "budget.review",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"long_running": true},
+      "request": {"follow_up": true},
+      "expect": {"result": "accepted", "rounds_max": 1}
+    },
+    {
+      "name": "rollover_is_off_by_default",
+      "operation": "session.rollover",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"account_exhausted": true, "other_accounts": ["account-2"]},
+      "request": {},
+      "expect": {"result": "error", "error": "quota_exhausted", "rolled_over": false}
+    },
+    {
+      "name": "explicit_rollover_uses_same_model_on_another_account",
+      "operation": "session.rollover",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"account_exhausted": true, "provider_id": "hosted-a", "model": "hosted-large", "other_accounts": ["account-2"]},
+      "request": {"allow_rollover": true},
+      "expect": {"result": "ok", "rolled_over": true, "model": "hosted-large", "from_account": "account-1", "to_account": "account-2",
+                 "recorded": true}
+    },
+    {
+      "name": "isolated_benchmark_session_never_rolls_over",
+      "operation": "session.rollover",
+      "rows": ["AG-12"],
+      "implemented": false,
+      "given": {"isolated": true, "account_exhausted": true, "other_accounts": ["account-2"]},
+      "request": {"allow_rollover": true},
+      "expect": {"result": "error", "error": "quota_exhausted", "rolled_over": false}
+    }
+  ]
+}
