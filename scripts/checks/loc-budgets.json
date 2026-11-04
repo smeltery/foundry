@@ -16,7 +16,7 @@
     "scripts/clients/": 170,
     "scripts/ci/": 615,
     "scripts/release/": 1200,
-    "tests/": 5292,
+    "tests/": 5375,
     "vendor/netwatch/": 5695
   },
   "files": {
