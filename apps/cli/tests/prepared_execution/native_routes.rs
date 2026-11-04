@@ -12,6 +12,7 @@ fn prompt_free_resume_reads_same_session_without_configuration_or_admission() {
             directory: h.work.display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     std::fs::remove_file(&h.config).unwrap();

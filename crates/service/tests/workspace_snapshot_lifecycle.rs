@@ -58,6 +58,7 @@ impl Fixture {
                 directory: self.workspace.display().to_string(),
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             })
             .unwrap();
         (service, session.id)

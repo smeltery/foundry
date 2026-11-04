@@ -8,6 +8,7 @@ pub fn session(store: &mut Store) -> String {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
         .id

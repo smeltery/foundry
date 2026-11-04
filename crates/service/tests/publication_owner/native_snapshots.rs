@@ -39,6 +39,7 @@ fn fresh_cancel_records_actual_snapshot_or_limit_and_hard_skips() {
                 directory: workspace.display().to_string(),
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             })
             .unwrap();
         let mut settings = SnapshotSettings::for_database(helper(), &path).unwrap();

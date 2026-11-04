@@ -1,0 +1,75 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "account-checks-and-provider-usage",
+  "cases": [
+    {
+      "name": "check_reports_metadata_evidence_without_inference",
+      "operation": "accounts.check",
+      "rows": ["API-E28E3F3BCFA6D"],
+      "implemented": false,
+      "request": {"provider_id": "fixture", "account_key": "account-1"},
+      "expect": {"result": "ok", "connected": true,
+                 "authentication": {"status": "accepted", "basis": "provider_metadata", "cause": "metadata_accepted"},
+                 "capacity": {"status": "available", "basis": "key_budget", "cause": "key_budget_remaining"},
+                 "inference": "not_tested", "observed_at": "2026-01-01T00:00:00Z", "model_calls": 0, "verdict_persisted": false}
+    },
+    {
+      "name": "check_missing_slot_reports_not_connected",
+      "operation": "accounts.check",
+      "rows": ["API-E28E3F3BCFA6D"],
+      "implemented": false,
+      "request": {"provider_id": "fixture", "account_key": "account-9"},
+      "expect": {"result": "ok", "connected": false,
+                 "authentication": {"status": "unverified", "basis": "saved_credential", "cause": "not_connected"},
+                 "capacity": {"status": "unknown", "basis": "unknown", "cause": "not_connected"}, "inference": "not_tested"}
+    },
+    {
+      "name": "check_unreadable_storage_reports_null_connection",
+      "operation": "accounts.check",
+      "rows": ["API-E28E3F3BCFA6D"],
+      "implemented": false,
+      "given": {"store_available": false},
+      "request": {"provider_id": "fixture", "account_key": "account-1"},
+      "expect": {"result": "ok", "connected": null,
+                 "authentication": {"status": "unverified", "basis": "saved_credential", "cause": "storage_unavailable"}}
+    },
+    {
+      "name": "check_other_members_slot_is_forbidden",
+      "operation": "accounts.check",
+      "rows": ["API-E28E3F3BCFA6D"],
+      "implemented": false,
+      "given": {"connected_by": "member-b", "caller_role": "member"},
+      "request": {"provider_id": "fixture", "account_key": "account-1"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "usage_reports_windows",
+      "operation": "accounts.usage",
+      "rows": ["API-E7619AD9B11AD"],
+      "implemented": false,
+      "request": {"provider_id": "fixture", "account_key": "account-1"},
+      "expect": {"result": "ok", "status": "available",
+                 "windows": [{"label": "short window", "remaining_percent": 40, "resets_at": "2026-01-01T05:00:00Z"},
+                             {"label": "weekly", "remaining_percent": 0, "resets_at": null}],
+                 "observed_at": "2026-01-01T00:00:00Z", "establishes_validity": false}
+    },
+    {
+      "name": "usage_unsupported_provider_is_a_structured_state",
+      "operation": "accounts.usage",
+      "rows": ["API-E7619AD9B11AD"],
+      "implemented": false,
+      "request": {"provider_id": "local-a", "account_key": "account-1"},
+      "expect": {"result": "ok", "status": "unavailable", "cause": "unsupported"}
+    },
+    {
+      "name": "usage_requires_authentication",
+      "operation": "accounts.usage",
+      "rows": ["API-E7619AD9B11AD"],
+      "implemented": false,
+      "given": {"caller_credential": null},
+      "request": {"provider_id": "fixture", "account_key": "account-1"},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    }
+  ]
+}

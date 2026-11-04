@@ -223,6 +223,7 @@ impl<B: Backend> Backend for ExecutionBackend<B> {
                 directory: task.directory,
                 model: None,
                 idempotency_key: None,
+                ..Default::default()
             },
             task.grants,
         )

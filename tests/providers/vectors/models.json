@@ -1,0 +1,144 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "model-availability-auto-resolution-and-effort",
+  "cases": [
+    {
+      "name": "selection_identity_covers_provider_model_and_effort",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": true,
+      "evidence": ["crates/contracts/tests/adapter_selection.rs::every_mutable_selection_field_changes_the_identity"],
+      "request": {"provider_id": "fixture", "model": "large", "effort": "off"},
+      "expect": {"result": "ok", "model": "large", "identity_changed": true},
+      "note": "Explicit admission only; no catalog check exists yet."
+    },
+    {
+      "name": "effort_outside_contract_vocabulary_gets_no_identity",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": true,
+      "evidence": [
+        "crates/contracts/tests/adapter_selection.rs::unsupported_or_unbounded_selection_never_gets_an_identity",
+        "apps/cli/tests/effort.rs::missing_and_invalid_effort_reject_before_dispatch_or_configuration"
+      ],
+      "request": {"provider_id": "fixture", "model": "small", "effort": "automatic"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "overlong_model_id_gets_no_identity",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": true,
+      "evidence": ["crates/contracts/tests/adapter_selection.rs::unsupported_or_unbounded_selection_never_gets_an_identity"],
+      "limit": {"name": "model_id_bytes", "value": 257},
+      "request": {"provider_id": "fixture", "model_bytes": 257, "effort": "low"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "list_orders_models_and_flags_availability",
+      "operation": "models.list",
+      "rows": ["API-EA0E3BF6C25F6", "AG-09"],
+      "implemented": false,
+      "given": {"models": [
+        {"id": "fixture-small", "provider_id": "fixture", "efforts": ["off", "low"], "available": true},
+        {"id": "hosted-large", "provider_id": "hosted-a", "efforts": ["low", "medium", "high"], "available": false},
+        {"id": "hosted-legacy", "provider_id": "hosted-a", "efforts": [], "available": true, "hidden": true}
+      ]},
+      "request": {},
+      "expect": {"result": "ok", "ids": ["fixture-small", "hosted-large"], "hidden_offered": false}
+    },
+    {
+      "name": "auto_resolves_once_and_is_recorded",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "fixture-small", "provider_id": "fixture", "efforts": ["off", "low"], "available": true}],
+                "workspace_default": "fixture-small", "catalog_revision": 7},
+      "request": {"model": "auto"},
+      "expect": {"result": "ok", "model": "fixture-small", "recorded": true,
+                 "resolution": {"requested": "auto", "resolved_model": "fixture-small", "provider_id": "fixture",
+                                "catalog_revision": 7, "rule": "workspace_default"},
+                 "adapter_receives": "fixture-small"}
+    },
+    {
+      "name": "omitted_model_means_auto",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "fixture-small", "provider_id": "fixture", "efforts": ["off", "low"], "available": true}],
+                "workspace_default": "fixture-small", "catalog_revision": 7},
+      "request": {},
+      "expect": {"result": "ok", "model": "fixture-small", "recorded": true,
+                 "resolution": {"requested": "auto", "resolved_model": "fixture-small", "provider_id": "fixture",
+                                "catalog_revision": 7, "rule": "workspace_default"}}
+    },
+    {
+      "name": "auto_without_available_model_fails_without_fallback",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "hosted-large", "provider_id": "hosted-a", "efforts": ["low"], "available": false}]},
+      "request": {"model": "auto"},
+      "expect": {"result": "error", "error": "model_unavailable", "other_provider_tried": false}
+    },
+    {
+      "name": "unavailable_named_model_is_refused",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "hosted-large", "provider_id": "hosted-a", "efforts": ["low"], "available": false}]},
+      "request": {"model": "hosted-large"},
+      "expect": {"result": "error", "error": "model_unavailable"}
+    },
+    {
+      "name": "unlisted_model_is_not_found",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "fixture-small", "provider_id": "fixture", "efforts": ["off"], "available": true}]},
+      "request": {"model": "fixture-huge"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "effort_the_model_does_not_offer_is_invalid",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "fixture-small", "provider_id": "fixture", "efforts": ["off", "low"], "available": true}]},
+      "request": {"model": "fixture-small", "effort": "max"},
+      "expect": {"result": "error", "error": "invalid_request", "executions": 0}
+    },
+    {
+      "name": "offered_effort_is_recorded",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "fixture-small", "provider_id": "fixture", "efforts": ["off", "low"], "available": true}]},
+      "request": {"model": "fixture-small", "effort": "low"},
+      "expect": {"result": "ok", "model": "fixture-small", "effective_effort": "low"}
+    },
+    {
+      "name": "override_starts_new_attempt_never_mid_attempt_swap",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [
+        {"id": "fixture-small", "provider_id": "fixture", "efforts": ["off"], "available": true},
+        {"id": "fixture-large", "provider_id": "fixture", "efforts": ["off", "high"], "available": true}
+      ], "session_model": "fixture-small", "running_attempt": true},
+      "request": {"model": "fixture-large", "follow_up": true},
+      "expect": {"result": "accepted", "model": "fixture-large", "new_attempt": true, "running_attempt_model": "fixture-small"}
+    },
+    {
+      "name": "hidden_model_only_continues_existing_session",
+      "operation": "session.model_selection",
+      "rows": ["AG-09"],
+      "implemented": false,
+      "given": {"models": [{"id": "hosted-legacy", "provider_id": "hosted-a", "efforts": [], "available": true, "hidden": true}],
+                "session_model": "hosted-legacy"},
+      "request": {"model": "hosted-legacy", "follow_up": true},
+      "expect": {"result": "accepted", "model": "hosted-legacy"}
+    }
+  ]
+}

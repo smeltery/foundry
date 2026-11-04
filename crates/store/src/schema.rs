@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version > 11 {
+    if version > 12 {
         return Err(StoreError::Contract(ContractError::Unsupported(
             "database schema is newer than this store".into(),
         )));
@@ -227,6 +227,83 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
             PRAGMA user_version=11;",
         )?;
     }
+    if version < 12 {
+        migrate_v12(&tx)?;
+    }
     tx.commit()?;
+    Ok(())
+}
+
+/// Session contract v2 storage. Additive only: existing rows, `events.sequence`
+/// and every column that feeds checkpoint cut hashes are left untouched. New
+/// columns are NULL (or not archived) for rows written before v12.
+fn migrate_v12(tx: &Connection) -> Result<()> {
+    tx.execute_batch(
+        "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+            CHECK(typeof(archived)='integer' AND archived IN (0,1));
+        ALTER TABLE sessions ADD COLUMN title TEXT
+            CHECK(title IS NULL OR (typeof(title)='text' AND length(title) BETWEEN 1 AND 200));
+        ALTER TABLE sessions ADD COLUMN origin_kind TEXT
+            CHECK(origin_kind IS NULL OR origin_kind IN ('interactive','external'));
+        ALTER TABLE sessions ADD COLUMN origin_interface TEXT
+            CHECK(origin_interface IS NULL OR (origin_kind IS 'external' AND length(CAST(origin_interface AS BLOB)) BETWEEN 1 AND 64));
+        ALTER TABLE sessions ADD COLUMN created_ms INTEGER
+            CHECK(created_ms IS NULL OR (typeof(created_ms)='integer' AND created_ms>=0));
+        ALTER TABLE sessions ADD COLUMN updated_ms INTEGER
+            CHECK(updated_ms IS NULL OR (typeof(updated_ms)='integer' AND updated_ms>=0));
+        -- Lineage has no foreign key while delete semantics are pending.
+        ALTER TABLE sessions ADD COLUMN parent_session_id TEXT
+            CHECK(parent_session_id IS NULL OR (typeof(parent_session_id)='text' AND length(CAST(parent_session_id AS BLOB))=36));
+        ALTER TABLE sessions ADD COLUMN forked_from_session_id TEXT
+            CHECK(forked_from_session_id IS NULL OR (typeof(forked_from_session_id)='text' AND length(CAST(forked_from_session_id AS BLOB))=36));
+        CREATE TABLE session_tags (
+            session_id TEXT NOT NULL REFERENCES sessions(id),
+            tag TEXT NOT NULL CHECK(typeof(tag)='text' AND length(CAST(tag AS BLOB)) BETWEEN 1 AND 64),
+            position INTEGER NOT NULL CHECK(typeof(position)='integer' AND position>=0),
+            PRIMARY KEY(session_id,tag),
+            UNIQUE(session_id,position)
+        );
+        -- Attempt-scaled delivery cursors and immutable display positions are
+        -- new facts; they never reinterpret the stored sequence.
+        ALTER TABLE events ADD COLUMN attempt_ordinal INTEGER
+            CHECK(attempt_ordinal IS NULL OR (typeof(attempt_ordinal)='integer' AND attempt_ordinal>0));
+        ALTER TABLE events ADD COLUMN position INTEGER
+            CHECK(position IS NULL OR (typeof(position)='integer' AND position>0));
+        CREATE TABLE message_reconciliations (
+            session_id TEXT NOT NULL CHECK(typeof(session_id)='text' AND length(CAST(session_id AS BLOB))=36),
+            message_id TEXT NOT NULL CHECK(typeof(message_id)='text' AND length(CAST(message_id AS BLOB)) BETWEEN 1 AND 160),
+            ordinal INTEGER NOT NULL CHECK(typeof(ordinal)='integer' AND ordinal>0),
+            attempt_id TEXT REFERENCES attempts(id),
+            prior_state TEXT NOT NULL CHECK(prior_state IN ('pending','in_flight','delivered','withdrawn')),
+            resolved_state TEXT NOT NULL CHECK(resolved_state IN ('pending','delivered','withdrawn')),
+            cause TEXT NOT NULL CHECK(typeof(cause)='text' AND length(CAST(cause AS BLOB)) BETWEEN 1 AND 64),
+            receipt_digest BLOB CHECK(receipt_digest IS NULL OR (typeof(receipt_digest)='blob' AND length(receipt_digest)=32)),
+            recorded_ms INTEGER NOT NULL CHECK(typeof(recorded_ms)='integer' AND recorded_ms>=0),
+            PRIMARY KEY(session_id,message_id,ordinal),
+            FOREIGN KEY(session_id,message_id) REFERENCES messages(session_id,id)
+        );
+        -- Decision records for foundry.completion.v1 (NIC-106): one per attempt,
+        -- bound to the policy tuple. Older outcomes have no row and stay as stored.
+        CREATE TABLE completion_decisions (
+            attempt_id TEXT PRIMARY KEY NOT NULL REFERENCES attempts(id)
+                CHECK(typeof(attempt_id)='text' AND length(CAST(attempt_id AS BLOB))=36),
+            session_id TEXT NOT NULL REFERENCES sessions(id)
+                CHECK(typeof(session_id)='text' AND length(CAST(session_id AS BLOB))=36),
+            policy_version TEXT NOT NULL CHECK(policy_version='foundry.completion.v1'),
+            configuration_digest BLOB NOT NULL CHECK(typeof(configuration_digest)='blob' AND length(configuration_digest)=32),
+            criteria_digest BLOB NOT NULL CHECK(typeof(criteria_digest)='blob' AND length(criteria_digest)=32),
+            work_revision INTEGER NOT NULL CHECK(typeof(work_revision)='integer' AND work_revision>=0),
+            event_sequence INTEGER NOT NULL CHECK(typeof(event_sequence)='integer' AND event_sequence>=0),
+            checkpoint_id TEXT CHECK(checkpoint_id IS NULL OR (typeof(checkpoint_id)='text' AND length(CAST(checkpoint_id AS BLOB))=36)),
+            outcome TEXT NOT NULL CHECK(outcome IN ('success','failure','action_required')),
+            basis TEXT NOT NULL CHECK(basis IN ('verified','adapter_downgrade','default')),
+            cause TEXT NOT NULL CHECK(typeof(cause)='text' AND length(CAST(cause AS BLOB)) BETWEEN 1 AND 64),
+            criterion_results TEXT NOT NULL CHECK(typeof(criterion_results)='text' AND length(CAST(criterion_results AS BLOB)) BETWEEN 2 AND 65536),
+            committed_ms INTEGER NOT NULL CHECK(typeof(committed_ms)='integer' AND committed_ms>=0),
+            UNIQUE(session_id,attempt_id),
+            FOREIGN KEY(session_id,checkpoint_id) REFERENCES context_checkpoints(session_id,id)
+        );
+        PRAGMA user_version=12;",
+    )?;
     Ok(())
 }

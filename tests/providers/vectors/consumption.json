@@ -1,0 +1,89 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "consumption-reports",
+  "cases": [
+    {
+      "name": "daily_lists_active_utc_days_oldest_first",
+      "operation": "consumption.daily",
+      "rows": ["API-E288021BA77EC"],
+      "implemented": false,
+      "request": {"start_date": "2026-01-01", "end_date": "2026-01-04"},
+      "expect": {"result": "ok", "currency": "USD",
+                 "daily": [{"date": "2026-01-01", "spend": "0.25", "compute_ms": 60000},
+                           {"date": "2026-01-03", "spend": "0.75", "compute_ms": 120000}],
+                 "total": {"spend": "1.00", "compute_ms": 180000}, "end_day_included": false}
+    },
+    {
+      "name": "daily_default_window_is_thirty_days",
+      "operation": "consumption.daily",
+      "rows": ["API-E288021BA77EC"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "window_days": 30}
+    },
+    {
+      "name": "daily_grouped_by_session_orders_by_spend",
+      "operation": "consumption.daily",
+      "rows": ["API-E288021BA77EC"],
+      "implemented": false,
+      "request": {"group_by": "session"},
+      "expect": {"result": "ok", "items": [{"session_id": "session-2", "spend": "0.60"}, {"session_id": "unattributed", "spend": "0.40"}],
+                 "daily_present": false}
+    },
+    {
+      "name": "window_longer_than_a_year_is_invalid",
+      "operation": "consumption.daily",
+      "rows": ["API-E288021BA77EC"],
+      "implemented": false,
+      "limit": {"name": "window_days", "value": 367},
+      "request": {"window_days": 367},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "inverted_window_is_invalid",
+      "operation": "consumption.daily",
+      "rows": ["API-E288021BA77EC"],
+      "implemented": false,
+      "request": {"start_date": "2026-01-04", "end_date": "2026-01-01"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "metrics_report_integer_token_and_compute_units",
+      "operation": "consumption.metrics",
+      "rows": ["API-EB9835E1A1E93"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "bucket": "day",
+                 "points": [{"bucket": "2026-01-01T00:00:00Z", "input_tokens": 1200, "output_tokens": 300, "compute_ms": 60000}],
+                 "side_effects": 0}
+    },
+    {
+      "name": "metrics_require_authentication",
+      "operation": "consumption.metrics",
+      "rows": ["API-EB9835E1A1E93"],
+      "implemented": false,
+      "given": {"caller_credential": null},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "quota_reports_nullable_fields",
+      "operation": "consumption.quota",
+      "rows": ["API-E2F0CEEFEB828"],
+      "implemented": false,
+      "given": {"metered": false},
+      "request": {},
+      "expect": {"result": "ok", "label": "available_usage", "used_percent": null, "resets_at": null, "exhausted": null}
+    },
+    {
+      "name": "quota_requires_admin",
+      "operation": "consumption.quota",
+      "rows": ["API-E2F0CEEFEB828"],
+      "implemented": false,
+      "given": {"caller_role": "member"},
+      "request": {},
+      "expect": {"result": "error", "error": "forbidden"}
+    }
+  ]
+}

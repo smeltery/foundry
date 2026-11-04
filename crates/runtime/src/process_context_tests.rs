@@ -30,6 +30,7 @@ fn fixture(mode: &str, size: usize) -> (AdapterSpec, Session) {
         result: None,
         active_attempt_id: Some("attempt".into()),
         version: 1,
+        metadata: Default::default(),
     };
     (spec, session)
 }

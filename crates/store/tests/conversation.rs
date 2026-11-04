@@ -10,6 +10,7 @@ fn create(store: &mut Store) -> foundry_contracts::Session {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
 }
