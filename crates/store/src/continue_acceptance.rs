@@ -77,6 +77,7 @@ impl Store {
         crate::work::advance(&tx, &fence.session_id)?;
         changed(tx.execute("INSERT INTO events(session_id,sequence,id,attempt_id,revision,kind,data) VALUES(?1,?2,?3,?4,0,'continue_accepted',?5)",
             params![fence.session_id,sequence,event_id,fence.attempt_id,data])?)?;
+        crate::event_delivery::stamp_session(&tx, &fence.session_id)?;
         crate::work::advance(&tx, &fence.session_id)?;
         changed(tx.execute("UPDATE messages SET state='delivered' WHERE session_id=?1 AND id=?2 AND state='in_flight' AND attempt_id=?3 AND sequence=?4",
             params![fence.session_id,input.intent.message_id,fence.attempt_id,input.intent.message_sequence])?)?;

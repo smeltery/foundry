@@ -17,6 +17,7 @@ mod continue_intent;
 mod continue_read;
 mod conversation_read;
 mod create_v2;
+mod event_delivery;
 mod events;
 mod fresh_attempt;
 mod messages;
@@ -61,6 +62,10 @@ pub use continue_intent::{
 };
 pub use conversation_read::ConversationRecord;
 pub use create_v2::{CreateReceipt, SessionAssociations};
+pub use event_delivery::{
+    DEFAULT_EVENT_PAGE, DeliveredEvent, DeliveryCursor, EventPage, EventRead, MAX_EVENT_PAGE,
+    MAX_EVENT_WAIT_MS, transcript,
+};
 pub use fresh_attempt::FreshAttempt;
 pub use restore_snapshot::RestoreBaselineSnapshot;
 pub use restore_types::{

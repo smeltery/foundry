@@ -7,6 +7,7 @@ mod control;
 pub mod conversation;
 mod coordinated;
 pub mod create;
+mod event_wait;
 mod events;
 mod execution;
 pub mod fresh_capture_owner;
