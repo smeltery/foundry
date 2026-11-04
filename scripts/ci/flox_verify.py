@@ -19,6 +19,7 @@ SYSTEMS = {f"{arch}-{osname}" for arch in ("aarch64", "x86_64")
            for osname in ("darwin", "linux")}
 VERSIONS = {"rust": "1.95.0", "bun": "1.3.11", "nodejs": "22.23.1",
             "python": "3.13.13", "pre-commit": "4.5.1", "cargo-deny": "0.19.9",
+            "cargo-nextest": "0.9.137",
             "actionlint": "1.7.12", "shellcheck": "0.11.0", "git": "2.54.0",
             "pkg-config": "0.29.2"}
 COMMANDS = {
@@ -27,7 +28,8 @@ COMMANDS = {
     "rustfmt": ("rust", "1.9.0-stable"), "cargo-fmt": ("rust", "1.9.0-stable"),
     "bun": ("bun", "1.3.11"), "node": ("nodejs", "22.23.1"),
     "python3": ("python", "3.13.13"), "pre-commit": ("pre-commit", "4.5.1"),
-    "cargo-deny": ("cargo-deny", "0.19.9"), "actionlint": ("actionlint", "1.7.12"),
+    "cargo-deny": ("cargo-deny", "0.19.9"), "cargo-nextest": ("cargo-nextest", "0.9.137"),
+    "actionlint": ("actionlint", "1.7.12"),
     "shellcheck": ("shellcheck", "0.11.0"), "git": ("git", "2.54.0"),
     "pkg-config": ("pkg-config", "0.29.2"),
 }
@@ -96,7 +98,7 @@ def validate_lock(manifest, lock, system):
         raise ValueError("manifest must select exactly four systems without includes")
     installs = manifest.get("install", {})
     expected = set(VERSIONS) | {"cc", "binutils", "toolchain-env"}
-    if len(installs) != 13 or {package_name(n) for n in installs} != expected:
+    if len(installs) != len(expected) or {package_name(n) for n in installs} != expected:
         raise ValueError("manifest must select all thirteen outputs")
     origins = {}
     for name, descriptor in installs.items():
@@ -107,8 +109,8 @@ def validate_lock(manifest, lock, system):
             raise ValueError("invalid public flake selection")
         origins[name] = public_reference(ref)
     records = lock.get("packages")
-    if not isinstance(records, list) or len(records) != 52:
-        raise ValueError("lock must contain all 52 selections")
+    if not isinstance(records, list) or len(records) != len(installs) * len(SYSTEMS):
+        raise ValueError("lock must select every install on every system")
     selected, seen = {}, set()
     for record in records:
         name, target = record.get("install_id"), record.get("system")

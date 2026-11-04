@@ -12,7 +12,7 @@ bash scripts/ci/flox.sh python3 scripts/checks/all.py
 
 | Group | Checks |
 | --- | --- |
-| `rust` | Formatting, Clippy with warnings denied, workspace tests |
+| `rust` | Formatting, Clippy with warnings denied, workspace tests run in parallel by cargo-nextest, doctests |
 | `dependencies` | Locked Cargo advisory, dependency-ban and source checks |
 | `python` | Repository validation tests and catalog fixture validation |
 | `adapter` | Strict TypeScript checking, ESM build and offline adapter protocol tests |
@@ -20,6 +20,8 @@ bash scripts/ci/flox.sh python3 scripts/checks/all.py
 | `mcp-sdk` | Official Python SDK against a fresh CLI subprocess, using hash-pinned test dependencies |
 | `docs` | Documentation tooling tests, Markdown, links and rendered diagrams |
 | `hygiene` | License digest, whitespace, LOC, external naming policy and workflow syntax |
+
+The `foundry-service` application tests use 300ms adapter leases, so `.config/nextest.toml` gives them one retry; nextest reports a retried pass as FLAKY.
 
 Use `--group rust`, for example, to run one group, or list several groups after `--group`. `--fast` skips Rust test execution but retains lint and complete documentation validation. Before pushing, run the full suite. A missing tool or policy is an error, not an implicit skip.
 
@@ -52,16 +54,38 @@ arm64 and macOS arm64. On Linux x64, `rust` and `integration` each get a job and
 the remaining short groups share one `quick` job, so setup is paid once. The
 integration jobs build both executables and run the
 real-helper tests that the ordinary Rust suite skips. The aggregate gate requires
-every matrix job to succeed. Four additional fresh native activation jobs require
-the complete pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon.
-These jobs also compile application dependencies and reject changed locks.
-Pull requests skip the macOS Intel activation job, the slowest runner; main-branch
-pushes still require it.
+every matrix job to succeed. Fresh native activation checks require the complete
+pinned toolchain on Linux x64/arm64 and macOS Intel/Apple silicon. They also
+compile application dependencies and reject changed locks. When an integration
+job runs on a system's runner, it performs that system's activation checks too,
+so the toolchain is set up once; other systems get a separate activation job.
+Pull requests skip macOS Intel activation, the slowest runner; main-branch pushes
+still require it.
 
 Check jobs restore Cargo registry and `target/` caches keyed by the Flox and Cargo
-locks. Only main-branch pushes save them, and release builds never use them.
+locks and the root `Cargo.toml` build profiles. Only main-branch pushes save them, and release builds never use them.
 Release packaging remains a separate check; local
 tests do not establish hosted CI or release-platform success.
+
+## Local verification with Bellows
+
+[Bellows](https://github.com/smeltery/bellows) can run the CI check groups on
+your workstation against the proposed merge of your committed branch:
+
+```sh
+git fetch origin main
+bellows verify --repository smeltery/foundry --base origin/main --profile native
+```
+
+The `native` profile in `.bellows.yml` activates the locked Flox environment,
+verifies it, and runs the `rust`, `integration` and quick groups through
+`scripts/ci/with-toolchain.sh`, which applies the same compiler settings as
+`scripts/ci/flox.sh`. It omits `hygiene`, because the naming-policy scan needs
+`FOUNDRY_NAMING_POLICY`. On macOS it gives native Apple silicon results.
+
+Results are advisory. Bellows receipts do not prove who ran the checks, so
+hosted CI and its `required` check still decide merges. Do not publish or accept
+`bellows/verify` statuses as a substitute for hosted checks.
 
 ## Pull request scope
 

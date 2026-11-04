@@ -37,6 +37,7 @@
           python = utilities.python313;
           pre-commit = hooks.pre-commit;
           cargo-deny = utilities.cargo-deny;
+          cargo-nextest = utilities.cargo-nextest;
           actionlint = utilities.actionlint;
           inherit (pkgs) shellcheck git pkg-config;
           cc = pkgs.stdenv.cc;

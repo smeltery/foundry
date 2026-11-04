@@ -54,13 +54,26 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual((jobs["rust"]["bun"], jobs["rust"]["browser"]), (False, False))
         self.assertEqual((jobs["integration"]["bun"], jobs["integration"]["browser"]), (True, False))
 
-    def test_intel_macos_activation_runs_only_outside_pull_requests(self):
-        systems = lambda event: {job["system"] for job in scope.activation_matrix(event)["include"]}
+    def test_every_planned_system_activates_once_in_its_own_or_a_host_job(self):
         native = {"x86_64-linux", "aarch64-linux", "aarch64-darwin", "x86_64-darwin"}
-        for event in ("push", "workflow_dispatch"):
-            with self.subTest(event=event):
-                self.assertEqual(systems(event), native)
-        self.assertEqual(systems("pull_request"), native - {"x86_64-darwin"})
+        for event, groups, expected_hosts in [
+                ("push", scope.GROUPS, {"x86_64-linux", "aarch64-linux", "aarch64-darwin"}),
+                ("pull_request", scope.GROUPS, {"x86_64-linux", "aarch64-linux", "aarch64-darwin"}),
+                ("pull_request", ("docs", "hygiene"), set())]:
+            with self.subTest(event=event, groups=groups):
+                checks = scope.matrix(groups)
+                standalone = scope.activation_matrix(event, checks)["include"]
+                hosted = [job for job in checks["include"] if "system" in job]
+                self.assertTrue(all(job["group"] == "integration" for job in hosted))
+                self.assertEqual({job["system"] for job in hosted}, expected_hosts)
+                systems = [job["system"] for job in standalone + hosted]
+                self.assertEqual(len(systems), len(set(systems)))
+                planned = native if event != "pull_request" else native - {"x86_64-darwin"}
+                self.assertEqual(set(systems), planned)
+        checks = scope.matrix(scope.GROUPS)
+        self.assertEqual(scope.activation_matrix("pull_request", checks), {"include": []})
+        self.assertEqual(scope.activation_matrix("push", scope.matrix(scope.GROUPS))["include"],
+                         [{"system": "x86_64-darwin", "runner": "macos-15-intel"}])
 
     def test_real_git_rename_and_deletion_retain_original_scope(self):
         with tempfile.TemporaryDirectory() as directory:

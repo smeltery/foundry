@@ -12,7 +12,7 @@ def emit(value):
     print(json.dumps(value), flush=True)
 
 
-assert set(os.environ) <= {'PATH', 'LANG', 'LC_ALL', 'TZ', '__CF_USER_TEXT_ENCODING'}
+assert set(os.environ) <= {'PATH', 'LANG', 'LC_ALL', 'TZ', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'}  # Python adds LC_CTYPE in the C locale (PEP 538)
 assert len(sys.argv) == 1
 packet = json.loads(sys.stdin.readline())
 assert packet['type'] == 'adapter_bootstrap'
