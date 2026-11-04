@@ -158,6 +158,7 @@ mod tests {
             result: None,
             active_attempt_id: Some("attempt".into()),
             version: 1,
+            metadata: Default::default(),
         };
         let (_cancel, cancellation) = mpsc::channel();
         let (_messages, messages) = mpsc::channel();

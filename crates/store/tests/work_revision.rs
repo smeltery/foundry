@@ -1,6 +1,8 @@
+mod support_schema;
 use foundry_contracts::{CancelMode, CreateSession, Lifecycle};
 use foundry_store::{Store, ToolOutcome};
 use serde_json::json;
+use support_schema::UNDO_V12;
 use tempfile::tempdir;
 
 fn request(key: &str) -> CreateSession {
@@ -9,6 +11,7 @@ fn request(key: &str) -> CreateSession {
         directory: "/tmp".into(),
         model: None,
         idempotency_key: Some(key.into()),
+        ..Default::default()
     }
 }
 
@@ -164,7 +167,7 @@ fn migration_four_preserves_existing_rows_and_initializes_only_revision_baseline
     drop(store);
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection
-        .execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; DROP TABLE session_work; PRAGMA user_version=4;")
+        .execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; DROP TABLE session_work; PRAGMA user_version=4;"))
         .unwrap();
     drop(connection);
     let mut migrated = Store::open(&path).unwrap();
@@ -192,7 +195,7 @@ fn migration_four_preserves_existing_rows_and_initializes_only_revision_baseline
         connection
             .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        11
+        12
     );
 }
 

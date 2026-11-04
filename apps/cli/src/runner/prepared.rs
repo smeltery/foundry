@@ -73,6 +73,7 @@ pub(super) fn resolve(
             effort: Some(selection.effort.clone()),
         }),
         idempotency_key: None,
+        ..Default::default()
     };
     request.validate().map_err(contract_error)?;
     let tools = AdapterToolSettings {

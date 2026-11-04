@@ -166,6 +166,7 @@ fn one_store_snapshot_maps_all_facts_and_retains_prior_head_and_digest_evidence(
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, 0).unwrap();

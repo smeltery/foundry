@@ -96,6 +96,7 @@ fn scenario(mode: &str, mutation: &str) -> bool {
         result: None,
         active_attempt_id: Some("new".into()),
         version: 2,
+        metadata: Default::default(),
     };
     let (owner, endpoint) = CaptureOwner::channel();
     let (requests, received) = mpsc::sync_channel(2);
@@ -339,6 +340,7 @@ fn refuses_capture_before_dispatch(mode: &str, wrong_config: bool) {
         result: None,
         active_attempt_id: Some("new".into()),
         version: 2,
+        metadata: Default::default(),
     };
     let (owner, endpoint) = CaptureOwner::channel();
     let (requests, received) = mpsc::sync_channel(2);

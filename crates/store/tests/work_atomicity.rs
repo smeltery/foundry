@@ -30,6 +30,7 @@ fn create(store: &mut Store) -> Session {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
 }

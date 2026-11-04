@@ -1,3 +1,5 @@
+mod support_schema;
+use support_schema::UNDO_V12;
 mod support_checkpoint;
 use foundry_contracts::{Lifecycle, Outcome};
 use foundry_store::{Store, TerminalProposal};
@@ -147,7 +149,7 @@ fn migration_six_preserves_plain_checkpoints_without_inventing_finalization() {
     Connection::open(&path)
         .unwrap()
         .execute_batch(
-            "DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; PRAGMA user_version=6;",
+            &format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; PRAGMA user_version=6;"),
         )
         .unwrap();
     let mut store = Store::open(&path).unwrap();

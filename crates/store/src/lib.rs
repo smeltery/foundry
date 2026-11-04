@@ -140,6 +140,10 @@ impl Store {
 
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
         request.validate()?;
+        // The contract accepts v2 options; each is unsupported until its owner stores it.
+        if let Some(option) = request.v2_options().first() {
+            return Err(ContractError::Unsupported(format!("session option {option}")).into());
+        }
         let encoded = serde_json::to_string(&request)?;
         let tx = self
             .connection
@@ -169,6 +173,7 @@ impl Store {
             result: None,
             active_attempt_id: None,
             version: 0,
+            metadata: Default::default(),
         };
         tx.execute(
             "INSERT INTO sessions(id,idempotency_key,creation,body) VALUES(?1,?2,?3,?4)",

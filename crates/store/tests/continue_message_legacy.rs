@@ -1,3 +1,5 @@
+mod support_schema;
+use support_schema::UNDO_V12;
 mod support_restore;
 use foundry_store::{ContinueDecision, ContinueMessageDecision, ContinueMessageInput, Store};
 use rusqlite::Connection;
@@ -70,7 +72,7 @@ fn v1_hash_bytes_and_historical_retry_survive_schema_eight_migration() {
         )
     );
     drop(store);
-    db.execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP INDEX restore_session_identity; PRAGMA user_version=8;").unwrap();
+    db.execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP INDEX restore_session_identity; PRAGMA user_version=8;")).unwrap();
     let mut store = Store::open(&path).unwrap();
     let after: ([u8; 32], [u8; 32]) = db
         .query_row(
@@ -120,7 +122,7 @@ fn schema_eight_unconsumed_reservation_can_claim_after_migration() {
     store.enqueue_message(&session, "message", "next").unwrap();
     drop(store);
     let db = Connection::open(&path).unwrap();
-    db.execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP INDEX restore_session_identity; PRAGMA user_version=8;").unwrap();
+    db.execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP INDEX restore_session_identity; PRAGMA user_version=8;")).unwrap();
     let mut store = Store::open(&path).unwrap();
     assert!(matches!(
         store.authorize_continue_message(&owner, bound()).unwrap(),

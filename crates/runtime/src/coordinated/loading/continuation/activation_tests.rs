@@ -28,6 +28,7 @@ fn restored_steering_waits_for_exact_activation_after_s2_without_start() {
             result: None,
             active_attempt_id: Some("new".into()),
             version: 2,
+            metadata: Default::default(),
         };
         let (owner, endpoint) = CaptureOwner::channel();
         let (requests, received) = mpsc::sync_channel(2);

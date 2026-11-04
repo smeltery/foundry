@@ -17,6 +17,7 @@ fn frozen_claims_keep_the_real_store_lease_alive() {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, session.version).unwrap();
@@ -89,6 +90,7 @@ fn runtime_receiver_closure_does_not_end_cancelled_owner_renewal() {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let fence = store.begin_attempt(&session.id, session.version).unwrap();

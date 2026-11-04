@@ -33,6 +33,7 @@ fn immediate_output_waits_for_durable_activation_then_uses_same_coordinator() {
         result: None,
         active_attempt_id: Some("new".into()),
         version: 2,
+        metadata: Default::default(),
     };
     let (_tx, messages) = mpsc::channel();
     let (requests, rx) = mpsc::sync_channel(2);

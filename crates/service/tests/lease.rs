@@ -71,6 +71,7 @@ fn assert_expiry_stops_execution(emit_text: bool) {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let spec = adapter(directory.path(), emit_text);
@@ -147,6 +148,7 @@ fn assert_local_cancel_interrupts_write(reject_write: bool) {
             directory: directory.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     let spec = adapter(directory.path(), true);
