@@ -1,0 +1,162 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "document": "docs/architecture/identity.md",
+  "errors": [
+    "invalid_request", "unauthenticated", "quota_exhausted", "forbidden", "not_found",
+    "conflict", "retired", "rate_limited", "sink_failed", "unavailable", "unsupported"
+  ],
+  "causes": [
+    "last_owner", "owner_required", "grant_workspace_bound", "personal_workspace",
+    "deletion_blocked", "name_mismatch", "key_reused", "workspace_retired", "active_limit",
+    "pairing_invalid", "import_not_approved", "not_member"
+  ],
+  "results": ["ok", "created", "replayed", "routed", "pending", "error"],
+  "roles": ["owner", "admin", "member", "viewer"],
+  "cells": ["allow", "deny", "partial", "any", "retired", "unknown"],
+  "decisions": ["C1", "C2", "C3", "C4", "C5", "C6"],
+  "scopes": [
+    "deployment.read", "workspace.read", "workspace.write", "audit.read",
+    "network_policy.read", "network_policy.write", "sessions.read", "sessions.run",
+    "machines.read", "machines.write", "machines.use"
+  ],
+  "credential_kinds": {
+    "scoped_key": {"principal": "service"},
+    "login_grant": {"principal": "user"},
+    "admin_grant": {"principal": "user"},
+    "machine_token": {
+      "principal": "service",
+      "scopes": ["sessions.read", "sessions.run", "machines.read", "machines.write", "machines.use", "deployment.read"]
+    }
+  },
+  "machines": {
+    "credential": [
+      {"from": "pending", "event": "approve", "to": "active"},
+      {"from": "pending", "event": "expire", "to": "expired"},
+      {"from": "active", "event": "revoke", "to": "revoked"},
+      {"from": "active", "event": "logout", "to": "revoked"},
+      {"from": "active", "event": "remove_member", "to": "revoked"},
+      {"from": "active", "event": "retire_workspace", "to": "revoked"},
+      {"from": "active", "event": "delete_workspace", "to": "revoked"},
+      {"from": "active", "event": "expire", "to": "expired"},
+      {"from": "active", "event": "enroll", "to": "consumed"}
+    ],
+    "membership": [
+      {"from": "invited", "event": "accept", "to": "member"},
+      {"from": "member", "event": "set_role", "to": "member"},
+      {"from": "member", "event": "remove", "to": "removed"}
+    ],
+    "workspace": [
+      {"from": "active", "event": "rename", "to": "active"},
+      {"from": "active", "event": "delete", "to": "deleted"},
+      {"from": "active", "event": "delete_partial", "to": "erasing"},
+      {"from": "erasing", "event": "delete", "to": "deleted"}
+    ],
+    "single_use": [
+      {"from": "live", "event": "retire", "to": "retired"},
+      {"from": "live", "event": "expire", "to": "retired"},
+      {"from": "retired", "event": "retire", "to": "retired"}
+    ],
+    "pairing": [
+      {"from": "issued", "event": "claim", "to": "claimed"},
+      {"from": "issued", "event": "expire", "to": "expired"},
+      {"from": "claimed", "event": "claim", "to": "claimed"},
+      {"from": "claimed", "event": "fail", "to": "failed"},
+      {"from": "claimed", "event": "approve", "to": "approved"},
+      {"from": "pending", "event": "approve", "to": "approved"},
+      {"from": "pending", "event": "expire", "to": "expired"},
+      {"from": "approved", "event": "complete", "to": "completed"}
+    ]
+  },
+  "limits": {
+    "audit_page": {"kind": "cap", "min": 1, "max": 200, "default": 50, "below": "invalid_request"},
+    "trial_key_chars": {"kind": "range", "min": 1, "max": 200, "below": "invalid_request", "above": "invalid_request"},
+    "lifetime_minutes": {"kind": "range", "min": 5, "max": 720, "default": 240, "below": "invalid_request", "above": "invalid_request"},
+    "policy_hosts": {"kind": "range", "min": 0, "max": 50, "below": "invalid_request", "above": "invalid_request"},
+    "feedback_chars": {"kind": "range", "min": 1, "max": 4000, "below": "invalid_request", "above": "invalid_request"},
+    "failure_code_chars": {"kind": "range", "min": 1, "max": 80, "below": "invalid_request", "above": "invalid_request"},
+    "detected_entries": {"kind": "range", "min": 0, "max": 500, "below": "invalid_request", "above": "invalid_request"},
+    "secret_name_chars": {"kind": "range", "min": 1, "max": 128, "below": "invalid_request", "above": "invalid_request"},
+    "source_description_chars": {"kind": "range", "min": 1, "max": 500, "below": "invalid_request", "above": "invalid_request"},
+    "scanned_count": {"kind": "range", "min": 0, "max": 10000, "below": "invalid_request", "above": "invalid_request"},
+    "imported_count": {"kind": "range", "min": 0, "max": 500, "below": "invalid_request", "above": "invalid_request"}
+  },
+  "operations": {
+    "cli.login": {"surface": "cli"},
+    "cli.logout": {"surface": "cli"},
+    "cli.whoami": {"surface": "cli"},
+    "credential.select": {"surface": "cli"},
+    "credential.lifecycle": {"machine": "credential", "transition": true},
+    "membership.lifecycle": {"machine": "membership", "transition": true},
+    "workspace.lifecycle": {"machine": "workspace", "transition": true},
+    "single_use.lifecycle": {"machine": "single_use", "transition": true},
+    "pairing.lifecycle": {"machine": "pairing", "transition": true},
+    "identity.self": {"scope": "none", "workspace_scoped": false, "roles": {"owner": "any", "admin": "any", "member": "any", "viewer": "any"}},
+    "service.deployment": {"scope": "deployment.read", "workspace_scoped": false, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "service.api_description": {"scope": "none", "workspace_scoped": false, "roles": {"owner": "any", "admin": "any", "member": "any", "viewer": "any"}},
+    "feedback.submit": {"scope": "none", "workspace_scoped": false, "roles": {"owner": "any", "admin": "any", "member": "any", "viewer": "any"}},
+    "workspace.list": {"scope": "workspace.read", "workspace_scoped": false, "roles": {"owner": "allow", "admin": "allow", "member": "allow", "viewer": "allow"}},
+    "workspace.create": {"scope": "workspace.write", "workspace_scoped": false, "roles": {"owner": "any", "admin": "any", "member": "any", "viewer": "any"}},
+    "workspace.get": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "allow", "viewer": "unknown"}},
+    "workspace.rename": {"scope": "workspace.write", "workspace_scoped": true, "machine": "workspace", "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "workspace.delete": {"scope": "workspace.write", "workspace_scoped": true, "machine": "workspace", "roles": {"owner": "allow", "admin": "deny", "member": "deny", "viewer": "deny"}},
+    "audit.list": {"scope": "audit.read", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "partial", "viewer": "unknown"}},
+    "single_use.create": {"scope": "workspace.write", "workspace_scoped": true, "machine": "single_use", "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "single_use.retire": {"scope": "workspace.write", "workspace_scoped": true, "machine": "single_use", "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "member.list": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "partial", "viewer": "unknown"}},
+    "member.invite": {"scope": "workspace.write", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "member.get": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "allow", "viewer": "unknown"}},
+    "member.remove": {"scope": "workspace.write", "workspace_scoped": true, "machine": "membership", "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "member.set_role": {"scope": "workspace.write", "workspace_scoped": true, "machine": "membership", "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "network_policy.get": {"scope": "network_policy.read", "workspace_scoped": true, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "network_policy.replace": {"scope": "network_policy.write", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}},
+    "secret_import.handoff": {"scope": "workspace.write", "workspace_scoped": true, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "secret_import.decision": {"scope": "workspace.write", "workspace_scoped": true, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "secret_import.complete": {"scope": "workspace.write", "workspace_scoped": true, "machine": "pairing", "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "pairing.claim": {"scope": "workspace.write", "workspace_scoped": true, "machine": "pairing", "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "pairing.fail": {"scope": "workspace.write", "workspace_scoped": true, "machine": "pairing", "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "tier.list": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "retired", "admin": "retired", "member": "retired", "viewer": "retired"}},
+    "tier.set": {"scope": "workspace.write", "workspace_scoped": true, "roles": {"owner": "retired", "admin": "retired", "member": "retired", "viewer": "retired"}},
+    "tier.get": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "retired", "admin": "retired", "member": "retired", "viewer": "retired"}},
+    "role.own": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "allow", "viewer": "allow"}},
+    "settings.list": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "settings.get": {"scope": "workspace.read", "workspace_scoped": true, "roles": {"owner": "unknown", "admin": "unknown", "member": "unknown", "viewer": "unknown"}},
+    "settings.replace": {"scope": "workspace.write", "workspace_scoped": true, "roles": {"owner": "allow", "admin": "allow", "member": "deny", "viewer": "deny"}}
+
+  },
+  "rows": {
+    "CLI-024": {"section": "cli-login-logout-and-whoami", "label": "Local foundation", "held": ["C1", "C5"], "operations": ["cli.login", "cli.logout", "cli.whoami", "credential.select", "credential.lifecycle"]},
+    "CLI-049": {"section": "credential-handling", "label": "Local foundation", "held": ["C5"], "operations": ["credential.select", "credential.lifecycle"]},
+    "API-X001": {"section": "caller-identity", "label": "Specified", "held": [], "operations": ["identity.self"]},
+    "API-EAB209C8A1D60": {"section": "deployment-identity-and-api-description", "label": "Held", "held": ["C4"], "operations": ["service.deployment"]},
+    "API-EC4FFB7B71B06": {"section": "deployment-identity-and-api-description", "label": "Held", "held": ["C4"], "operations": ["service.api_description"]},
+    "API-E0586F6A81366": {"section": "feedback", "label": "Held", "held": ["C6"], "operations": ["feedback.submit"]},
+    "API-E27CB8EB997A3": {"section": "workspaces", "label": "Specified", "held": [], "operations": ["workspace.list"]},
+    "API-E0D1C7603B534": {"section": "workspaces", "label": "Specified", "held": [], "operations": ["workspace.create"]},
+    "API-E0E38EF1D33B5": {"section": "workspaces", "label": "Specified", "held": [], "operations": ["workspace.get"]},
+    "API-EAF0E25F70675": {"section": "workspaces", "label": "Specified", "held": [], "operations": ["workspace.rename", "workspace.lifecycle"]},
+    "API-E1AC5E5AB1846": {"section": "workspaces", "label": "Specified", "held": [], "operations": ["workspace.delete", "workspace.lifecycle"]},
+    "API-E95EC0DE5F113": {"section": "audit-log", "label": "Specified", "held": [], "operations": ["audit.list"]},
+    "API-E3A0BCD747FD5": {"section": "single-use-workspaces", "label": "Held", "held": ["C4"], "operations": ["single_use.create"]},
+    "API-E8DF08D5E6646": {"section": "single-use-workspaces", "label": "Specified", "held": [], "operations": ["single_use.retire", "single_use.lifecycle"]},
+    "API-E33A028E187F8": {"section": "membership", "label": "Specified", "held": [], "operations": ["member.list"]},
+    "API-EC9FBB1DF9FC2": {"section": "membership", "label": "Held", "held": ["C1"], "operations": ["member.invite", "membership.lifecycle"]},
+    "API-E2B9A6E28934A": {"section": "membership", "label": "Specified", "held": [], "operations": ["member.get"]},
+    "API-E601F50E4D8E6": {"section": "membership", "label": "Specified", "held": [], "operations": ["member.remove", "membership.lifecycle"]},
+    "API-E60D270D99806": {"section": "membership", "label": "Specified", "held": [], "operations": ["member.set_role", "membership.lifecycle"]},
+    "API-E7E243FCBA7B1": {"section": "network-policy", "label": "Specified", "held": [], "operations": ["network_policy.get"]},
+    "API-EAA5699B6D3B4": {"section": "network-policy", "label": "Specified", "held": [], "operations": ["network_policy.replace"]},
+    "API-EFB31B0659144": {"section": "local-secret-import-and-pairing", "label": "Held", "held": ["C4", "C5"], "operations": ["secret_import.handoff"]},
+    "API-E843B640767A6": {"section": "local-secret-import-and-pairing", "label": "Held", "held": ["C4", "C5"], "operations": ["secret_import.decision"]},
+    "API-E13ACC3718754": {"section": "local-secret-import-and-pairing", "label": "Held", "held": ["C4", "C5"], "operations": ["secret_import.complete", "pairing.lifecycle"]},
+    "API-E41EA65B1CA27": {"section": "local-secret-import-and-pairing", "label": "Held", "held": ["C4", "C5"], "operations": ["pairing.claim", "pairing.lifecycle"]},
+    "API-E24F092B775EF": {"section": "local-secret-import-and-pairing", "label": "Held", "held": ["C4", "C5"], "operations": ["pairing.fail", "pairing.lifecycle"]},
+    "API-E1CDD60FB362E": {"section": "roles-and-product-tiers", "label": "Specified", "held": [], "operations": ["tier.list"]},
+    "API-E0C3977E00304": {"section": "roles-and-product-tiers", "label": "Specified", "held": [], "operations": ["tier.set"]},
+    "API-ED93BBEF3087E": {"section": "roles-and-product-tiers", "label": "Specified", "held": [], "operations": ["tier.get"]},
+    "API-E32A027BC37BF": {"section": "roles-and-product-tiers", "label": "Specified", "held": [], "operations": ["role.own"]},
+    "API-ECC992D1449F3": {"section": "workspace-settings", "label": "Specified", "held": [], "operations": ["settings.list"]},
+    "API-E4FC8A3AFAC6D": {"section": "workspace-settings", "label": "Specified", "held": [], "operations": ["settings.get"]},
+    "API-EA06C6C5F5B80": {"section": "workspace-settings", "label": "Specified", "held": [], "operations": ["settings.replace"]}
+  }
+}

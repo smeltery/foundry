@@ -44,8 +44,10 @@ for that work. `CreateSession` accepts optional workspace selector, tags, title,
 execution target, tool profile, origin and completion criteria fields, and
 `Session` carries optional archive, title, origin, timestamp and lineage
 metadata. Absent fields are omitted from the encoding, so older requests keep
-their stored idempotency bytes. `Store::create` rejects any v2 option as
-`unsupported` until the ticket that owns it stores it. `CancelReceipt` is a DTO
+their stored idempotency bytes. `Store::create_session` stores the workspace
+selector, tags, title, tool profile and origin and returns them on replay; a
+machine target and completion criteria stay `unsupported` until their owners
+build them. `CancelReceipt` is a DTO
 only. Wire names are provisional; the terminal state for cancelling a suspended
 session, delete semantics and any HTTP transport are pending decisions.
 

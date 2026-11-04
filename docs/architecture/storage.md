@@ -209,10 +209,12 @@ flag, title, origin, timestamps and parent or fork lineage), a `session_tags`
 table, nullable `events.attempt_ordinal` and `events.position` columns, a message
 reconciliation audit table and an empty `completion_decisions` table keyed by
 attempt and bound to the completion policy tuple. It never rewrites
-`events.sequence` or any other value that feeds checkpoint cut hashes. Apart from
-the event delivery fields below, no store API reads or writes these columns and
-tables yet. Lineage columns carry no foreign key while delete semantics are
-undecided.
+`events.sequence` or any other value that feeds checkpoint cut hashes. Create
+writes the title and origin columns and `session_tags`; the workspace selector
+and tool profile are read back from the stored request. Event writes and
+delivery reads use the event delivery fields below. No store API reads or
+writes the other new columns and tables yet. Lineage columns carry no
+foreign key while delete semantics are undecided.
 
 ### Event delivery fields
 

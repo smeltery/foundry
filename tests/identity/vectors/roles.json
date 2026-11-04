@@ -1,0 +1,61 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "roles-and-product-tiers",
+  "cases": [
+    {
+      "name": "own_role_separates_role_from_tier",
+      "operation": "role.own",
+      "rows": ["API-E32A027BC37BF"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "role": "owner", "tier": "standard", "tier_grants_permission": false}
+    },
+    {
+      "name": "viewer_reads_own_role",
+      "operation": "role.own",
+      "rows": ["API-E32A027BC37BF"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "viewer", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "role": "viewer"}
+    },
+    {
+      "name": "tier_list_is_retired",
+      "operation": "tier.list",
+      "rows": ["API-E1CDD60FB362E"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "retired"}
+    },
+    {
+      "name": "tier_set_is_retired_after_scope_check",
+      "operation": "tier.set",
+      "rows": ["API-E0C3977E00304"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"user": "user-a", "tier": "standard"},
+      "expect": {"result": "error", "error": "retired"}
+    },
+    {
+      "name": "tier_set_without_scope_is_forbidden",
+      "operation": "tier.set",
+      "rows": ["API-E0C3977E00304"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"user": "user-a", "tier": "standard"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "tier_get_is_retired",
+      "operation": "tier.get",
+      "rows": ["API-ED93BBEF3087E"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"user": "user-a"},
+      "expect": {"result": "error", "error": "retired"}
+    }
+  ]
+}

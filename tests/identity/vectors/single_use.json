@@ -1,0 +1,139 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "single-use-workspaces",
+  "cases": [
+    {
+      "name": "create_returns_restricted_token_and_expiry",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "request": {"trial_key": "trial-1"},
+      "expect": {
+        "result": "created", "state": "live", "parent": "ws-a", "trial_key": "trial-1",
+        "lifetime_minutes": 240, "retired_at": null,
+        "token_scopes": ["sessions.read", "sessions.run", "machines.read", "machines.write", "machines.use", "deployment.read"],
+        "session_limit": 1
+      }
+    },
+    {
+      "name": "equivalent_replay_returns_same_workspace",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "given": {"state": "live", "trial_key": "trial-1", "lifetime_minutes": 240},
+      "request": {"trial_key": "trial-1", "lifetime_minutes": 240},
+      "expect": {"result": "replayed", "state": "live", "same_workspace": true}
+    },
+    {
+      "name": "different_request_with_same_key_conflicts",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "given": {"state": "live", "trial_key": "trial-1", "lifetime_minutes": 240},
+      "request": {"trial_key": "trial-1", "lifetime_minutes": 60},
+      "expect": {"result": "error", "error": "conflict", "cause": "key_reused"}
+    },
+    {
+      "name": "retired_key_conflicts",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "given": {"state": "retired", "trial_key": "trial-1"},
+      "request": {"trial_key": "trial-1"},
+      "expect": {"result": "error", "error": "conflict", "cause": "workspace_retired", "state": "retired"}
+    },
+    {
+      "name": "active_limit_conflicts",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "given": {"live_count": "at_limit"},
+      "request": {"trial_key": "trial-2"},
+      "expect": {"result": "error", "error": "conflict", "cause": "active_limit"}
+    },
+    {
+      "name": "unfunded_parent_is_quota_exhausted",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "given": {"parent_budget": "insufficient"},
+      "request": {"trial_key": "trial-3"},
+      "expect": {"result": "error", "error": "quota_exhausted"}
+    },
+    {
+      "name": "trial_key_too_long",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "limit": {"name": "trial_key_chars", "value": 201},
+      "request": {},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "trial_key_with_space_is_invalid",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "request": {"trial_key": "trial 1"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "lifetime_below_minimum",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "limit": {"name": "lifetime_minutes", "value": 4},
+      "request": {"trial_key": "trial-4"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "lifetime_at_maximum",
+      "operation": "single_use.create",
+      "rows": ["API-E3A0BCD747FD5"],
+      "implemented": false,
+      "limit": {"name": "lifetime_minutes", "value": 720},
+      "request": {"trial_key": "trial-5"},
+      "expect": {"result": "created", "lifetime_minutes": 720}
+    },
+    {
+      "name": "admin_retire_cancels_work_and_deletes_token",
+      "operation": "single_use.retire",
+      "rows": ["API-E8DF08D5E6646"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "live", "live_runs": 1, "machines": 1},
+      "request": {"single_use": "su-1"},
+      "expect": {"result": "ok", "state": "retired", "outcome": {"cause": "requested", "cancelled_runs": 1, "revoked_machines": 1, "failed_steps": []}, "token": "revoked"}
+    },
+    {
+      "name": "repeated_retire_returns_saved_result",
+      "operation": "single_use.retire",
+      "rows": ["API-E8DF08D5E6646"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"state": "retired", "outcome": {"cause": "expired"}},
+      "request": {"single_use": "su-1"},
+      "expect": {"result": "ok", "state": "retired", "outcome": {"cause": "expired"}}
+    },
+    {
+      "name": "member_cannot_retire",
+      "operation": "single_use.retire",
+      "rows": ["API-E8DF08D5E6646"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"single_use": "su-1"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "retire_of_another_parent_is_not_found",
+      "operation": "single_use.retire",
+      "rows": ["API-E8DF08D5E6646"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "given": {"single_use_parent": "ws-b"},
+      "request": {"single_use": "su-9"},
+      "expect": {"result": "error", "error": "not_found"}
+    }
+  ]
+}
