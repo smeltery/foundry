@@ -203,8 +203,10 @@ class ReleaseParityTests(Fixture):
                     with self.assertRaises(InvalidSnapshot):
                         snapshot.pack(args)
                     packer.assert_not_called()
-        with patch.object(snapshot.subprocess, "run"), self.assertRaises(InvalidSnapshot):
-            snapshot.publication_checks("artifacts")
+        with self.tree(output), patch.object(snapshot.archive_audit, "audit"), \
+                patch.object(snapshot.archive_audit, "naming_scan"), \
+                self.assertRaisesRegex(InvalidSnapshot, "publication remains blocked"):
+            snapshot.publication_checks("artifacts", "v0.1.0")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import archive_audit
 import argparse
 import artifacts
 from dataclasses import replace
@@ -14,7 +15,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 import tarfile
 import tempfile
 import unittest
@@ -101,9 +101,13 @@ def require_target_graph(inventory, target):
         raise InvalidSnapshot("Target dependency graph differs from the committed notice bundle")
 
 
-def publication_checks(directory):
-    subprocess.run([sys.executable, "scripts/checks/naming.py", "--mode", "release", "--release", directory,
-                    "--policy-json-env", "FOUNDRY_NAMING_POLICY"], check=True)
+def publication_checks(directory, tag):
+    inventory, lock = notice_inventory(), command("git", "show", "HEAD:Cargo.lock", binary=True)
+    # Every asset, checksum sidecars included, gets a text scan; archived executables go to binary.py below.
+    archive_audit.naming_scan(directory, {f"f5y-{tag}-{target}.tar.gz!/{name}"
+                                          for target in TARGETS for name in artifacts.BINARIES})
+    for target in TARGETS:
+        archive_audit.audit(directory, tag, target, inventory, lock)
     # Parity checks cannot settle license elections, naming scope or binary distribution rights.
     raise InvalidSnapshot("Dependency notice and naming decisions are unresolved; publication remains blocked")
 
@@ -207,7 +211,7 @@ def publication_state(args, build):
 
 
 def publish(args):
-    publication_checks(args.directory)
+    publication_checks(args.directory, args.tag)
     build = verified_build(args.directory, args.tag, args.sha)
     for _ in range(4):
         request, release_id, release = publication_state(args, build)
@@ -351,14 +355,6 @@ class SnapshotTests(unittest.TestCase):
             checksum.write_text("invalid\n")
             with self.assertRaises(InvalidSnapshot):
                 verified_build(directory, "v0.1.0", self.sha)
-
-    def test_publication_checks_fail_closed(self):
-        for failure in (None, subprocess.CalledProcessError(2, "scanner")):
-            with patch(__name__ + ".subprocess.run", side_effect=failure), \
-                    patch(__name__ + ".snapshot") as remote, \
-                    self.assertRaises((InvalidSnapshot, subprocess.CalledProcessError)):
-                publish(argparse.Namespace(directory="artifacts"))
-            remote.assert_not_called()
 
 
 def main():
