@@ -97,6 +97,8 @@ class Scanner:
         self.findings, self.uninspected = [], []
         self.files = self.bytes = self.texts = self.matches = self.expanded = 0
         self.seen_blobs = set()
+        # History repeats unchanged entries in every commit; count and scan each once.
+        self.seen_entries = set()
 
     def location(self, value):
         # Mask the union of all matches before emitting paths, including overlaps.
@@ -290,6 +292,11 @@ class Scanner:
             header, name = record.split(b"\t", 1)
             parts = header.decode("ascii").split()
             mode, oid = parts[0], parts[2] if revision else parts[1]
+            if revision:
+                entry = (name, mode, oid)
+                if entry in self.seen_entries:
+                    continue
+                self.seen_entries.add(entry)
             label = (revision + ":" if revision else "") + name.decode("utf-8", "backslashreplace")
             self.visit(label)
             try:
