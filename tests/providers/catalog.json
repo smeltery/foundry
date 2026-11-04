@@ -1,0 +1,86 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "document": "docs/architecture/providers.md",
+  "errors": [
+    "invalid_request", "insecure_transport", "unauthenticated", "budget_exhausted",
+    "quota_exhausted", "forbidden", "endpoint_not_permitted", "not_found", "conflict",
+    "model_unavailable", "gone", "unsupported_provider", "rate_limited",
+    "endpoint_failure", "unavailable", "unsupported"
+  ],
+  "results": ["ok", "created", "replayed", "accepted", "error"],
+  "efforts": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  "endpoint_failures": ["dns", "connect", "timeout", "tls", "http"],
+  "write_only_fields": ["key", "token", "setup_token", "access_token", "refresh_token", "answer"],
+  "machines": {
+    "credential": {
+      "states": ["absent", "configured", "auth_failed", "reconnect_required"],
+      "transitions": [
+        {"from": "absent", "event": "configure", "to": "configured"},
+        {"from": "configured", "event": "replace", "to": "configured"},
+        {"from": "configured", "event": "provider_refused", "to": "auth_failed"},
+        {"from": "configured", "event": "token_expired", "to": "reconnect_required"},
+        {"from": "auth_failed", "event": "replace", "to": "configured"},
+        {"from": "reconnect_required", "event": "reconnect", "to": "configured"},
+        {"from": "configured", "event": "delete", "to": "absent"},
+        {"from": "auth_failed", "event": "delete", "to": "absent"},
+        {"from": "reconnect_required", "event": "delete", "to": "absent"}
+      ]
+    },
+    "oauth_login": {
+      "states": ["pending", "succeeded", "failed", "cancelled", "expired", "purged"],
+      "transitions": [
+        {"from": "pending", "event": "respond", "to": "pending"},
+        {"from": "pending", "event": "exchange_completed", "to": "succeeded"},
+        {"from": "pending", "event": "exchange_failed", "to": "failed"},
+        {"from": "pending", "event": "exchange_uncertain", "to": "failed"},
+        {"from": "pending", "event": "cancel", "to": "cancelled"},
+        {"from": "pending", "event": "superseded", "to": "cancelled"},
+        {"from": "pending", "event": "deadline_passed", "to": "expired"},
+        {"from": "succeeded", "event": "purge", "to": "purged"},
+        {"from": "failed", "event": "purge", "to": "purged"},
+        {"from": "cancelled", "event": "purge", "to": "purged"},
+        {"from": "expired", "event": "purge", "to": "purged"},
+        {"from": "succeeded", "event": "cancel", "to": "succeeded"},
+        {"from": "failed", "event": "cancel", "to": "failed"},
+        {"from": "cancelled", "event": "cancel", "to": "cancelled"},
+        {"from": "expired", "event": "cancel", "to": "expired"}
+      ]
+    }
+  },
+  "limits": {
+    "provider_id_chars": {"kind": "range", "min": 1, "max": 64, "below": "invalid_request", "above": "invalid_request"},
+    "account_key_chars": {"kind": "range", "min": 1, "max": 512, "below": "invalid_request", "above": "invalid_request"},
+    "secret_bytes": {"kind": "range", "min": 1, "max": 8192, "below": "invalid_request", "above": "invalid_request"},
+    "prompt_answer_bytes": {"kind": "range", "min": 0, "max": 8192, "below": "invalid_request", "above": "invalid_request"},
+    "model_id_bytes": {"kind": "range", "min": 1, "max": 256, "below": "invalid_request", "above": "invalid_request"},
+    "wall_clock_ms": {"kind": "range", "min": 60000, "max": 3600000000, "zero_allowed": true, "below": "invalid_request", "above": "invalid_request"},
+    "review_rounds": {"kind": "range", "min": 1, "max": 16, "default": 4, "below": "invalid_request", "above": "invalid_request"},
+    "window_days": {"kind": "range", "min": 1, "max": 366, "default": 30, "below": "invalid_request", "above": "invalid_request"}
+  },
+  "rows": {
+    "CLI-027": {"section": "connect-a-provider-from-the-cli", "operations": ["cli.providers_connect"]},
+    "API-E5297A5569474": {"section": "provider-catalog-and-inference-status", "operations": ["providers.catalog"]},
+    "API-E1BC704592670": {"section": "provider-catalog-and-inference-status", "operations": ["providers.status"]},
+    "API-E12E38D9F7C28": {"section": "provider-credentials", "operations": ["credentials.list"]},
+    "API-E5BEDB65EA9B9": {"section": "provider-credentials", "operations": ["credentials.configure", "credential.state"]},
+    "API-EE72FDBBD3375": {"section": "provider-credentials", "operations": ["credentials.validate"]},
+    "API-E817CF68A9E53": {"section": "provider-credentials", "operations": ["credentials.delete", "credential.state"]},
+    "API-EBD6CBFF835BE": {"section": "subscription-connection", "operations": ["credentials.connect_subscription", "credential.state"]},
+    "API-EFAE326F7F539": {"section": "provider-oauth-logins", "operations": ["oauth_logins.start", "oauth_login.state"]},
+    "API-E40CE908FFC7A": {"section": "provider-oauth-logins", "operations": ["oauth_logins.start_keyed"]},
+    "API-E90F0EE28B9DB": {"section": "provider-oauth-logins", "operations": ["oauth_logins.list_pending"]},
+    "API-E2A7C9B425D67": {"section": "provider-oauth-logins", "operations": ["oauth_logins.get", "oauth_login.state"]},
+    "API-E2CBA38EEBB25": {"section": "provider-oauth-logins", "operations": ["oauth_logins.respond", "oauth_login.state"]},
+    "API-E4881077B6501": {"section": "provider-oauth-logins", "operations": ["oauth_logins.cancel", "oauth_login.state"]},
+    "API-E28E3F3BCFA6D": {"section": "account-checks-and-provider-usage", "operations": ["accounts.check"]},
+    "API-E7619AD9B11AD": {"section": "account-checks-and-provider-usage", "operations": ["accounts.usage"]},
+    "API-EA0E3BF6C25F6": {"section": "model-availability-auto-resolution-and-effort", "operations": ["models.list"]},
+    "AG-09": {"section": "model-availability-auto-resolution-and-effort", "operations": ["session.model_selection", "models.list"]},
+    "AG-12": {"section": "budgets-reservations-deadlines-and-review-rounds", "operations": ["budget.reserve", "budget.settle", "budget.deadline", "budget.review", "session.rollover"]},
+    "API-E288021BA77EC": {"section": "consumption-reports", "operations": ["consumption.daily"]},
+    "API-EB9835E1A1E93": {"section": "consumption-reports", "operations": ["consumption.metrics"]},
+    "API-E2F0CEEFEB828": {"section": "consumption-reports", "operations": ["consumption.quota"]},
+    "CLI-032": {"section": "local-and-custom-endpoints", "operations": ["endpoint.admit", "endpoint.failure"]}
+  }
+}
