@@ -21,7 +21,8 @@ ROW_OPTIONAL = {'baseline'}
 CITATION_KEYS = {'kind', 'path', 'function'}
 KINDS = {'unit', 'integration', 'e2e'}
 # Neutral row ID shapes shared with the external ledger; the ledger itself stays external.
-ROW_ID = re.compile(r'(?:API-(?:\d{3}|X\d{3})|AG-\d{2}|(?:CLI|NET|CAT|REL)-X?\d{3})')
+ROW_ID = re.compile(r'API-\d{3}|API-X\d{3}|API-E[0-9A-F]{12}|AG-\d{2}|CLI-P?\d{3}|NET-\d{3}'
+                    r'|NET-C[0-9A-F]{10}|CAT-\d{3}|REL-\d{3}|UNK-\d{3}|FND-\d{3}')
 BASELINE = re.compile(r'sha256:[0-9a-f]{64}')
 PATH_ROOTS = ('apps/', 'crates/', 'packages/', 'scripts/', 'tests/')
 E2E_ROOT = 'tests/e2e/'

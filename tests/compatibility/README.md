@@ -27,9 +27,18 @@ Each file in `rows/` is a JSON object with exactly two keys:
 }
 ```
 
-- **Row ID**: one of the neutral shapes `API-nnn`, `API-Xnnn`, `AG-nn`, or
-  `CLI-`, `NET-`, `CAT-`, `REL-` followed by `nnn` or `Xnnn`. Other prefixes and
-  widths are rejected. A row may appear in only one file.
+- **Row ID**: one of the neutral shapes below, where `d` is a decimal digit
+  and `H` an uppercase hex digit. Other prefixes, widths and lowercase hex are
+  rejected. A row may appear in only one file.
+
+  | Prefix | Shapes |
+  | --- | --- |
+  | `API-` | `ddd`, `Xddd`, `E` + 12 `H` |
+  | `AG-` | `dd` |
+  | `CLI-` | `ddd`, `Pddd` |
+  | `NET-` | `ddd`, `C` + 10 `H` |
+  | `CAT-`, `REL-`, `UNK-`, `FND-` | `ddd` |
+
 - **tests**: a nonempty list of citations with exactly these keys:
   - `kind`: `unit`, `integration` or `e2e`. Citations of kind `e2e` must live
     under `tests/e2e/`, and only they may.

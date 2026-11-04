@@ -73,13 +73,16 @@ class CompatibilityRegistryTests(unittest.TestCase):
         self.assertEqual(len(report['rows']['API-001']['resolved']), 2)
 
     def test_neutral_id_shapes_are_accepted(self):
-        for row in ('API-099', 'API-X100', 'AG-12', 'CLI-120', 'NET-007', 'NET-X007', 'CAT-001', 'REL-010'):
+        for row in ('API-099', 'API-X100', 'API-E86DDF683B212', 'AG-12', 'CLI-120', 'CLI-P004',
+                    'NET-007', 'NET-C0123456789', 'CAT-001', 'REL-010', 'UNK-002', 'FND-003'):
             with self.subTest(row=row):
                 self.document['rows'] = {row: DOCUMENT['rows']['API-001']}
                 self.assertIn(row, self.report()['rows'])
 
     def test_malformed_row_ids_are_rejected(self):
-        for row in ('API-1', 'api-001', 'AG-123', 'NIC-130', 'GAP-001', 'API-001 extra', 'XYZ-001'):
+        for row in ('API-1', 'api-001', 'AG-123', 'NIC-130', 'GAP-001', 'API-001 extra', 'XYZ-001',
+                    'API-E86ddf683b212', 'API-E86DDF683B21', 'API-E86DDF683B2120', 'NET-C012345678',
+                    'NET-Cabcdef0123', 'NET-X007', 'CLI-X120', 'FND-01', 'UNK-0001'):
             with self.subTest(row=row):
                 self.document['rows'] = {row: DOCUMENT['rows']['API-001']}
                 self.assertInvalid('not a neutral ID')
