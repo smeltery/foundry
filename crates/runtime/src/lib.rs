@@ -86,9 +86,10 @@ impl From<std::io::Error> for RuntimeError {
 /// A disconnected cancellation channel does not cancel the attempt.
 /// Every return after spawn stops/reaps the owned group and joins its pipe workers,
 /// or reports cleanup failure. Parent pipe I/O and queue waits are interruptible;
-/// OS scheduling and child reaping are not hard real-time guarantees. Descendants
-/// that detach from the owned group are not contained, but their inherited pipes
-/// cannot keep our workers waiting for EOF during cleanup.
+/// OS scheduling and child reaping are not hard real-time guarantees. Cleanup also
+/// stops and kills descendants that left the owned group while their parent chain
+/// leads to the live adapter; on Linux that includes orphans. Unreachable
+/// descendants' inherited pipes cannot keep our workers waiting for EOF.
 pub fn run_adapter(
     spec: &AdapterSpec,
     session: &Session,
