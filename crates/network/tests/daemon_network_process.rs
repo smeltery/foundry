@@ -26,5 +26,16 @@ mod database;
 mod expiry;
 #[path = "daemon_network_process/receipt.rs"]
 mod receipt;
+
+#[path = "daemon_network_process/document.rs"]
+mod document;
+#[path = "daemon_network_process/membership.rs"]
+mod membership;
+#[path = "daemon_network_process/shutdown.rs"]
+mod shutdown;
+#[path = "daemon_network_process/stall.rs"]
+mod stall;
+#[path = "daemon_network_process/version.rs"]
+mod version;
 use std::time::Duration;
 const DEADLINE: Duration = Duration::from_secs(45);
