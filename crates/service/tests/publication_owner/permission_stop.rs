@@ -202,3 +202,7 @@ fn unconsumed_reply_does_not_repeat_durable_finish() {
     assert_eq!(before, h.store.get(&h.session).unwrap());
     assert_eq!(before.outcome, Some(Outcome::ActionRequired));
 }
+
+// Native terminal outcomes under the completion policy share this harness.
+#[path = "completion.rs"]
+mod completion;

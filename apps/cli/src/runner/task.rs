@@ -1,6 +1,7 @@
 //! Resolve only local task inputs; private configuration never enters Request.
 use super::{invalid, tool_policy, unsupported};
 use crate::{CommandError, Request};
+use foundry_contracts::CompletionCriteria;
 use foundry_tools::host::Grant;
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ pub(super) struct LocalTask {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub grants: Vec<Grant>,
+    pub completion: Option<CompletionCriteria>,
 }
 
 pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, CommandError> {
@@ -30,6 +32,7 @@ pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, 
         return Err(invalid("invalid task effort"));
     }
     let grants = tool_policy::grants(&options["tool_grants"])?;
+    let completion = completion(&options["completion"])?;
     let arguments = object(
         command
             .get("arguments")
@@ -63,6 +66,7 @@ pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, 
                 "update",
                 "upgrade",
                 "tool_grants",
+                "completion",
             ],
         )?;
         inactive(
@@ -96,6 +100,7 @@ pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, 
                     "model",
                     "effort",
                     "tool_grants",
+                    "completion",
                 ],
             )?;
             inactive(args, &["repo", "provider"], &[])?;
@@ -110,6 +115,7 @@ pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, 
                     "effort",
                     "detach",
                     "tool_grants",
+                    "completion",
                 ],
             )?;
             inactive(args, &["repo", "git_ref"], &["detach"])?;
@@ -125,7 +131,21 @@ pub(super) fn resolve(request: &Request, configured: bool) -> Result<LocalTask, 
         model,
         effort,
         grants,
+        completion,
     })
+}
+
+/// Inline criteria in the contract shape, validated before admission.
+pub(crate) fn completion(value: &Value) -> Result<Option<CompletionCriteria>, CommandError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let criteria: CompletionCriteria = serde_json::from_value(value.clone())
+        .map_err(|_| invalid("completion must follow the criteria contract"))?;
+    criteria
+        .validate()
+        .map_err(|error| CommandError::new("invalid", error.to_string()))?;
+    Ok(Some(criteria))
 }
 
 pub(super) fn options<'a>(request: &'a Request, operation: &str, start: bool) -> &'a Value {

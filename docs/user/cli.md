@@ -161,8 +161,34 @@ checkpoint requirements and the distinction between inspection and execution.
 
 The [application service](../architecture/service.md) persists events and the
 terminal session. Completion maps success to status 0, failure to 1,
-action-required to 3, a cancelled session to 4 and suspension to 130. Runtime or persistence errors fail
+action-required to 3, a cancelled session to 4 and suspension to 130. Success
+requires completion criteria that the runtime verified; a settled turn without
+them is action-required (see the
+[completion policy](../architecture/completion-policy.md)). Runtime or persistence errors fail
 explicitly. The synchronous result is not a live output-streaming interface.
+
+### Completion criteria
+
+Without criteria, every finished run ends `action_required` with exit status 3,
+whatever the adapter reports. The positional prompt form, `run` and
+`session start` declare criteria with these repeatable flags:
+
+| Flag | Check |
+| --- | --- |
+| `--verify-command ARGV...` | Passes when the argv exits 0. No shell runs it. End the argv with `';'` when more options follow. |
+| `--verify-timeout SECS` | Time limit for each verify command, 1 to 600 seconds (default 300). |
+| `--verify-file PATH` | Passes when the workspace-relative file exists. Absolute paths and `..` are rejected. |
+| `--verify-sha256 HEX` | Lowercase SHA-256 the files must match: none, or one per `--verify-file` in order. |
+
+```sh
+f5y "Fix the parser" --dir . --verify-command cargo test --quiet ';' --verify-file CHANGELOG.md
+```
+
+Checks get stable IDs `command-1`, `command-2`, `file-1` and so on, and run in
+the working directory after the adapter proposes success. Every check passing
+gives exit status 0; a failing check gives 1. Invalid combinations fail with a
+`usage` or `invalid` error before any session is created. MCP `session_create`
+accepts the same criteria as its `completion` argument.
 
 ## Watch and interrupt
 

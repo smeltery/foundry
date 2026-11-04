@@ -87,6 +87,17 @@ impl Service {
                 ))?;
         let fence = self.store.begin_attempt(id, expected_version)?;
         let session = self.store.get(id)?;
+        let declared = self.next_criteria.take();
+        if let Err(error) = crate::completion::configuration_digest(
+            spec,
+            &session,
+            policy.is_some(),
+            permissions.is_some(),
+        )
+        .and_then(|digest| crate::completion::admit(&mut self.store, &fence, digest, declared))
+        {
+            return self.fail_attempt(&fence, error);
+        }
         let (cancel_tx, cancel_rx) = mpsc::channel();
         let (message_tx, message_rx) = mpsc::sync_channel(1);
         let signals = RunControl::new(Arc::clone(&control));

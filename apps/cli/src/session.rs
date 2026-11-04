@@ -25,6 +25,9 @@ pub enum SessionCommand {
         /// Requested effort; local execution requires explicit adapter configuration.
         #[arg(long, value_enum)]
         effort: Option<Effort>,
+        #[command(flatten)]
+        #[serde(flatten)]
+        verify: crate::verify_args::VerifyOptions,
     },
     Get {
         id: String,

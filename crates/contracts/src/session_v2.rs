@@ -107,6 +107,12 @@ pub enum CompletionCheck {
     },
 }
 
+impl CompletionCriteria {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        validate_criteria(self)
+    }
+}
+
 impl CompletionCheck {
     pub fn id(&self) -> &str {
         match self {

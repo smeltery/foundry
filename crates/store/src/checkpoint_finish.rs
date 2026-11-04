@@ -1,3 +1,4 @@
+use crate::completion_decisions::Proposal;
 use crate::{
     AttemptFence, CheckpointRef, OpaqueCheckpointInput, Result, Store, attempts, checkpoint_codec,
     checkpoint_cut, checkpoint_read, checkpoints, conflict, read_session,
@@ -42,6 +43,7 @@ impl Store {
         prepared: checkpoints::PreparedCheckpoint,
         terminal: TerminalProposal,
     ) -> Result<FinalizedCheckpoint> {
+        let stage = self.completion.clone();
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -53,12 +55,20 @@ impl Store {
             ));
         }
         let checkpoint = checkpoints::publish(&tx, fence, prepared)?;
+        // The checkpoint keeps the adapter's terminal proposal as historical data;
+        // the session's outcome is the completion decision bound to this checkpoint.
+        let proposal = Proposal::Adapter(terminal.outcome.unwrap_or(Outcome::ActionRequired));
+        let mut decision = stage.input(fence, proposal);
+        decision.checkpoint_id = Some(checkpoint.id.as_str());
         let session = attempts::finish_in_transaction(
             &tx,
             fence,
-            terminal.lifecycle,
-            terminal.outcome,
-            terminal.result.clone(),
+            attempts::Terminal {
+                lifecycle: terminal.lifecycle,
+                outcome: terminal.outcome,
+                result: terminal.result.clone(),
+                decision,
+            },
             |tx, session| {
                 let version = i64::try_from(session.version)
                     .map_err(|_| conflict("finalization version exceeds durable integer range"))?;
@@ -76,6 +86,7 @@ impl Store {
             },
         )?;
         tx.commit()?;
+        self.completion = Default::default();
         Ok(FinalizedCheckpoint {
             checkpoint,
             terminal,

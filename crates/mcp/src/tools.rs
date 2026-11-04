@@ -5,6 +5,28 @@ fn object(properties: Value, required: &[&str]) -> Value {
            "additionalProperties":false})
 }
 
+/// Inline criteria in the session contract shape (completion-policy.md). The
+/// backend validates bounds and workspace confinement.
+fn completion() -> Value {
+    let text = json!({"type":"string", "minLength":1});
+    let command = object(
+        json!({"kind":{"const":"command"},"id":text,
+               "argv":{"type":"array","items":text,"minItems":1,"maxItems":64},
+               "timeout_ms":{"type":"integer","minimum":1,"maximum":600000}}),
+        &["kind", "id", "argv", "timeout_ms"],
+    );
+    let file = object(
+        json!({"kind":{"const":"file"},"id":text,"path":text,
+               "sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}),
+        &["kind", "id", "path"],
+    );
+    object(
+        json!({"checks":{"type":"array","items":{"oneOf":[command, file]},
+                         "minItems":1,"maxItems":32}}),
+        &["checks"],
+    )
+}
+
 /// The advertised schemas are also used to validate arguments before dispatch.
 pub fn list_tools() -> Value {
     let text = json!({"type":"string", "minLength":1});
@@ -15,7 +37,8 @@ pub fn list_tools() -> Value {
             "Create a local session",
             object(
                 json!({
-                    "prompt":prompt,"directory":text,"idempotency_key":text
+                    "prompt":prompt,"directory":text,"idempotency_key":text,
+                    "completion":completion()
                 }),
                 &["prompt", "directory"],
             ),
@@ -77,6 +100,11 @@ pub(crate) fn validate_arguments(name: &str, args: &Value) -> Result<(), &'stati
     }
     for (key, value) in args {
         let rule = properties.get(key).ok_or("Unknown argument")?;
+        if rule["type"] == "object" {
+            // Nested shapes are checked by the backend against the contract.
+            value.as_object().ok_or("Argument must be an object")?;
+            continue;
+        }
         let text = value.as_str().ok_or("Argument must be a string")?;
         let length = text.chars().count() as u64;
         if length < rule["minLength"].as_u64().unwrap_or(0)

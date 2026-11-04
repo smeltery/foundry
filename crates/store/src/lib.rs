@@ -10,6 +10,8 @@ mod checkpoint_limits;
 mod checkpoint_read;
 mod checkpoint_types;
 mod checkpoints;
+mod completion_commit;
+mod completion_decisions;
 mod continue_acceptance;
 mod continue_baseline;
 mod continue_codec;
@@ -55,6 +57,9 @@ pub use checkpoint_types::{
     CheckpointCut, CheckpointRef, ContextCheckpointId, ContextFormat, CoverageManifest,
     MAX_CHECKPOINT_BYTES, MAX_CHECKPOINT_COVERAGE_BYTES, MAX_CHECKPOINT_METADATA_BYTES,
     OpaqueCheckpointInput, PrivateCheckpoint,
+};
+pub use completion_decisions::{
+    CompletionAdmission, CompletionDecision, CompletionEvidence, CriterionResult, CriterionStatus,
 };
 pub use continue_intent::{
     ContinueAcceptanceInput, ContinueAcceptanceRef, RestoreContinueCodec, RestoreContinueIntentV1,
@@ -122,6 +127,7 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 pub struct Store {
     connection: Connection,
     lease_duration: Duration,
+    completion: completion_decisions::CompletionStage,
 }
 impl Store {
     /// Opening a database never recovers or cancels existing attempts.
@@ -146,6 +152,7 @@ impl Store {
         Ok(Self {
             connection,
             lease_duration,
+            completion: Default::default(),
         })
     }
 

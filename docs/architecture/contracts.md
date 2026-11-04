@@ -45,9 +45,10 @@ execution target, tool profile, origin and completion criteria fields, and
 `Session` carries optional archive, title, origin, timestamp and lineage
 metadata. Absent fields are omitted from the encoding, so older requests keep
 their stored idempotency bytes. `Store::create_session` stores the workspace
-selector, tags, title, tool profile and origin and returns them on replay; a
-machine target and completion criteria stay `unsupported` until their owners
-build them. `CancelReceipt` is a DTO
+selector, tags, title, tool profile, origin and inline completion criteria and
+returns them on replay; a machine target and a completion criteria profile stay
+`unsupported` until their owners build them (see the
+[completion policy](completion-policy.md)). `CancelReceipt` is a DTO
 only. Wire names are provisional; the terminal state for cancelling a suspended
 session, delete semantics and any HTTP transport are pending decisions.
 

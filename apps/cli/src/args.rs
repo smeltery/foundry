@@ -115,6 +115,9 @@ pub struct PromptOptions {
     /// Request a standalone CLI update.
     #[arg(long, conflicts_with = "update")]
     pub upgrade: bool,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub verify: crate::verify_args::VerifyOptions,
 }
 
 #[derive(Debug, Subcommand, Serialize)]
@@ -212,6 +215,9 @@ pub struct RunOptions {
     /// Request detached execution (unsupported by the local backend).
     #[arg(long, short = 'd')]
     pub detach: bool,
+    #[command(flatten)]
+    #[serde(flatten)]
+    pub verify: crate::verify_args::VerifyOptions,
 }
 
 pub use crate::network_args::{NetworkCommand, NetworkOptions};

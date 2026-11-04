@@ -2,6 +2,8 @@
 mod admission;
 mod cancel;
 pub mod cancellation_snapshot;
+pub mod completion;
+mod completion_check;
 mod context_commit;
 mod context_cut;
 mod control;
@@ -27,7 +29,7 @@ mod tool_digest;
 mod tool_worker;
 pub mod workspace_snapshot;
 
-use foundry_contracts::{CreateSession, Event, Message, Session};
+use foundry_contracts::{CompletionCriteria, CreateSession, Event, Message, Session};
 use foundry_runtime::RuntimeError;
 use foundry_store::{Store, StoreError};
 use std::{
@@ -85,6 +87,7 @@ pub struct Service {
     path: PathBuf,
     options: ServiceOptions,
     snapshots: Option<cancellation_snapshot::SnapshotSettings>,
+    next_criteria: Option<CompletionCriteria>,
 }
 impl Service {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -110,6 +113,7 @@ impl Service {
             path,
             options,
             snapshots: None,
+            next_criteria: None,
         })
     }
     pub fn with_workspace_snapshots(
@@ -139,6 +143,29 @@ impl Service {
     }
     pub fn withdraw_message(&mut self, session_id: &str, id: &str) -> Result<Message> {
         Ok(self.store.withdraw_message(session_id, id)?)
+    }
+    /// Declare the criteria for the next attempt this service admits, replacing
+    /// the session's criteria for that attempt only. Later continuations inherit
+    /// the session's criteria again.
+    pub fn declare_next_criteria(&mut self, criteria: CompletionCriteria) -> Result<()> {
+        criteria.validate().map_err(StoreError::from)?;
+        if criteria.profile.is_some() {
+            return Err(
+                StoreError::from(foundry_contracts::ContractError::Unsupported(
+                    "completion criteria profile".into(),
+                ))
+                .into(),
+            );
+        }
+        self.next_criteria = Some(criteria);
+        Ok(())
+    }
+    /// Decision behind the session's current outcome; `None` before the policy.
+    pub fn completion_decision(
+        &self,
+        id: &str,
+    ) -> Result<Option<foundry_store::CompletionDecision>> {
+        Ok(self.store.current_completion_decision(id)?)
     }
     pub fn recover_expired(&mut self) -> Result<Vec<Session>> {
         Ok(self.store.recover_expired()?)

@@ -189,7 +189,8 @@ fn exercise(coordinated: bool, granted: bool, failed: bool, name: &str, input: V
             &mut stderr,
         )
         .unwrap();
-        assert_eq!(code, if failed { 2 } else { 0 });
+        // Unverified adapter success is action_required under foundry.completion.v1.
+        assert_eq!(code, if failed { 2 } else { 3 });
         assert_private_absent(std::str::from_utf8(&stdout).unwrap());
         assert_private_absent(std::str::from_utf8(&stderr).unwrap());
         if matches!(format, watch::WatchFormat::JsonLines) {

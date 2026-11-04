@@ -26,7 +26,8 @@ fn configured_tasks_resolve_cli_over_file_without_provider_inference() {
                 serde_json::from_value(h.value()["selection"].clone()).unwrap();
             let output = h.command().args(&route).args(&overrides).output().unwrap();
             let body = response(&output);
-            assert_eq!(output.status.code(), Some(0));
+            // Unverified adapter success is action_required under foundry.completion.v1.
+            assert_eq!(output.status.code(), Some(3));
             let received = h.received();
             let selected: AdapterSelection =
                 serde_json::from_value(received["selection"].clone()).unwrap();
@@ -215,7 +216,8 @@ fn configured_explicit_grant_uses_real_helper_and_durable_receipt() {
         .output()
         .unwrap();
     let body = response(&output);
-    assert_eq!(output.status.code(), Some(0));
+    // Unverified adapter success is action_required under foundry.completion.v1.
+    assert_eq!(output.status.code(), Some(3));
     assert_eq!(
         std::fs::read_to_string(h.work.join("out.txt")).unwrap(),
         "owned output"
