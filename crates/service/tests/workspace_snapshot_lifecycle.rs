@@ -104,9 +104,9 @@ impl Fixture {
     }
 }
 
-fn wait_file(path: &Path) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !path.exists() {
+fn wait_file(path: &Path, worker: &thread::JoinHandle<impl Sized>, budget: Duration) {
+    let deadline = Instant::now() + budget;
+    while !path.exists() && !worker.is_finished() {
         assert!(Instant::now() < deadline, "adapter did not start");
         thread::sleep(Duration::from_millis(5));
     }
@@ -130,11 +130,11 @@ fn graceful_cleanup_records_real_artifact_before_suspension() {
     spec.cancel_timeout = Duration::from_millis(100);
     let control = Arc::new(AtomicU8::new(0));
     let worker_control = control.clone();
-    let run_id = id.clone();
+    let (run_id, startup_budget) = (id.clone(), spec.ready_timeout);
     let worker = thread::spawn(move || service.run_with_control(&run_id, 0, &spec, worker_control));
-    wait_file(&marker);
+    wait_file(&marker, &worker, startup_budget);
     control.store(1, Ordering::Release);
-    let session = worker.join().unwrap().unwrap();
+    let session = worker.join().unwrap().expect("service run failed");
     assert_eq!(session.lifecycle, Lifecycle::Suspended);
     assert!(session.active_attempt_id.is_none() && session.outcome.is_none());
     let pid: i32 = fs::read_to_string(marker).unwrap().parse().unwrap();
