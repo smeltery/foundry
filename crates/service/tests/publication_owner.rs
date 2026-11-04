@@ -152,6 +152,7 @@ fn fresh_owner_persists_cut_and_commits_full_witness_only_after_real_cleanup() {
             directory: dir.path().display().to_string(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap();
     // Counters do not establish freshness; the Store checks atomic history absence.
@@ -263,6 +264,7 @@ fn create_initial(store: &mut Store) -> String {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
         .id

@@ -1,6 +1,8 @@
+mod support_schema;
 use foundry_contracts::{CreateSession, Lifecycle, MessageState, Outcome};
 use foundry_store::Store;
 use std::sync::{Arc, Barrier};
+use support_schema::UNDO_V12;
 use tempfile::tempdir;
 
 fn create(store: &mut Store) -> foundry_contracts::Session {
@@ -10,6 +12,7 @@ fn create(store: &mut Store) -> foundry_contracts::Session {
             directory: "/tmp".into(),
             model: None,
             idempotency_key: None,
+            ..Default::default()
         })
         .unwrap()
 }
@@ -121,7 +124,7 @@ fn version_one_migration_preserves_sessions_and_adds_queue() {
     drop(store);
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection
-        .execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; DROP TABLE session_work; DROP TABLE tool_calls; DROP TABLE messages; PRAGMA user_version=1;")
+        .execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; DROP TABLE context_continue_messages; DROP TABLE context_restores; DROP TABLE context_finalizations; DROP TABLE context_checkpoint_heads; DROP TABLE context_checkpoints; DROP TABLE session_work; DROP TABLE tool_calls; DROP TABLE messages; PRAGMA user_version=1;"))
         .unwrap();
     drop(connection);
     let mut store = Store::open(path).unwrap();

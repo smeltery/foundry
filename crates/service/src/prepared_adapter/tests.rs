@@ -119,6 +119,7 @@ fn stored_selection_mismatch_is_rejected_before_attempt_admission() {
                 effort: Some("high".into()),
             }),
             idempotency_key: None,
+            ..Default::default()
         };
         let model = request.model.as_mut().unwrap();
         match field {

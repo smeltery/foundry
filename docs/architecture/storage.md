@@ -202,6 +202,17 @@ native model behavior. Legacy opaque checkpoints are not automatically upgraded.
 A restored owner reads the current witnessed baseline through the
 [loading snapshot API](restoration.md#reading-a-witnessed-baseline).
 
+## Session contract v2 storage
+
+Schema version 12 is additive. It adds nullable session metadata columns (archive
+flag, title, origin, timestamps and parent or fork lineage), a `session_tags`
+table, nullable `events.attempt_ordinal` and `events.position` columns, a message
+reconciliation audit table and an empty `completion_decisions` table keyed by
+attempt and bound to the completion policy tuple. It never rewrites
+`events.sequence` or any other value that feeds checkpoint cut hashes. No store
+API reads or writes these columns and tables yet. Lineage columns carry no
+foreign key while delete semantics are undecided.
+
 ## Recovery limits
 
 Schema version 8 adds separate loading ownership and one-use continuation

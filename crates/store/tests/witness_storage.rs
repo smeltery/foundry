@@ -1,3 +1,5 @@
+mod support_schema;
+use support_schema::UNDO_V12;
 mod support_witness;
 use foundry_store::Store;
 use rusqlite::Connection;
@@ -175,7 +177,7 @@ fn schema_nine_migration_preserves_legacy_request_and_record_bytes() {
         .unwrap();
     drop(store);
     let db = Connection::open(&path).unwrap();
-    db.execute_batch("DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; PRAGMA user_version=9").unwrap();
+    db.execute_batch(&format!("{UNDO_V12}DROP TABLE context_continue_acceptances; DROP TABLE context_witnesses; ALTER TABLE context_checkpoints DROP COLUMN request_format; PRAGMA user_version=9")).unwrap();
     let store = Store::open(path).unwrap();
     assert_eq!(
         store.checkpoint_head(&session).unwrap(),

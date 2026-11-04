@@ -77,6 +77,7 @@ impl Harness {
             result: None,
             active_attempt_id: Some("attempt".into()),
             version: 1,
+            metadata: Default::default(),
         };
         let (requests, receive) = mpsc::sync_channel(2);
         let (replies, reply_rx) = mpsc::sync_channel(2);
