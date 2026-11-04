@@ -5,7 +5,7 @@
     "apps/cli/": 14167,
     "crates/contracts/": 4100,
     "crates/store/": 13875,
-    "crates/runtime/": 15124,
+    "crates/runtime/": 15577,
     "crates/mcp/": 3000,
     "crates/service/": 15804,
     "crates/network/": 44885,
