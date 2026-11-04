@@ -129,6 +129,27 @@ the root license, `notices.json` and the bundle manifest. Parity is not rights
 approval: no third-party texts are committed yet, and `publication_checks()`
 still blocks publication until the license-election and naming decisions land.
 
+## Archive audit
+
+Before any publication step, `publication_checks()` runs `archive_audit.audit()`
+on each target archive. The archive must contain exactly the executables,
+`build.json` and the committed notice inventory. Its `licenses/**` and
+`notices.json` bytes must equal the committed tree. The archived bundle manifest
+must pass `verify_bundle()` against `Cargo.lock`, and `notices.json` must
+describe the archived notice hashes. The audit extracts the archive to a
+temporary directory and runs `naming.py --mode release` over all members. Only
+the two executables may be deferred, and `binary.py` must then report no
+findings for each one. Unsupported executable formats count as incomplete.
+Executable coverage is evidence only, so publication stays blocked even after
+every check passes.
+
+`tests/release/test_archive_audit.py` compiles real native executables with the
+pinned `cc`: ELF on Linux CI and Mach-O on macOS. It packs them with
+`artifacts.pack()` and uses a temporary policy with a neutral synthetic token.
+The tests fail on a missing notice, a stale or edited notice, and a policy match
+inside an executable or a text member. PE output is not built because no
+Windows target is packaged.
+
 ## Current-state and workflow revision gates
 
 Every release snapshot validates both the supplied historical CI attempt and the
