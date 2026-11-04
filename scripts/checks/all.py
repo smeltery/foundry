@@ -33,6 +33,7 @@ def python_checks():
     for suite in sorted(set(suites)):
         run(sys.executable, "-m", "unittest", "discover", "-s", str(suite), "-v")
     run(sys.executable, "scripts/checks/catalog.py")
+    run(sys.executable, "scripts/checks/compatibility.py")
     run(sys.executable, "scripts/release/github_snapshot.py", "self-test")
 
 

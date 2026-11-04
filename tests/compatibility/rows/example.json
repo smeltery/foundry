@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "rows": {
+    "API-005": {
+      "tests": [
+        {
+          "kind": "integration",
+          "path": "apps/cli/tests/local_backend.rs",
+          "function": "durable_create_list_get_and_snapshot"
+        },
+        {
+          "kind": "integration",
+          "path": "crates/service/tests/control.rs",
+          "function": "cancellation_before_spawn_never_launches_adapter"
+        }
+      ]
+    },
+    "API-X028": {
+      "tests": [
+        {
+          "kind": "integration",
+          "path": "apps/cli/tests/local_backend.rs",
+          "function": "active_cancel_does_not_claim_process_stopped"
+        }
+      ]
+    }
+  }
+}
