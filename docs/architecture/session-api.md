@@ -251,6 +251,22 @@ winner. Evidence:
 [`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
 (`start_is_explicitly_a_local_queued_record`, `validation_and_error_codes`).
 
+Contract v2 options are validated before any write. A workspace is scratch or a
+repository with exactly one checkout selector (branch, reference or positive
+change request); a second selector fails decoding as `invalid_request`. Tags are
+at most 64 distinct labels of 1 to 64 bytes, a title has 1 to 200 characters, and
+a tool profile is a reference of `/`-separated lowercase segments of letters,
+digits, `-`, `_` and `.`. A machine target needs a name and is then
+`unsupported` with no fallback; completion criteria are also `unsupported`. The
+stored request remains the idempotency comparison, so changing any field
+conflicts, and a replay reports that it replayed with the original metadata and
+associations. Evidence:
+[`create_v2.rs`](../../crates/store/tests/create_v2.rs)
+(`legacy_and_v2_requests_replay_after_restart_and_conflict_on_any_changed_field`,
+`every_rejection_is_typed_and_writes_nothing`) and
+[`create.rs`](../../crates/service/tests/create.rs)
+(`exclusive_checkout_selectors_are_invalid`).
+
 **Specified.**
 
 - Inputs: required nonblank prompt. Optional repository, branch, reference or
