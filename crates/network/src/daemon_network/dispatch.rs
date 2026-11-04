@@ -91,36 +91,49 @@ pub(super) async fn batch(
             retire(state, outbox, old, peer).await?;
         }
     }
+    if acknowledge_published(state, live, revision).await? == codes::Reconciled::Quiescent
+        || state.codes.reconcile(state).await? == codes::Reconciled::Quiescent
+    {
+        suspend(state, outbox, live).await?;
+        return Ok(HashSet::new());
+    }
+    Ok(members)
+}
+/// A concurrent departure or removal can latch the authority after this batch
+/// read its view. That latch suspends the network; it is not a storage failure.
+pub(super) async fn acknowledge_published(
+    state: &State,
+    live: &BTreeMap<EndpointId, Live>,
+    revision: u64,
+) -> Result<codes::Reconciled, ControlError> {
+    use crate::peer_session::PeerError;
+    let lost = |error| match error {
+        PeerError::Quiescent => Ok(codes::Reconciled::Quiescent),
+        _ => Err(ControlError::Storage),
+    };
     if state
         .settings
         .code_policy()
         .map_err(|_| ControlError::Invalid)?
-        .is_some()
+        .is_none()
     {
-        for effect in state
-            .authority
-            .code_effects()
-            .await
-            .map_err(|_| ControlError::Storage)?
+        return Ok(codes::Reconciled::Current);
+    }
+    let effects = match state.authority.code_effects().await {
+        Ok(effects) => effects,
+        Err(error) => return lost(error),
+    };
+    for effect in effects {
+        if matches!(&effect,crate::full_team_store::ControlEffect::PublishLatestState{revision:expected,..}
+            if *expected<=revision && live.values().all(|connection|connection.published.is_some_and(|sent|sent>=*expected)))
         {
-            if matches!(&effect,crate::full_team_store::ControlEffect::PublishLatestState{revision:expected,..}
-                if *expected<=revision && live.values().all(|connection|connection.published.is_some_and(|sent|sent>=*expected)))
-            {
-                match state.authority.acknowledge_code_effect(effect).await {
-                    Ok(()) | Err(crate::peer_session::PeerError::StaleEpoch) => {}
-                    Err(_) => return Err(ControlError::Storage),
-                }
+            match state.authority.acknowledge_code_effect(effect).await {
+                Ok(()) | Err(PeerError::StaleEpoch) => {}
+                Err(error) => return lost(error),
             }
         }
     }
-    match state.codes.reconcile(state).await? {
-        codes::Reconciled::Current | codes::Reconciled::Retry => {}
-        codes::Reconciled::Quiescent => {
-            suspend(state, outbox, live).await?;
-            return Ok(HashSet::new());
-        }
-    }
-    Ok(members)
+    Ok(codes::Reconciled::Current)
 }
 async fn suspend(
     state: &State,

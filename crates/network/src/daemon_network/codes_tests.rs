@@ -217,3 +217,31 @@ async fn superseded_retirement_acknowledgement_retries_the_current_descriptor() 
     drop(state);
     drop(daemon);
 }
+
+#[tokio::test]
+async fn departure_after_the_batch_view_suspends_code_acknowledgement_instead_of_failing() {
+    let root = Root::new();
+    let (daemon, state) = open(&root).await;
+    drop(
+        state
+            .authority
+            .form("race".into(), "amber".into(), "desk".into())
+            .await
+            .unwrap(),
+    );
+    drop(state.authority.issue_code(1, false).await.unwrap());
+    let Some(view) = state.view().await.unwrap() else {
+        panic!("formed authority has a routing view");
+    };
+    let revision = view.revision;
+    // The batch releases its view guard to the outbox; a control can depart then.
+    drop(view);
+    state.authority.depart().await.unwrap();
+    let live = BTreeMap::new();
+    let published = super::super::dispatch::acknowledge_published(&state, &live, revision);
+    assert_eq!(published.await.unwrap(), Reconciled::Quiescent);
+    assert!(state.view().await.unwrap().is_none());
+    state.endpoint.close().await;
+    drop(state);
+    drop(daemon);
+}
