@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect unapproved dependency notice evidence outside the repository (Python 3.11+)."""
+"""Collect dependency notice evidence externally and generate reviewed notice bundles (Python 3.11+)."""
 
 from __future__ import annotations
 
@@ -12,9 +12,13 @@ import subprocess
 import tarfile
 import tomllib
 
+from spdx import ExpressionError, alternatives, election
+
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin")
 KNOWN_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
                   "Unicode-3.0", "Unicode-DFS-2016", "BSL-1.0", "CC0-1.0", "Unlicense"}
+BUNDLE_ROOT = "licenses/rust"
+BUNDLE_MANIFEST = f"{BUNDLE_ROOT}/manifest.json"
 NOTICE_NAME = re.compile(r"(?:LICENSE|LICENCE|COPYING|COPYRIGHT|NOTICE|AUTHORS)(?:[._-].*)?", re.I)
 
 
@@ -34,47 +38,12 @@ def license_findings(expression):
     """Check a conservative expression grammar, never grant distribution approval."""
     if not expression:
         return ["license_expression_missing"]
-    tokens = re.findall(r"[A-Za-z0-9.+-]+|[()]", expression)
-    if "".join(tokens) != re.sub(r"\s+", "", expression):
-        return ["license_expression_invalid"]
-    position, identifiers = 0, []
-
-    def atom():
-        nonlocal position
-        if position >= len(tokens):
-            raise InventoryError("Missing expression term")
-        token = tokens[position]
-        position += 1
-        if token == "(":
-            sequence()
-            if position >= len(tokens) or tokens[position] != ")":
-                raise InventoryError("Unbalanced expression")
-            position += 1
-        elif token in {"AND", "OR", "WITH", ")"}:
-            raise InventoryError("Unexpected expression term")
-        else:
-            identifiers.append(token)
-            if position < len(tokens) and tokens[position] == "WITH":
-                position += 1
-                if position >= len(tokens) or tokens[position] in {"AND", "OR", "WITH", "(", ")"}:
-                    raise InventoryError("Missing exception")
-                identifiers.append(tokens[position])
-                position += 1
-
-    def sequence():
-        nonlocal position
-        atom()
-        while position < len(tokens) and tokens[position] in {"AND", "OR"}:
-            position += 1
-            atom()
-
     try:
-        sequence()
-        if position != len(tokens):
-            raise InventoryError("Trailing expression terms")
-    except InventoryError:
+        options = alternatives(expression)
+    except ExpressionError:
         return ["license_expression_invalid"]
-    return ["license_identifier_or_exception_review_required"] if set(identifiers) - KNOWN_LICENSES else []
+    identifiers = {part for option in options for term in option for part in term.split(" WITH ")}
+    return ["license_identifier_or_exception_review_required"] if identifiers - KNOWN_LICENSES else []
 
 
 def lock_packages(lock_bytes):
@@ -228,6 +197,25 @@ def verify_inventory(manifest, texts, lock_bytes, graphs):
         raise InventoryError("Notice bytes or inventory changed")
 
 
+def cargo(root, *args):
+    return subprocess.check_output(["cargo", *args], cwd=root, text=True)
+
+
+def target_snapshot(root, target):
+    """Read one target's metadata and release-root graphs from the locked offline workspace."""
+    metadata = json.loads(cargo(root, "metadata", "--format-version", "1", "--locked", "--offline",
+                                "--filter-platform", target))
+    trees = [cargo(root, "tree", "--locked", "--offline", "--package", "f5y", "--package", "foundry-tools",
+                   "--target", target, "--edges", edges, "--prefix", "depth", "--format", "{p}|{f}", "--charset", "ascii")
+             for edges in ("normal,no-proc-macro", "normal,build")]
+    return metadata, *trees
+
+
+def target_graph(root, target):
+    metadata, tree, build_tree = target_snapshot(root, target)
+    return {"runtime": graph_packages(tree, metadata)[1], "build_context": graph_packages(build_tree, metadata)[1]}
+
+
 def collect(root, output):
     root, output = root.resolve(), output.resolve()
     if output == root or root in output.parents:
@@ -235,18 +223,8 @@ def collect(root, output):
     if output.exists():
         raise InventoryError("Use a new external output directory")
     lock_bytes = (root / "Cargo.lock").read_bytes()
-
-    def cargo(*args):
-        return subprocess.check_output(["cargo", *args], cwd=root, text=True)
-
-    data = {}
-    for target in TARGETS:
-        metadata = json.loads(cargo("metadata", "--format-version", "1", "--locked", "--offline", "--filter-platform", target))
-        trees = [cargo("tree", "--locked", "--offline", "--package", "f5y", "--package", "foundry-tools", "--target", target,
-                       "--edges", edges, "--prefix", "depth", "--format", "{p}|{f}", "--charset", "ascii")
-                 for edges in ("normal,no-proc-macro", "normal,build")]
-        data[target] = (metadata, *trees)
-    result, texts = inventory(lock_bytes, data, cargo("--version").strip())
+    data = {target: target_snapshot(root, target) for target in TARGETS}
+    result, texts = inventory(lock_bytes, data, cargo(root, "--version").strip())
     if (root / "Cargo.lock").read_bytes() != lock_bytes:
         raise InventoryError("Lock changed during collection")
     verify_inventory(result, texts, lock_bytes, result["graphs"])
@@ -259,11 +237,124 @@ def collect(root, output):
     return result
 
 
+def elected_terms(expression, elected):
+    try:
+        return election(expression, elected)
+    except ExpressionError as error:
+        raise InventoryError(str(error)) from error
+
+
+def require_texts(terms, files):
+    if not terms <= {item["covers"] for item in files}:
+        raise InventoryError("Elected license text is missing")
+
+
+def elected_files(evidence, review):
+    """Select reviewed texts for one package; every collected file must be classified."""
+    terms, offered = elected_terms(evidence["expression"], review.get("elected"))
+    collected = {item["source_path"]: item for item in evidence["files"]}
+    reviewed = {item["source_path"]: item for item in review.get("files", [])}
+    if len(reviewed) != len(review.get("files", [])) or set(reviewed) != set(collected):
+        raise InventoryError("Reviewed notice files differ from collected evidence")
+    selected = []
+    for path, item in sorted(reviewed.items()):
+        if item["sha256"] != collected[path]["sha256"]:
+            raise InventoryError("Reviewed notice hash differs from collected evidence")
+        if item["covers"] != "notice" and item["covers"] not in offered:
+            raise InventoryError("Reviewed notice covers a license outside the expression")
+        if item["covers"] == "notice" or item["covers"] in terms:
+            selected.append({"path": collected[path]["path"], "sha256": item["sha256"], "covers": item["covers"]})
+    require_texts(terms, selected)
+    return selected
+
+
+def generate(lock_bytes, evidence_dir, review_bytes, output):
+    """Write elected texts and a hashed bundle manifest from external evidence and review."""
+    evidence = json.loads((evidence_dir / "manifest.json").read_bytes())
+    texts = {item["path"]: (evidence_dir / item["path"]).read_bytes()
+             for package in evidence["packages"] for item in package["files"]}
+    verify_inventory(evidence, texts, lock_bytes, evidence["graphs"])
+    review = json.loads(review_bytes)
+    if (review.get("schema"), review.get("lock_sha256"), review.get("graph_sha256")) != (
+            1, evidence["lock_sha256"], evidence["graph_sha256"]):
+        raise InventoryError("Review record does not match the collected lock and graph")
+    reviews = {(item["name"], item["version"], item["source"]): item for item in review["packages"]}
+    # Workspace packages carry no dependency notices; the root license covers them.
+    packages = {(item["name"], item["version"], item["source"]): item
+                for item in evidence["packages"] if item["source"] is not None}
+    if len(reviews) != len(review["packages"]) or set(reviews) != set(packages):
+        raise InventoryError("Review record packages differ from the collected graph")
+    records = []
+    for key, package in sorted(packages.items(), key=lambda item: repr(item[0])):
+        item = reviews[key]
+        if (item.get("package_sha256"), item.get("expression")) != (package.get("package_sha256"), package["expression"]):
+            raise InventoryError("Review record package checksum or expression changed")
+        records.append({"name": key[0], "version": key[1], "source": key[2], "package_sha256": item["package_sha256"],
+                        "expression": package["expression"], "elected": item["elected"],
+                        "files": elected_files(package, item)})
+    bundle = encoded({"schema": 1, "lock_sha256": evidence["lock_sha256"], "graph_sha256": evidence["graph_sha256"],
+                      "graphs": evidence["graphs"], "review_sha256": digest(review_bytes), "packages": records})
+    files = {item["path"]: texts[item["path"]] for record in records for item in record["files"]}
+    verify_bundle(bundle, files, lock_bytes)
+    if (output / BUNDLE_ROOT).exists():
+        raise InventoryError("Remove the previous dependency notice bundle first")
+    for path, content in {**files, BUNDLE_MANIFEST: bundle}.items():
+        destination = output / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+    return json.loads(bundle)
+
+
+def verify_bundle(manifest_bytes, files, lock_bytes):
+    """Require exact lock, target graph and notice-file parity for a committed bundle."""
+    bundle = json.loads(manifest_bytes)
+    if manifest_bytes != encoded(bundle) or bundle.get("schema") != 1:
+        raise InventoryError("Bundle manifest is not canonical")
+    if bundle["lock_sha256"] != digest(lock_bytes):
+        raise InventoryError("Bundle manifest does not match the lock")
+    graphs = bundle["graphs"]
+    if set(graphs) != set(TARGETS) or bundle["graph_sha256"] != digest(encoded(graphs)):
+        raise InventoryError("Bundle target graphs changed")
+    graph_ids = {(row["name"], row["version"], row["source"])
+                 for graph in graphs.values() for rows in graph.values() for row in rows if row["source"]}
+    locked, identities, expected = lock_packages(lock_bytes), set(), {}
+    for package in bundle["packages"]:
+        key, checksum = (package["name"], package["version"], package["source"]), package["package_sha256"]
+        if key in identities or key not in locked or locked[key].get("checksum") != checksum:
+            raise InventoryError("Bundle package is duplicated or differs from the lock")
+        identities.add(key)
+        terms, _ = elected_terms(package["expression"], package["elected"])
+        if any(item["covers"] != "notice" and item["covers"] not in terms for item in package["files"]):
+            raise InventoryError("Bundle includes a text for a license that was not elected")
+        require_texts(terms, package["files"])
+        prefix = f"{BUNDLE_ROOT}/{key[0]}-{key[1]}-{checksum[:12]}/"
+        for item in package["files"]:
+            if not item["path"].startswith(prefix) or ".." in PurePosixPath(item["path"]).parts or item["path"] in expected:
+                raise InventoryError("Unsafe or duplicate bundle notice path")
+            expected[item["path"]] = item["sha256"]
+    if identities != graph_ids or any(not key[2].startswith("registry+") for key in graph_ids):
+        raise InventoryError("Bundle packages differ from the registry target graph")
+    if set(files) != set(expected):
+        raise InventoryError("Bundle notice files are missing or unexpected")
+    if any(not files[path].strip() or digest(files[path]) != sha for path, sha in expected.items()):
+        raise InventoryError("Bundle notice bytes are empty or changed")
+    return bundle
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True,
+                        help="New external evidence directory, or the bundle root when generating")
+    parser.add_argument("--evidence", type=Path, help="External collection to generate the bundle from")
+    parser.add_argument("--review", type=Path, help="External review record electing a license per package")
     args = parser.parse_args()
+    if (args.evidence is None) != (args.review is None):
+        parser.error("--evidence and --review must be supplied together")
+    if args.review:
+        bundle = generate((args.root / "Cargo.lock").read_bytes(), args.evidence, args.review.read_bytes(), args.output)
+        print(json.dumps({"packages": len(bundle["packages"]), "lock_sha256": bundle["lock_sha256"]}))
+        return 0
     result = collect(args.root, args.output)
     print(json.dumps({"status": result["status"], "packages": len(result["packages"]),
                       "lock_sha256": result["lock_sha256"]}))

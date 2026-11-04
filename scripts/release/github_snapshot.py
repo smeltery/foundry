@@ -9,6 +9,7 @@ from dataclasses import replace
 import hashlib
 import io
 import json
+import notices
 import os
 from pathlib import Path
 import re
@@ -76,22 +77,35 @@ def notice_inventory():
     paths = command("git", "ls-tree", "-r", "--name-only", "HEAD", "LICENSE", "licenses", "apps/cli").splitlines()
     paths = [path for path in paths if path == "LICENSE" or path.startswith("licenses/")
              or re.fullmatch(r"(?:LICENSE|NOTICE)(?:[.-].*)?", Path(path).name, re.IGNORECASE)]
-    if not {"LICENSE", "licenses/cli-template.txt"}.issubset(paths):
+    if not {"LICENSE", "licenses/cli-template.txt", notices.BUNDLE_MANIFEST}.issubset(paths):
         raise InvalidSnapshot("Required committed notices are missing")
     files = {path: command("git", "show", f"HEAD:{path}", binary=True) for path in paths}
     if any(not data for data in files.values()):
         raise InvalidSnapshot("Empty notice file")
+    dependency_texts = {path: data for path, data in files.items()
+                        if path.startswith(notices.BUNDLE_ROOT + "/") and path != notices.BUNDLE_MANIFEST}
+    try:
+        bundle = notices.verify_bundle(files[notices.BUNDLE_MANIFEST], dependency_texts,
+                                       command("git", "show", "HEAD:Cargo.lock", binary=True))
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        raise InvalidSnapshot(f"Dependency notices lack exact lock/graph parity: {error}") from error
     manifest = {"files": {path: hashlib.sha256(data).hexdigest() for path, data in files.items()},
-                "lock_sha256": hashlib.sha256(command("git", "show", "HEAD:Cargo.lock", binary=True)).hexdigest(),
-                "dependency_coverage": "pending"}
+                "lock_sha256": bundle["lock_sha256"], "graph_sha256": bundle["graph_sha256"]}
     return {**files, "notices.json": json.dumps(manifest, sort_keys=True).encode()}
+
+
+def require_target_graph(inventory, target):
+    """The packaged target's current Cargo graph must equal the committed bundle's graph."""
+    bundle = json.loads(inventory[notices.BUNDLE_MANIFEST])
+    if notices.target_graph(Path.cwd(), target) != bundle["graphs"].get(target):
+        raise InvalidSnapshot("Target dependency graph differs from the committed notice bundle")
 
 
 def publication_checks(directory):
     subprocess.run([sys.executable, "scripts/checks/naming.py", "--mode", "release", "--release", directory,
                     "--policy-json-env", "FOUNDRY_NAMING_POLICY"], check=True)
-    # A text-only scan cannot authorize binary distribution or prove license coverage.
-    raise InvalidSnapshot("Dependency notice coverage is pending; publication remains blocked")
+    # Parity checks cannot settle license elections, naming scope or binary distribution rights.
+    raise InvalidSnapshot("Dependency notice and naming decisions are unresolved; publication remains blocked")
 
 
 def workflow_revision(sha):
@@ -153,7 +167,9 @@ def pack(args):
         raise InvalidSnapshot("Invalid package target or tag")
     if command("git", "rev-parse", "HEAD") != args.sha:
         raise InvalidSnapshot("Package checkout mismatch")
-    artifacts.pack(args, notice_inventory(), command)
+    inventory = notice_inventory()
+    require_target_graph(inventory, args.target)
+    artifacts.pack(args, inventory, command)
 
 
 def verified_build(directory, tag, sha):
@@ -248,11 +264,14 @@ class SnapshotTests(unittest.TestCase):
             verified_build(directory, "v0.1.0", self.sha)
 
     def test_notice_inventory_uses_committed_bytes(self):
-        with patch(__name__ + ".command", side_effect=["LICENSE\nlicenses/cli-template.txt", b"root", b"app", b"lock"]):
-            notices = notice_inventory()
-        self.assertEqual(notices["LICENSE"], b"root")
-        self.assertEqual(json.loads(notices["notices.json"])["files"]["licenses/cli-template.txt"],
-                         hashlib.sha256(b"app").hexdigest())
+        listing = f"LICENSE\nlicenses/cli-template.txt\n{notices.BUNDLE_MANIFEST}"
+        with patch(__name__ + ".command", side_effect=[listing, b"root", b"app", b"{}", b"lock"]), \
+                patch.object(notices, "verify_bundle", return_value={"lock_sha256": "1", "graph_sha256": "2"}) as check:
+            inventory = notice_inventory()
+        self.assertEqual((inventory["LICENSE"], check.call_args.args), (b"root", (b"{}", {}, b"lock")))
+        summary = json.loads(inventory["notices.json"])
+        self.assertEqual(summary["files"]["licenses/cli-template.txt"], hashlib.sha256(b"app").hexdigest())
+        self.assertNotIn("dependency_coverage", summary)
         with patch(__name__ + ".command", return_value="LICENSE"), self.assertRaises(InvalidSnapshot):
             notice_inventory()
 
@@ -305,7 +324,8 @@ class SnapshotTests(unittest.TestCase):
             remote_release("smeltery/foundry", "v0.1.0", self.sha)
 
     def test_verified_artifacts_and_corruption(self):
-        notices = {"LICENSE": b"root notice", "licenses/cli-template.txt": b"app notice", "notices.json": b"{}"}
+        notices = {"LICENSE": b"root notice", "licenses/cli-template.txt": b"app notice", "notices.json": b"{}",
+                   "licenses/rust/manifest.json": b"{}"}
         with tempfile.TemporaryDirectory() as directory, \
                 patch(__name__ + ".notice_inventory", return_value=notices) as inventory_mock:
             for target in TARGETS:
