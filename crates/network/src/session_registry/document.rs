@@ -19,6 +19,9 @@ struct Record {
     machine: String,
     name: String,
     repository: String,
+    /// Present only when the path as given differs from the resolved one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    given: Option<String>,
     share_path: bool,
     credential: [u8; 32],
     status: String,
@@ -35,6 +38,10 @@ pub(super) fn encode(registry: &SessionRegistry) -> StoredResult<Vec<u8>> {
                 machine: r.conversation.machine.clone(),
                 name: r.conversation.name.clone(),
                 repository: r.repository.to_str().ok_or(DurableError::Corrupt)?.into(),
+                given: (s.given != r.repository)
+                    .then(|| s.given.to_str().map(String::from))
+                    .map(|given| given.ok_or(DurableError::Corrupt))
+                    .transpose()?,
                 share_path: r.share_path,
                 credential: s.credential.0,
                 status: s.status.clone(),
@@ -69,10 +76,17 @@ pub(super) fn decode(bytes: &[u8], policy: FolderPolicy) -> StoredResult<Session
             }
         }
         let repository = PathBuf::from(&r.repository);
-        if !repository.is_absolute()
-            || repository
-                .components()
-                .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+        let given = r
+            .given
+            .as_ref()
+            .map_or_else(|| repository.clone(), PathBuf::from);
+        if r.given.as_ref().is_some_and(|g| types::text(g).is_err())
+            || [&repository, &given].into_iter().any(|path| {
+                !path.is_absolute()
+                    || path
+                        .components()
+                        .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+            })
             || !identities.insert((r.person.clone(), r.machine.clone(), r.name.clone()))
             || !credentials.insert(r.credential)
         {
@@ -90,6 +104,7 @@ pub(super) fn decode(bytes: &[u8], policy: FolderPolicy) -> StoredResult<Session
                 repository,
                 share_path: r.share_path,
             },
+            given,
             credential: SessionCredential(r.credential),
             associations: BTreeMap::new(),
             status: r.status,
