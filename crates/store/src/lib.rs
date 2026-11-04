@@ -16,6 +16,7 @@ mod continue_codec;
 mod continue_intent;
 mod continue_read;
 mod conversation_read;
+mod create_v2;
 mod events;
 mod fresh_attempt;
 mod messages;
@@ -26,6 +27,7 @@ mod restore_snapshot;
 mod restore_types;
 mod restores;
 mod schema;
+mod session_query;
 mod tools;
 pub mod witness;
 mod witness_binding;
@@ -35,14 +37,13 @@ mod witness_storage;
 mod witnessed_checkpoint;
 mod work;
 
-use foundry_contracts::{ContractError, CreateSession, Lifecycle, Session};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use foundry_contracts::{ContractError, CreateSession, Session};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::{
     fmt,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use uuid::Uuid;
 
 pub use attempts::AttemptFence;
 pub use capture_snapshot::{
@@ -59,6 +60,7 @@ pub use continue_intent::{
     RestoreContinueMode,
 };
 pub use conversation_read::ConversationRecord;
+pub use create_v2::{CreateReceipt, SessionAssociations};
 pub use fresh_attempt::FreshAttempt;
 pub use restore_snapshot::RestoreBaselineSnapshot;
 pub use restore_types::{
@@ -68,6 +70,10 @@ pub use restore_types::{
 };
 pub use restores::{
     MAX_RESTORE_ROWS_PER_DATABASE, MAX_RESTORE_ROWS_PER_SESSION, RESTORE_RECOVERY_BATCH_SIZE,
+};
+pub use session_query::{
+    ArchiveFilter, DEFAULT_SESSION_PAGE, DERIVED_TITLE_CHARS, MAX_SEARCH_CHARS, MAX_SEARCH_PAGE,
+    MAX_SESSION_PAGE, MIN_SEARCH_CHARS, OriginFilter, SessionFilter, SessionPage,
 };
 pub use tools::{ToolOutcome, ToolRecord};
 pub use witness_events::EvidenceEvent as RestoreEventEvidence;
@@ -139,57 +145,7 @@ impl Store {
     }
 
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
-        request.validate()?;
-        // The contract accepts v2 options; each is unsupported until its owner stores it.
-        if let Some(option) = request.v2_options().first() {
-            return Err(ContractError::Unsupported(format!("session option {option}")).into());
-        }
-        let encoded = serde_json::to_string(&request)?;
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(key) = &request.idempotency_key {
-            let existing: Option<(String, String)> = tx
-                .query_row(
-                    "SELECT id, creation FROM sessions WHERE idempotency_key=?1",
-                    [key],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            if let Some((id, creation)) = existing {
-                if creation != encoded {
-                    return Err(conflict("idempotency key has a different request"));
-                }
-                return read_session(&tx, &id);
-            }
-        }
-        let session = Session {
-            id: Uuid::new_v4().to_string(),
-            prompt: request.prompt,
-            directory: request.directory,
-            model: request.model,
-            lifecycle: Lifecycle::Queued,
-            outcome: None,
-            result: None,
-            active_attempt_id: None,
-            version: 0,
-            metadata: Default::default(),
-        };
-        tx.execute(
-            "INSERT INTO sessions(id,idempotency_key,creation,body) VALUES(?1,?2,?3,?4)",
-            params![
-                session.id,
-                request.idempotency_key,
-                encoded,
-                serde_json::to_string(&session)?
-            ],
-        )?;
-        tx.execute(
-            "INSERT INTO session_work(session_id,revision) VALUES(?1,0)",
-            [&session.id],
-        )?;
-        tx.commit()?;
-        Ok(session)
+        Ok(self.create_session(request)?.session)
     }
 
     pub fn get(&self, session_id: &str) -> Result<Session> {

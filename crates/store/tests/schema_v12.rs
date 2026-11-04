@@ -1,4 +1,4 @@
-use foundry_contracts::{ContractError, CreateSession, ModelConfig};
+use foundry_contracts::{CompletionCriteria, ContractError, CreateSession, ModelConfig};
 use foundry_store::{AttemptFence, Store, StoreError};
 use rusqlite::Connection;
 use std::path::Path;
@@ -186,7 +186,7 @@ fn old_format_idempotent_create_replays_the_original_session_after_migration() {
         store.create(changed),
         Err(StoreError::Contract(ContractError::Conflict(_)))
     ));
-    // A v2 option is never silently dropped: it is unsupported until its owner stores it.
+    // A v2 option added to a replayed key is a different request, never dropped.
     for v2 in [
         CreateSession {
             title: Some("Sample".into()),
@@ -194,14 +194,26 @@ fn old_format_idempotent_create_replays_the_original_session_after_migration() {
         },
         CreateSession {
             tags: vec!["alpha".into()],
-            ..request
+            ..request.clone()
         },
     ] {
         assert!(matches!(
             store.create(v2),
-            Err(StoreError::Contract(ContractError::Unsupported(_)))
+            Err(StoreError::Contract(ContractError::Conflict(_)))
         ));
     }
+    // Completion stays unsupported until its owner stores it.
+    let completion = CreateSession {
+        completion: Some(CompletionCriteria {
+            profile: Some("tests".into()),
+            checks: vec![],
+        }),
+        ..request
+    };
+    assert!(matches!(
+        store.create(completion),
+        Err(StoreError::Contract(ContractError::Unsupported(_)))
+    ));
     assert_eq!(store.list(10).unwrap().len(), 3);
 }
 
