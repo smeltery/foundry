@@ -25,7 +25,7 @@ class ArtifactTests(unittest.TestCase):
         os.chdir(self.root)
         self.addCleanup(os.chdir, self.cwd)
         self.args = argparse.Namespace(sha="a" * 40, tag="v0.2.3", target="fixture-target", directory="out")
-        self.notices = {"LICENSE": b"fixture notice", "notices.json": b"{}"}
+        self.notices = {"LICENSE": b"fixture notice", "notices.json": b"{}", "licenses/rust/manifest.json": b"{}"}
         self.paths = {}
         for name in artifacts.BINARIES:
             path = Path("target/fixture-target/release") / name
@@ -116,6 +116,20 @@ class ArtifactTests(unittest.TestCase):
                         output.append((member, data))
                     return output
                 self.rewrite(edit)
+                with self.assertRaises(InvalidSnapshot):
+                    self.verify()
+
+    def test_missing_bundle_manifest_or_unsafe_notice_path_is_rejected(self):
+        complete = self.notices
+        for name, data in (("licenses/rust/manifest.json", None), ("../NOTICE", b"x"), ("f5y", b"x"),
+                           ("licenses//NOTICE", b"x"), ("licenses/empty", b"")):
+            with self.subTest(name=name):
+                self.notices = {key: value for key, value in complete.items() if key != name}
+                if data is not None:
+                    self.notices[name] = data
+                with self.assertRaises(InvalidSnapshot):
+                    self.pack()
+                self.assertFalse(self.archive.exists())
                 with self.assertRaises(InvalidSnapshot):
                     self.verify()
 

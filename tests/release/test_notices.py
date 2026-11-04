@@ -4,11 +4,13 @@ import copy
 import importlib.util
 import io
 from pathlib import Path
+import sys
 import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/release"))
 SPEC = importlib.util.spec_from_file_location(
     "f5y_notices", Path(__file__).resolve().parents[2] / "scripts/release/notices.py")
 notices = importlib.util.module_from_spec(SPEC)

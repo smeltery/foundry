@@ -4,12 +4,13 @@ import gzip
 import hashlib
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tarfile
 
 from planner import Asset, Build, InvalidSnapshot
 
 BINARIES = ("f5y", "f5y-toolhost")
+REQUIRED_NOTICES = ("LICENSE", "notices.json", "licenses/rust/manifest.json")
 
 
 def digest(data):
@@ -22,7 +23,19 @@ def manifest(sha, tag, target, payloads):
                                     for name in BINARIES}}, sort_keys=True).encode()
 
 
+def check_notices(notices):
+    """Archived notices need the committed bundle and safe paths that cannot shadow payloads."""
+    if not set(REQUIRED_NOTICES) <= set(notices):
+        raise InvalidSnapshot("Required notices or dependency notice manifest missing")
+    for name, data in notices.items():
+        path = PurePosixPath(name)
+        if (not data or path.is_absolute() or ".." in path.parts or path.as_posix() != name
+                or name in {*BINARIES, "build.json"}):
+            raise InvalidSnapshot("Empty, unsafe or conflicting notice path")
+
+
 def pack(args, notices, command):
+    check_notices(notices)
     payloads = {}
     for name in BINARIES:
         path = Path("target") / args.target / "release" / name
@@ -52,6 +65,7 @@ def pack(args, notices, command):
 
 
 def verify(directory, tag, sha, targets, expected_assets, notices):
+    check_notices(notices)
     root = Path(directory)
     if set(path.name for path in root.iterdir()) != set(expected_assets):
         raise InvalidSnapshot("Artifact inventory mismatch")

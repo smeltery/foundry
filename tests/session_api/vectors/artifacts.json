@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "attachments-and-shared-links",
+  "cases": [
+    {
+      "name": "files_view_omits_bookkeeping_rows",
+      "operation": "session.attachments.list",
+      "rows": ["API-X026", "API-006"],
+      "implemented": false,
+      "given": {"attachments": [{"id": "a-1", "file": true}, {"id": "a-2", "file": false}]},
+      "request": {"view": "files"},
+      "expect": {"result": "ok", "attachment_ids": ["a-1"], "link_lifetime_seconds": 3600}
+    },
+    {
+      "name": "download_redirects_to_fresh_link",
+      "operation": "session.attachments.get",
+      "rows": ["API-X027", "API-006"],
+      "implemented": false,
+      "request": {"attachment_id": "a-1"},
+      "expect": {"result": "ok", "redirect": true, "link_needs_credential": false, "link_lifetime_seconds": 3600}
+    },
+    {
+      "name": "unknown_attachment_is_not_found",
+      "operation": "session.attachments.get",
+      "rows": ["API-X027"],
+      "implemented": false,
+      "request": {"attachment_id": "missing"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "create_link_uses_default_lifetime",
+      "operation": "session.links.create",
+      "rows": ["API-X044", "API-006"],
+      "implemented": false,
+      "request": {"address": "https://docs.example/page", "label": "Spec"},
+      "expect": {"result": "created", "status": "active", "lifetime_seconds": 3600, "address_returned": false}
+    },
+    {
+      "name": "link_lifetime_below_minimum_is_invalid",
+      "operation": "session.links.create",
+      "rows": ["API-X044"],
+      "implemented": false,
+      "limit": {"name": "link_lifetime_seconds", "value": 59},
+      "request": {"address": "https://docs.example/page", "lifetime_seconds": 59},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "link_label_over_limit_is_invalid",
+      "operation": "session.links.create",
+      "rows": ["API-X044"],
+      "implemented": false,
+      "limit": {"name": "link_label_chars", "value": 81},
+      "request": {"address": "https://docs.example/page", "label": {"chars": 81}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "non_https_link_is_invalid",
+      "operation": "session.links.create",
+      "rows": ["API-X044"],
+      "implemented": false,
+      "request": {"address": "ftp://docs.example/page"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "link_maximum_conflicts",
+      "operation": "session.links.create",
+      "rows": ["API-X044"],
+      "implemented": false,
+      "given": {"active_links": "maximum"},
+      "request": {"address": "https://docs.example/page"},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "link_list_is_newest_first_without_addresses",
+      "operation": "session.links.list",
+      "rows": ["API-X043"],
+      "implemented": false,
+      "given": {"links": ["l-1", "l-2"]},
+      "request": {},
+      "expect": {"result": "ok", "link_ids": ["l-2", "l-1"], "address_returned": false}
+    },
+    {
+      "name": "revoking_opened_link_only_records_revocation",
+      "operation": "session.links.revoke",
+      "rows": ["API-X045"],
+      "implemented": false,
+      "given": {"links": [{"id": "l-1", "status": "opened"}]},
+      "request": {"link_id": "l-1"},
+      "expect": {"result": "ok", "status": "revoked", "opened_recorded": true}
+    }
+  ]
+}

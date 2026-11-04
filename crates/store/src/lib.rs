@@ -15,6 +15,7 @@ mod continue_baseline;
 mod continue_codec;
 mod continue_intent;
 mod continue_read;
+mod conversation_read;
 mod events;
 mod fresh_attempt;
 mod messages;
@@ -57,6 +58,7 @@ pub use continue_intent::{
     ContinueAcceptanceInput, ContinueAcceptanceRef, RestoreContinueCodec, RestoreContinueIntentV1,
     RestoreContinueMode,
 };
+pub use conversation_read::ConversationRecord;
 pub use fresh_attempt::FreshAttempt;
 pub use restore_snapshot::RestoreBaselineSnapshot;
 pub use restore_types::{

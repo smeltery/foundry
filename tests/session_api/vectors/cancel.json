@@ -1,0 +1,122 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "cancel-a-session",
+  "cases": [
+    {
+      "name": "cancel_before_start_suspends_immediately",
+      "operation": "session.cancel",
+      "rows": ["API-005", "AG-05"],
+      "implemented": true,
+      "evidence": [
+        "apps/cli/tests/local_backend.rs::durable_create_list_get_and_snapshot",
+        "crates/service/tests/control.rs::cancellation_before_spawn_never_launches_adapter"
+      ],
+      "given": {"lifecycle": "queued"},
+      "request": {"mode": "hard"},
+      "expect": {"result": "ok", "lifecycle": "suspended", "outcome": null}
+    },
+    {
+      "name": "running_cancel_is_a_request_only",
+      "operation": "session.cancel",
+      "rows": ["API-005", "API-X028", "AG-05"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::active_cancel_does_not_claim_process_stopped"],
+      "given": {"lifecycle": "running"},
+      "request": {"mode": "hard"},
+      "expect": {"result": "ok", "lifecycle": "running", "cancel_mode": "hard"}
+    },
+    {
+      "name": "hard_upgrades_graceful_and_never_downgrades",
+      "operation": "session.cancel",
+      "rows": ["API-005", "AG-05"],
+      "implemented": true,
+      "evidence": [
+        "crates/store/tests/durability.rs::cancel_only_upgrades_and_requires_suspended_completion",
+        "crates/service/tests/control.rs::second_control_escalates_before_graceful_deadline"
+      ],
+      "given": {"lifecycle": "running", "cancel_mode": "hard"},
+      "request": {"mode": "graceful"},
+      "expect": {"result": "ok", "lifecycle": "running", "cancel_mode": "hard"}
+    },
+    {
+      "name": "settled_cancellation_is_suspended_without_success",
+      "operation": "session.cancel",
+      "rows": ["AG-05", "API-X028"],
+      "implemented": true,
+      "evidence": [
+        "crates/service/tests/control.rs::success_after_observed_cancellation_is_suppressed",
+        "crates/runtime/tests/supervisor.rs::graceful_cancel_suppresses_adapter_success"
+      ],
+      "given": {"lifecycle": "running", "cancel_mode": "graceful", "adapter_reported": "success"},
+      "request": {"settle": true},
+      "expect": {"result": "ok", "lifecycle": "suspended", "outcome": null}
+    },
+    {
+      "name": "graceful_cleanup_snapshots_before_suspension",
+      "operation": "session.cancel",
+      "rows": ["AG-05"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/workspace_snapshot_lifecycle.rs::graceful_cleanup_records_real_artifact_before_suspension"],
+      "given": {"lifecycle": "running"},
+      "request": {"mode": "graceful", "settle": true},
+      "expect": {"result": "ok", "lifecycle": "suspended", "snapshot": "recorded"}
+    },
+    {
+      "name": "hard_cancel_skips_snapshot",
+      "operation": "session.cancel",
+      "rows": ["AG-05"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/workspace_snapshot_lifecycle.rs::hard_cancel_records_skip_without_copy_or_spawn"],
+      "given": {"lifecycle": "running"},
+      "request": {"mode": "hard", "settle": true},
+      "expect": {"result": "ok", "lifecycle": "suspended", "snapshot": "skipped"}
+    },
+    {
+      "name": "absent_mode_defaults_to_graceful",
+      "operation": "session.cancel",
+      "rows": ["API-005", "API-X028"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {},
+      "expect": {"result": "ok", "requested": true, "cancel_mode": "graceful", "lifecycle": "running"}
+    },
+    {
+      "name": "unknown_mode_is_invalid",
+      "operation": "session.cancel",
+      "rows": ["API-X028"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {"mode": "immediate"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "repeated_mode_is_not_newly_requested",
+      "operation": "session.cancel",
+      "rows": ["API-X028"],
+      "implemented": false,
+      "given": {"lifecycle": "running", "cancel_mode": "graceful"},
+      "request": {"mode": "graceful"},
+      "expect": {"result": "ok", "requested": false, "cancel_mode": "graceful", "lifecycle": "running"}
+    },
+    {
+      "name": "cancel_after_exit_is_a_no_op",
+      "operation": "session.cancel",
+      "rows": ["API-X028"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "outcome": "success"},
+      "request": {"mode": "graceful"},
+      "expect": {"result": "ok", "requested": false, "lifecycle": "exit", "outcome": "success"},
+      "note": "The store already behaves this way; no dedicated test."
+    },
+    {
+      "name": "cancel_suspended_session_pending_decision",
+      "operation": "session.cancel",
+      "rows": ["API-005", "AG-05"],
+      "implemented": false,
+      "given": {"lifecycle": "suspended"},
+      "request": {"mode": "graceful"},
+      "expect": {"result": "ok", "lifecycle": "suspended", "continuation_allowed": "decision_pending"}
+    }
+  ]
+}

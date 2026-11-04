@@ -1,0 +1,163 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "read-a-session",
+  "cases": [
+    {
+      "name": "unknown_session_is_not_found",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::validation_and_error_codes"],
+      "request": {"session_id": "missing"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "blank_session_id_is_invalid",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::validation_and_error_codes"],
+      "request": {"session_id": " "},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "exit_carries_outcome_separately",
+      "operation": "session.get",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": [
+        "crates/service/tests/application.rs::settled_result_and_events_survive_restart",
+        "crates/contracts/src/lib.rs::completion_outcome_is_distinct_from_lifecycle"
+      ],
+      "request": {"session_id": "session-1"},
+      "expect": {"result": "ok", "lifecycle": "exit", "outcome": "success"}
+    },
+    {
+      "name": "failed_terminal_write_is_never_success",
+      "operation": "session.get",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/application.rs::failed_terminal_write_never_returns_adapter_success"],
+      "given": {"adapter_reported": "success", "terminal_write": "failed"},
+      "request": {"session_id": "session-1"},
+      "expect": {"result": "ok", "lifecycle": "running", "outcome": null}
+    },
+    {
+      "name": "sparse_fields_always_keep_session_id",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": false,
+      "request": {"session_id": "session-1", "fields": ["lifecycle", "outcome"]},
+      "expect": {"result": "ok", "present_fields": ["session_id", "lifecycle", "outcome"]}
+    },
+    {
+      "name": "unknown_sparse_field_is_invalid",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": false,
+      "request": {"session_id": "session-1", "fields": ["not_a_field"]},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "long_prompt_echo_is_truncated",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": false,
+      "given": {"prompt": {"utf8_bytes": 20000}},
+      "request": {"session_id": "session-1"},
+      "expect": {"result": "ok", "prompt_echo_bytes": 16384, "prompt_truncated": true, "prompt_bytes": 20000}
+    },
+    {
+      "name": "attempt_alias_resolves_to_session",
+      "operation": "session.get",
+      "rows": ["API-X023"],
+      "implemented": false,
+      "given": {"attempts": ["attempt-1"]},
+      "request": {"session_id": "attempt-1"},
+      "expect": {"result": "ok", "session_id": "session-1"}
+    },
+    {
+      "name": "list_zero_limit_is_invalid",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::validation_and_error_codes"],
+      "limit": {"name": "list_page", "value": 0},
+      "request": {"limit": 0},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "list_is_newest_created_first",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": false,
+      "given": {"created_order": ["session-a", "session-b"], "updated_last": "session-a"},
+      "request": {},
+      "expect": {"result": "ok", "order": ["session-b", "session-a"]},
+      "note": "The store query already orders this way; no test asserts multi-session order yet."
+    },
+    {
+      "name": "list_default_page_is_fifty",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "effective_page": 50},
+      "note": "The CLI default is 100 today."
+    },
+    {
+      "name": "list_page_is_capped",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": false,
+      "limit": {"name": "list_page", "value": 500},
+      "request": {"limit": 500},
+      "expect": {"result": "ok", "effective_page": 200}
+    },
+    {
+      "name": "primary_page_size_wins_over_alias",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": false,
+      "request": {"page_size": 10, "limit": 30},
+      "expect": {"result": "ok", "effective_page": 10}
+    },
+    {
+      "name": "default_filter_hides_archived",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": false,
+      "given": {"archived": ["session-a"], "active": ["session-b"]},
+      "request": {},
+      "expect": {"result": "ok", "order": ["session-b"]}
+    },
+    {
+      "name": "short_title_search_is_invalid",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": false,
+      "limit": {"name": "search_chars", "value": 2},
+      "request": {"search": "ab"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "search_page_is_capped",
+      "operation": "session.list",
+      "rows": ["API-002"],
+      "implemented": false,
+      "limit": {"name": "search_page", "value": 50},
+      "request": {"search": "sample", "limit": 50},
+      "expect": {"result": "ok", "effective_page": 24}
+    },
+    {
+      "name": "unchanged_page_is_not_modified",
+      "operation": "session.list",
+      "rows": ["API-002", "API-X019"],
+      "implemented": false,
+      "given": {"page_validator": "w-1", "changed": false},
+      "request": {"if_none_match": "w-1"},
+      "expect": {"result": "not_modified"}
+    }
+  ]
+}

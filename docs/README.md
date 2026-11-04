@@ -19,6 +19,7 @@ is underway; each page distinguishes tested functionality from planned features.
 ## Architecture
 
 - [Session and backend contracts](architecture/contracts.md)
+- [Session API behavior specification](architecture/session-api.md)
 - [Task completion policy (proposed)](architecture/completion-policy.md)
 - [Live loading observations](architecture/live-observation.md)
 - [Complete CLI target contract](architecture/cli-contract.md)
