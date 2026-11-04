@@ -1,0 +1,68 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "archive-unarchive-and-delete",
+  "cases": [
+    {
+      "name": "archive_hides_from_default_list",
+      "operation": "session.archive",
+      "rows": ["API-X025"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "outcome": "success", "archived": false},
+      "request": {},
+      "expect": {"result": "ok", "archived": true, "listed_by_default": false, "lifecycle": "exit", "outcome": "success"}
+    },
+    {
+      "name": "archive_is_repeatable",
+      "operation": "session.archive",
+      "rows": ["API-X025"],
+      "implemented": false,
+      "given": {"archived": true},
+      "request": {},
+      "expect": {"result": "ok", "archived": true}
+    },
+    {
+      "name": "unarchive_keeps_history_and_project_archive",
+      "operation": "session.unarchive",
+      "rows": ["API-X051"],
+      "implemented": false,
+      "given": {"archived": true, "project_archived": true},
+      "request": {},
+      "expect": {"result": "ok", "archived": false, "history_retained": true, "project_archived": true}
+    },
+    {
+      "name": "delete_with_preserve_archives",
+      "operation": "session.delete",
+      "rows": ["API-X024"],
+      "implemented": false,
+      "request": {"preserve": true},
+      "expect": {"result": "ok", "archived": true, "deleted": false}
+    },
+    {
+      "name": "delete_blocked_by_pending_settlement",
+      "operation": "session.delete",
+      "rows": ["API-X024"],
+      "implemented": false,
+      "given": {"usage_pending_settlement": true},
+      "request": {},
+      "expect": {"result": "error", "error": "delete_blocked", "deleted": false}
+    },
+    {
+      "name": "delete_timeout_rolls_back",
+      "operation": "session.delete",
+      "rows": ["API-X024"],
+      "implemented": false,
+      "given": {"delete_times_out": true},
+      "request": {},
+      "expect": {"result": "error", "error": "unavailable", "deleted": false}
+    },
+    {
+      "name": "delete_removes_session_pending_tombstone_decision",
+      "operation": "session.delete",
+      "rows": ["API-X024"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "deleted": true, "later_read": "not_found"}
+    }
+  ]
+}

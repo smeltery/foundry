@@ -1,0 +1,197 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "session-lifecycle",
+  "cases": [
+    {
+      "name": "admit_queued_session",
+      "operation": "session.lifecycle",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::forged_fence_and_stale_version_cannot_write"],
+      "given": {"lifecycle": "queued", "version": 0},
+      "request": {"event": "admit", "expected_version": 0},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "cancel_queued_session",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/watch_errors.rs::queued_cancellation_is_terminal_and_invalid_options_do_not_open_database"],
+      "given": {"lifecycle": "queued"},
+      "request": {"event": "cancel"},
+      "expect": {"lifecycle": "suspended", "outcome": null}
+    },
+    {
+      "name": "cancel_request_keeps_running",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::active_cancel_does_not_claim_process_stopped"],
+      "given": {"lifecycle": "running"},
+      "request": {"event": "cancel"},
+      "expect": {"lifecycle": "running"}
+    },
+    {
+      "name": "settle_with_outcome",
+      "operation": "session.lifecycle",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/application.rs::settled_result_and_events_survive_restart"],
+      "given": {"lifecycle": "running"},
+      "request": {"event": "settle_outcome", "outcome": "action_required"},
+      "expect": {"lifecycle": "exit", "outcome": "action_required"}
+    },
+    {
+      "name": "settle_with_error",
+      "operation": "session.lifecycle",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/application.rs::adapter_failure_is_durably_error_and_returns_error"],
+      "given": {"lifecycle": "running"},
+      "request": {"event": "settle_error"},
+      "expect": {"lifecycle": "error", "outcome": null}
+    },
+    {
+      "name": "settle_cancellation",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::cancel_only_upgrades_and_requires_suspended_completion"],
+      "given": {"lifecycle": "running", "cancel_mode": "graceful"},
+      "request": {"event": "cancel_settled"},
+      "expect": {"lifecycle": "suspended", "outcome": null}
+    },
+    {
+      "name": "recover_expired_lease",
+      "operation": "session.lifecycle",
+      "rows": ["AG-03"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::expired_owner_is_fenced_and_recovery_does_not_invent_success"],
+      "given": {"lifecycle": "running", "lease": "expired"},
+      "request": {"event": "lease_expired"},
+      "expect": {"lifecycle": "suspended", "outcome": null}
+    },
+    {
+      "name": "steer_keeps_running",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {"event": "steer"},
+      "expect": {"lifecycle": "running"}
+    },
+    {
+      "name": "follow_up_after_exit",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit"},
+      "request": {"event": "follow_up"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "follow_up_after_error",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "error"},
+      "request": {"event": "follow_up"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "follow_up_after_suspension",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "suspended"},
+      "request": {"event": "follow_up"},
+      "expect": {"lifecycle": "running", "new_attempt": true},
+      "note": "Only owner-fenced restoration continues a suspended session today."
+    },
+    {
+      "name": "retry_after_exit",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit"},
+      "request": {"event": "retry"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "retry_after_error",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "error"},
+      "request": {"event": "retry"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "retry_after_suspension",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "suspended"},
+      "request": {"event": "retry"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "rewind_after_exit",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit"},
+      "request": {"event": "rewind"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "rewind_after_error",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "error"},
+      "request": {"event": "rewind"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "rewind_after_suspension",
+      "operation": "session.lifecycle",
+      "rows": ["AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "suspended"},
+      "request": {"event": "rewind"},
+      "expect": {"lifecycle": "running", "new_attempt": true}
+    },
+    {
+      "name": "cancel_after_exit_is_unchanged",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": false,
+      "given": {"lifecycle": "exit"},
+      "request": {"event": "cancel"},
+      "expect": {"lifecycle": "exit", "outcome": "success"},
+      "note": "The store already behaves this way; no dedicated test."
+    },
+    {
+      "name": "cancel_after_error_is_unchanged",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": false,
+      "given": {"lifecycle": "error"},
+      "request": {"event": "cancel"},
+      "expect": {"lifecycle": "error", "outcome": null}
+    },
+    {
+      "name": "cancel_suspended_pending_decision",
+      "operation": "session.lifecycle",
+      "rows": ["AG-05"],
+      "implemented": false,
+      "given": {"lifecycle": "suspended"},
+      "request": {"event": "cancel"},
+      "expect": {"lifecycle": "suspended", "outcome": null},
+      "note": "Held: whether this also forbids later continuation is an open decision."
+    }
+  ]
+}
