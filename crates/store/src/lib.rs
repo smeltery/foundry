@@ -27,6 +27,7 @@ mod restore_snapshot;
 mod restore_types;
 mod restores;
 mod schema;
+mod session_query;
 mod tools;
 pub mod witness;
 mod witness_binding;
@@ -69,6 +70,10 @@ pub use restore_types::{
 };
 pub use restores::{
     MAX_RESTORE_ROWS_PER_DATABASE, MAX_RESTORE_ROWS_PER_SESSION, RESTORE_RECOVERY_BATCH_SIZE,
+};
+pub use session_query::{
+    ArchiveFilter, DEFAULT_SESSION_PAGE, DERIVED_TITLE_CHARS, MAX_SEARCH_CHARS, MAX_SEARCH_PAGE,
+    MAX_SESSION_PAGE, MIN_SEARCH_CHARS, OriginFilter, SessionFilter, SessionPage,
 };
 pub use tools::{ToolOutcome, ToolRecord};
 pub use witness_events::EvidenceEvent as RestoreEventEvidence;
