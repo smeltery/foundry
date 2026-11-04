@@ -1,0 +1,142 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "state-machines",
+  "cases": [
+    {
+      "name": "approved_login_becomes_active",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"event": "approve"},
+      "expect": {"state": "active"}
+    },
+    {
+      "name": "unapproved_login_expires",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"state": "pending"},
+      "request": {"event": "expire"},
+      "expect": {"state": "expired"}
+    },
+    {
+      "name": "logout_revokes_login",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-024"],
+      "implemented": false,
+      "given": {"state": "active"},
+      "request": {"event": "logout"},
+      "expect": {"state": "revoked", "effective": "next_request"}
+    },
+    {
+      "name": "member_removal_revokes_login",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-024", "CLI-049"],
+      "implemented": false,
+      "given": {"state": "active"},
+      "request": {"event": "remove_member"},
+      "expect": {"state": "revoked", "effective": "next_request"}
+    },
+    {
+      "name": "enrollment_consumes_token",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-049"],
+      "implemented": false,
+      "given": {"state": "active"},
+      "request": {"event": "enroll"},
+      "expect": {"state": "consumed"}
+    },
+    {
+      "name": "retirement_revokes_single_use_token",
+      "operation": "credential.lifecycle",
+      "rows": ["CLI-049"],
+      "implemented": false,
+      "given": {"state": "active"},
+      "request": {"event": "retire_workspace"},
+      "expect": {"state": "revoked"}
+    },
+    {
+      "name": "invitation_accepted",
+      "operation": "membership.lifecycle",
+      "rows": ["API-EC9FBB1DF9FC2"],
+      "implemented": false,
+      "given": {"state": "invited"},
+      "request": {"event": "accept"},
+      "expect": {"state": "member"}
+    },
+    {
+      "name": "membership_removed",
+      "operation": "membership.lifecycle",
+      "rows": ["API-E601F50E4D8E6"],
+      "implemented": false,
+      "given": {"state": "member"},
+      "request": {"event": "remove"},
+      "expect": {"state": "removed"}
+    },
+    {
+      "name": "role_change_keeps_membership",
+      "operation": "membership.lifecycle",
+      "rows": ["API-E60D270D99806"],
+      "implemented": false,
+      "given": {"state": "member"},
+      "request": {"event": "set_role"},
+      "expect": {"state": "member"}
+    },
+    {
+      "name": "workspace_rename_keeps_state",
+      "operation": "workspace.lifecycle",
+      "rows": ["API-EAF0E25F70675"],
+      "implemented": false,
+      "given": {"state": "active"},
+      "request": {"event": "rename"},
+      "expect": {"state": "active"}
+    },
+    {
+      "name": "partial_erase_then_delete",
+      "operation": "workspace.lifecycle",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "given": {"state": "erasing"},
+      "request": {"event": "delete"},
+      "expect": {"state": "deleted"}
+    },
+    {
+      "name": "single_use_expires_to_retired",
+      "operation": "single_use.lifecycle",
+      "rows": ["API-E8DF08D5E6646"],
+      "implemented": false,
+      "given": {"state": "live"},
+      "request": {"event": "expire"},
+      "expect": {"state": "retired", "outcome_cause": "expired"}
+    },
+    {
+      "name": "claimed_pairing_approved",
+      "operation": "pairing.lifecycle",
+      "rows": ["API-E41EA65B1CA27"],
+      "implemented": false,
+      "given": {"state": "claimed"},
+      "request": {"event": "approve"},
+      "expect": {"state": "approved"}
+    },
+    {
+      "name": "claimed_pairing_failed",
+      "operation": "pairing.lifecycle",
+      "rows": ["API-E24F092B775EF"],
+      "implemented": false,
+      "given": {"state": "claimed"},
+      "request": {"event": "fail"},
+      "expect": {"state": "failed"}
+    },
+    {
+      "name": "approved_import_completed",
+      "operation": "pairing.lifecycle",
+      "rows": ["API-E13ACC3718754"],
+      "implemented": false,
+      "given": {"state": "approved"},
+      "request": {"event": "complete"},
+      "expect": {"state": "completed"}
+    }
+  ]
+}

@@ -201,17 +201,22 @@ jobs:
     needs: [plan, check, activation]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
+    permissions:
+      actions: read
+      contents: read
+      statuses: read
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # A macOS job GitHub never assigned a runner is excused only when the same
+      # commit has a successful local macOS verification status.
       - name: Require every check to pass
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           ACTIVATION_RESULT: ${{ needs.activation.result }}
           ACTIVATION_PLAN: ${{ needs.plan.outputs.activation }}
-        run: |
-          test "$PLAN_RESULT" = success
-          test "$CHECK_RESULT" = success
-          # Activation may be skipped only when the plan left it no systems.
-          test "$ACTIVATION_RESULT" = success || {
-            test "$ACTIVATION_RESULT" = skipped && test "$ACTIVATION_PLAN" = '{"include":[]}'
-          }
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/required_gate.py
