@@ -1,5 +1,6 @@
 use super::bootstrap_checks::{
-    pins, reconcile_team, require_endpoint, validate_incoming_local, validate_local,
+    pins, reconcile_team, require_endpoint, require_unjoined, validate_incoming_local,
+    validate_local,
 };
 use super::*;
 use crate::{
@@ -211,6 +212,7 @@ pub(super) async fn ticket_join(
     address: Option<EndpointAddr>,
     options: JoinOptions,
 ) -> Result<(), ControlError> {
+    require_unjoined(state).await?;
     reconcile_team(state.settings.expected_team.as_deref(), Some(&ticket.team))?;
     let mut candidates = ticket.peer_addresses();
     for candidate in &mut candidates {
@@ -266,6 +268,7 @@ pub(super) async fn code_join(
     team: Option<String>,
     options: JoinOptions,
 ) -> Result<(), ControlError> {
+    require_unjoined(state).await?;
     let team = reconcile_team(state.settings.expected_team.as_deref(), team.as_deref())?;
     let policy = state
         .settings
