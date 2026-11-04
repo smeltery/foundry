@@ -1,7 +1,7 @@
 use crate::{Channel, NetworkError, Result, WireProfile};
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey,
-    endpoint::{Connection, presets},
+    endpoint::{Connection, Incoming, presets},
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
@@ -24,8 +24,41 @@ pub struct EndpointConfig {
 
 pub struct NetworkEndpoint {
     endpoint: Endpoint,
-    profile: WireProfile,
+    profile: Arc<WireProfile>,
     binding: Arc<()>,
+}
+
+/// An incoming transport whose unauthenticated QUIC handshake has not started.
+/// Owners that accept from a `select!` loop take this from `incoming` and drive
+/// `complete` in their own task, so an expired accept window or a competing
+/// wakeup cannot cancel a handshake already in progress.
+pub struct IncomingHandshake {
+    incoming: Incoming,
+    profile: Arc<WireProfile>,
+    binding: Arc<()>,
+}
+impl IncomingHandshake {
+    /// Run the handshake under its own deadline. A failed handshake belongs to
+    /// that peer; callers keep serving others.
+    pub async fn complete(self, deadline: Duration) -> Result<Connection> {
+        positive(deadline)?;
+        tokio::time::timeout(deadline, self.incoming)
+            .await
+            .map_err(|_| NetworkError::TimedOut)?
+            .map_err(transport)
+    }
+
+    /// Run the handshake under its own deadline, then route it by channel.
+    pub async fn complete_routed(self, deadline: Duration) -> Result<AcceptedConnection> {
+        let profile = self.profile.clone();
+        let binding = self.binding.clone();
+        route(self.complete(deadline).await?, &profile, binding)
+    }
+
+    /// Refuse without spending handshake work, e.g. when the owner is at capacity.
+    pub fn refuse(self) {
+        self.incoming.refuse();
+    }
 }
 
 /// One accepted transport, bound to the exact endpoint instance that accepted
@@ -107,7 +140,7 @@ impl NetworkEndpoint {
         let endpoint = builder.bind().await.map_err(transport)?;
         Ok(Self {
             endpoint,
-            profile: config.profile,
+            profile: Arc::new(config.profile),
             binding: Arc::new(()),
         })
     }
@@ -136,7 +169,25 @@ impl NetworkEndpoint {
         .map_err(transport)
     }
 
+    /// Wait up to `timeout` only for the next incoming transport. No handshake
+    /// runs here, so dropping this future at the window's end, or when another
+    /// `select!` branch wins, never drops an in-progress handshake.
+    pub async fn incoming(&self, timeout: Duration) -> Result<IncomingHandshake> {
+        positive(timeout)?;
+        let incoming = tokio::time::timeout(timeout, self.endpoint.accept())
+            .await
+            .map_err(|_| NetworkError::TimedOut)?
+            .ok_or(NetworkError::Closed)?;
+        Ok(IncomingHandshake {
+            incoming,
+            profile: self.profile.clone(),
+            binding: self.binding.clone(),
+        })
+    }
+
     /// The caller must authorize the peer before processing application messages.
+    /// `timeout` bounds waiting and the handshake together, which suits a single
+    /// awaited accept. Accept loops that may drop this future use `incoming`.
     pub async fn accept(&self, timeout: Duration) -> Result<Connection> {
         positive(timeout)?;
         tokio::time::timeout(timeout, async {
@@ -153,23 +204,10 @@ impl NetworkEndpoint {
         .map_err(|_| NetworkError::TimedOut)?
     }
 
-    /// The runtime calls this from one accept loop, then dispatches by channel.
+    /// Accept like `accept`, then route by channel.
     pub async fn accept_routed(&self, timeout: Duration) -> Result<AcceptedConnection> {
         let connection = self.accept(timeout).await?;
-        let channel = if connection.alpn() == self.profile.team_alpn {
-            Channel::Team
-        } else if connection.alpn() == self.profile.join_alpn {
-            Channel::Join
-        } else {
-            connection.close(1u32.into(), b"channel refused");
-            return Err(NetworkError::Invalid("unknown accepted channel"));
-        };
-        Ok(AcceptedConnection {
-            peer: connection.remote_id(),
-            connection: Some(connection),
-            binding: self.binding.clone(),
-            channel,
-        })
+        route(connection, &self.profile, self.binding.clone())
     }
 
     /// Consume only a transport accepted by this actual instance. JOIN owners
@@ -197,6 +235,26 @@ impl NetworkEndpoint {
     pub async fn close(&self) {
         self.endpoint.close().await;
     }
+}
+fn route(
+    connection: Connection,
+    profile: &WireProfile,
+    binding: Arc<()>,
+) -> Result<AcceptedConnection> {
+    let channel = if connection.alpn() == profile.team_alpn {
+        Channel::Team
+    } else if connection.alpn() == profile.join_alpn {
+        Channel::Join
+    } else {
+        connection.close(1u32.into(), b"channel refused");
+        return Err(NetworkError::Invalid("unknown accepted channel"));
+    };
+    Ok(AcceptedConnection {
+        peer: connection.remote_id(),
+        connection: Some(connection),
+        binding,
+        channel,
+    })
 }
 fn positive(timeout: Duration) -> Result<()> {
     if timeout.is_zero() {

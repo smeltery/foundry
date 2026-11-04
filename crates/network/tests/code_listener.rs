@@ -1,5 +1,9 @@
 #![cfg(unix)]
 mod common;
+#[path = "handshake_hold/mod.rs"]
+mod handshake_hold;
+#[path = "code_listener/handshakes.rs"]
+mod handshakes;
 #[path = "full_team_store_support/mod.rs"]
 mod support;
 use foundry_network::{

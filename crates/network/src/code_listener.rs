@@ -6,7 +6,7 @@ use crate::{
     peer_session::{AdmissionFence, AdmittedTeam, CodePermit, PeerError},
 };
 use iroh::EndpointAddr;
-use std::{collections::BTreeMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinSet};
 
 pub struct CodeTransport {
@@ -105,10 +105,13 @@ impl CodeListener {
     /// Stop accepting when the intent changes or is consumed. Existing replies
     /// finish under their own admission guards, then drain before endpoint close.
     /// Malformed/refused clients do not consume an otherwise valid invitation.
+    /// The one-second accept window bounds only waiting for a client; each
+    /// handshake runs in the task set under the listener timeout and counts
+    /// toward its capacity.
     pub async fn serve(self, mut cancel: watch::Receiver<bool>) -> Result<CodeExit, PeerError> {
         let mut tasks = JoinSet::new();
-        let mut pending = BTreeMap::new();
-        let mut next_id = 1u64;
+        // Set when serving ends, however it ends, so in-flight work stops too.
+        let (halt, halted) = watch::channel(false);
         let mut outcome = CodeExit::Stopped;
         let mut failure = None;
         loop {
@@ -133,52 +136,60 @@ impl CodeListener {
                 _ = cancel.changed() => break,
                 joined = tasks.join_next(), if !tasks.is_empty() => {
                     match joined {
-                        Some(Ok((id,result))) => {
-                            pending.remove(&id);
+                        Some(Ok(result)) => {
                             if matches!(result,Ok(true)) { outcome=CodeExit::Joined; break; }
                         }
                         Some(Err(_)) => { failure=Some(PeerError::Storage); break; }
                         _ => {}
                     }
                 }
-                incoming = self.endpoint.accept(Duration::from_secs(1)) => {
+                incoming = self.endpoint.incoming(Duration::from_secs(1)) => {
                     match incoming {
-                        Ok(connection) if tasks.len() < 8 => {
-                            let id=next_id;
-                            let Some(next)=next_id.checked_add(1) else { connection.close(1u32.into(),b"invitation capacity"); failure=Some(PeerError::Limit); break; };
-                            next_id=next;
+                        Ok(handshake) if tasks.len() < 8 => {
                             let fence=Arc::new(AdmissionFence::new(cancel.clone()));
-                            pending.insert(id,(connection.clone(),fence.clone()));
                             let authority=self.authority.clone();
                             let lease=self.lease.clone();
                             let profile=self.profile.clone();
                             let timeout=self.timeout;
+                            let halted=halted.clone();
                             tasks.spawn(async move {
-                                let result=serve_join(connection,&profile,timeout, move |peer,request| async move {
-                                    authority.admit_code_join_fenced(peer,request,lease,fence).await.map_err(|error|match error {
+                                let connection=tokio::select! {
+                                    biased;
+                                    _ = until_halted(halted.clone()) => return Ok(false),
+                                    connection = handshake.complete(timeout) => connection?,
+                                };
+                                let admission=fence.clone();
+                                let serving=serve_join(connection.clone(),&profile,timeout, move |peer,request| async move {
+                                    authority.admit_code_join_fenced(peer,request,lease,admission).await.map_err(|error|match error {
                                         PeerError::Storage|PeerError::Quiescent => Refusal::Unavailable,
                                         _ => Refusal::Denied,
                                     })
-                                }).await;
-                                (id,result)
+                                });
+                                tokio::pin!(serving);
+                                tokio::select! {
+                                    biased;
+                                    result = &mut serving => result,
+                                    _ = until_halted(halted) => {
+                                        // Pending readers cannot become fresh admissions after stop. A
+                                        // commit that won the fence already started and keeps its reply.
+                                        if fence.stop_pending() {
+                                            connection.close(0u32.into(), b"invitation stopped");
+                                        }
+                                        serving.await
+                                    }
+                                }
                             });
                         }
-                        Ok(connection) => connection.close(1u32.into(),b"invitation busy"),
+                        Ok(handshake) => handshake.refuse(),
                         Err(crate::NetworkError::TimedOut) => {}
                         Err(_) => { failure=Some(PeerError::Transport); break; }
                     }
                 }
             }
         }
-        // Pending readers cannot become fresh admissions after stop. A commit
-        // that won the fence already started and retains its guarded reply.
-        for (connection, fence) in pending.values() {
-            if fence.stop_pending() {
-                connection.close(0u32.into(), b"invitation stopped");
-            }
-        }
+        halt.send_replace(true);
         while let Some(joined) = tasks.join_next().await {
-            if matches!(joined, Ok((_, Ok(true)))) {
+            if matches!(joined, Ok(Ok(true))) {
                 outcome = CodeExit::Joined;
             }
             if joined.is_err() {
@@ -195,4 +206,9 @@ impl CodeListener {
     pub async fn shutdown(self) {
         self.endpoint.shutdown().await;
     }
+}
+
+async fn until_halted(mut halted: watch::Receiver<bool>) {
+    // A dropped sender also means serving has ended.
+    let _ = halted.wait_for(|halted| *halted).await;
 }
