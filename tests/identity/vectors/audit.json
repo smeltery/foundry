@@ -1,0 +1,71 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "audit-log",
+  "cases": [
+    {
+      "name": "owner_reads_entries_newest_first",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["audit.read"], "workspace": "ws-a"},
+      "given": {"entries": ["entry-1", "entry-2", "entry-3"]},
+      "request": {},
+      "expect": {"result": "ok", "items": ["entry-3", "entry-2", "entry-1"], "has_next": false}
+    },
+    {
+      "name": "member_sees_withheld_secret_names",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["audit.read"], "workspace": "ws-a"},
+      "given": {"entries": [{"id": "entry-1", "action": "secret.set", "subject": "other-member", "target": "PRIVATE_NAME"}]},
+      "request": {},
+      "expect": {"result": "ok", "items": [{"id": "entry-1", "action": "secret.set", "target": null, "label": null, "withheld": true}]}
+    },
+    {
+      "name": "audit_page_default_is_fifty",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "admin", "scopes": ["audit.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "ok", "effective_page": 50}
+    },
+    {
+      "name": "audit_page_above_cap_is_capped",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "limit": {"name": "audit_page", "value": 500},
+      "request": {"page": 500},
+      "expect": {"result": "ok", "effective_page": 200}
+    },
+    {
+      "name": "audit_page_zero_is_invalid",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "limit": {"name": "audit_page", "value": 0},
+      "request": {"page": 0},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "next_page_uses_exclusive_upper_bound",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "given": {"entries": [{"id": "entry-1", "time": "2026-01-01T00:00:01Z"}, {"id": "entry-2", "time": "2026-01-01T00:00:02Z"}]},
+      "request": {"before": "2026-01-01T00:00:02Z", "since": "2026-01-01T00:00:01Z"},
+      "expect": {"result": "ok", "items": ["entry-1"]}
+    },
+    {
+      "name": "malformed_time_bound_is_invalid",
+      "operation": "audit.list",
+      "rows": ["API-E95EC0DE5F113"],
+      "implemented": false,
+      "request": {"before": "yesterday"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    }
+  ]
+}

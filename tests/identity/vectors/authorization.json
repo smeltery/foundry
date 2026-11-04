@@ -1,0 +1,145 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "role-and-permission-matrix",
+  "cases": [
+    {
+      "name": "missing_credential_is_unauthenticated",
+      "operation": "workspace.get",
+      "rows": ["API-E0E38EF1D33B5"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "state": "missing", "scopes": [], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "revoked_key_is_unauthenticated_before_scope",
+      "operation": "workspace.get",
+      "rows": ["API-E0E38EF1D33B5"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "state": "revoked", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "consumed_enrollment_token_is_unauthenticated",
+      "operation": "service.deployment",
+      "rows": ["API-EAB209C8A1D60"],
+      "implemented": false,
+      "caller": {"kind": "machine_token", "state": "consumed", "scopes": ["deployment.read"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "unauthenticated"}
+    },
+    {
+      "name": "throttled_caller_waits",
+      "operation": "member.list",
+      "rows": ["API-E33A028E187F8"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "given": {"rate_limited": true},
+      "request": {},
+      "expect": {"result": "error", "error": "rate_limited", "retry_after_seconds": 30}
+    },
+    {
+      "name": "other_workspace_is_not_found_before_scope",
+      "operation": "workspace.get",
+      "rows": ["API-E0E38EF1D33B5"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": [], "workspace": "ws-a"},
+      "given": {"workspace": "ws-b"},
+      "request": {"workspace": "ws-b"},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "missing_scope_is_forbidden_even_for_owner",
+      "operation": "workspace.rename",
+      "rows": ["API-EAF0E25F70675"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"name": "Renamed"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "machine_token_cannot_invite",
+      "operation": "member.invite",
+      "rows": ["API-EC9FBB1DF9FC2"],
+      "implemented": false,
+      "caller": {"kind": "machine_token", "scopes": ["sessions.read", "sessions.run", "deployment.read"], "workspace": "ws-a"},
+      "request": {"emails": ["new@team.example"]},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "member_role_cannot_rename",
+      "operation": "workspace.rename",
+      "rows": ["API-EAF0E25F70675"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"name": "Renamed"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "admin_cannot_delete_workspace",
+      "operation": "workspace.delete",
+      "rows": ["API-E1AC5E5AB1846"],
+      "implemented": false,
+      "caller": {"kind": "admin_grant", "role": "admin", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"confirm_name": "Team A"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "member_cannot_replace_network_policy",
+      "operation": "network_policy.replace",
+      "rows": ["API-EAA5699B6D3B4"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["network_policy.write"], "workspace": "ws-a"},
+      "request": {"hosts": ["registry.example"]},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "member_cannot_replace_settings",
+      "operation": "settings.replace",
+      "rows": ["API-EA06C6C5F5B80"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "member", "scopes": ["workspace.write"], "workspace": "ws-a"},
+      "request": {"namespace": "defaults", "value": {}},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "scope_check_covers_unknown_role_cells",
+      "operation": "settings.get",
+      "rows": ["API-E4FC8A3AFAC6D"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["audit.read"], "workspace": "ws-a"},
+      "request": {"namespace": "defaults"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "network_policy_read_needs_its_scope",
+      "operation": "network_policy.get",
+      "rows": ["API-E7E243FCBA7B1"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["network_policy.write"], "workspace": "ws-a"},
+      "request": {},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "settings_list_from_other_workspace_is_not_found",
+      "operation": "settings.list",
+      "rows": ["API-ECC992D1449F3"],
+      "implemented": false,
+      "caller": {"kind": "scoped_key", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "given": {"workspace": "ws-b"},
+      "request": {},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "handoff_needs_write_scope",
+      "operation": "secret_import.handoff",
+      "rows": ["API-EFB31B0659144"],
+      "implemented": false,
+      "caller": {"kind": "login_grant", "role": "owner", "scopes": ["workspace.read"], "workspace": "ws-a"},
+      "request": {"scanned_files": 1, "scanned_projects": 1},
+      "expect": {"result": "error", "error": "forbidden"}
+    }
+  ]
+}
