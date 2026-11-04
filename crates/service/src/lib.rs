@@ -4,6 +4,7 @@ pub mod cancellation_snapshot;
 mod context_commit;
 mod context_cut;
 mod control;
+pub mod conversation;
 mod coordinated;
 mod events;
 mod execution;
