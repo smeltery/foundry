@@ -162,6 +162,44 @@ fn active_cancel_does_not_claim_process_stopped() {
 }
 
 #[test]
+fn cli_and_mcp_report_cancel_receipts_and_the_terminal_cancelled_state() {
+    use foundry_mcp::Backend as McpBackend;
+    let db = Database::new();
+    let mut backend = LocalBackend::new(db.path());
+    let created = backend.create(create()).unwrap();
+    let id = created["session"]["id"].as_str().unwrap().to_owned();
+    let first = cli(&mut backend, &["f5y", "session", "cancel", &id]).unwrap();
+    assert_eq!(
+        first["receipt"],
+        json!({"ok":true,"requested":true,"mode":"graceful","status":"suspended"})
+    );
+    let terminal = backend
+        .call("session_cancel", json!({"session_id":id,"mode":"hard"}))
+        .unwrap();
+    assert_eq!(
+        terminal["receipt"],
+        json!({"ok":true,"requested":true,"mode":"hard","status":"cancelled"})
+    );
+    assert_eq!(terminal["session"]["lifecycle"], "cancelled");
+    let repeated = cli(&mut backend, &["f5y", "cancel", &id, "--hard"]).unwrap();
+    assert_eq!(repeated["receipt"]["requested"], false);
+    assert_eq!(repeated["receipt"]["status"], "cancelled");
+    let fetched = backend
+        .call("session_get", json!({"session_id":id}))
+        .unwrap();
+    assert_eq!(fetched["session"]["lifecycle"], "cancelled");
+    assert_eq!(fetched["session"]["outcome"], Value::Null);
+    let refused = backend
+        .call(
+            "session_send",
+            json!({"session_id":id,"message_id":"late","message":"follow up"}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.code, "conflict");
+    assert!(refused.message.contains("cancelled"), "{}", refused.message);
+}
+
+#[test]
 fn mcp_adapter_create_get_list_cancel_and_invalid_send() {
     use foundry_mcp::Backend as McpBackend;
     let db = Database::new();

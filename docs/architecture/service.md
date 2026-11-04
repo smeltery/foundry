@@ -14,7 +14,7 @@ intervals are 60 seconds and 250 milliseconds. With `open_with_options`, polling
 must be positive and shorter than one third of the lease duration.
 
 The service exposes `create`, `get`, `list`, `events`, `cancel` and
-`recover_expired`. `run` takes a session ID, expected session version and
+`recover_expired`; `cancel` returns a `CancelReceipt`. `run` takes a session ID, expected session version and
 `AdapterSpec`. It claims the attempt and waits for supervision to finish. Creation
 alone never starts a process. Executable paths must be explicit; the runtime does
 not search PATH for adapter names.

@@ -27,6 +27,9 @@ pub enum Lifecycle {
     Exit,
     Error,
     Suspended,
+    /// Terminal: an explicitly cancelled suspended session. It is never resumed
+    /// or continued; admission and restoration refuse it.
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,6 +222,9 @@ pub enum ContractError {
     NotFound(String),
     #[error("unsupported capability: {0}")]
     Unsupported(String),
+    /// The session is terminally cancelled and accepts no further execution.
+    #[error("session cancelled: {0}")]
+    Cancelled(String),
 }
 
 #[cfg(test)]

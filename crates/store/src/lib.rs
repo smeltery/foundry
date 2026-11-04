@@ -46,7 +46,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub use attempts::AttemptFence;
+pub use attempts::{AttemptFence, CancelRecord};
 pub use capture_snapshot::{
     CaptureMessageEvidence, CaptureSnapshot, CaptureToolEvidence, MAX_CAPTURE_EVIDENCE_ENTRIES,
 };

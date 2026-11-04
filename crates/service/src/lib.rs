@@ -1,5 +1,6 @@
 //! Application operations joining durable storage and isolated adapter supervision.
 mod admission;
+mod cancel;
 pub mod cancellation_snapshot;
 mod context_commit;
 mod context_cut;
@@ -26,7 +27,7 @@ mod tool_digest;
 mod tool_worker;
 pub mod workspace_snapshot;
 
-use foundry_contracts::{CancelMode, CreateSession, Event, Message, Session};
+use foundry_contracts::{CreateSession, Event, Message, Session};
 use foundry_runtime::RuntimeError;
 use foundry_store::{Store, StoreError};
 use std::{
@@ -129,9 +130,6 @@ impl Service {
     }
     pub fn events(&self, id: &str, after: u64, limit: u32) -> Result<Vec<Event>> {
         Ok(self.store.events(id, after, limit)?)
-    }
-    pub fn cancel(&mut self, id: &str, mode: CancelMode) -> Result<Session> {
-        Ok(self.store.request_cancel(id, mode)?)
     }
     pub fn enqueue_message(&mut self, session_id: &str, id: &str, text: &str) -> Result<Message> {
         Ok(self.store.enqueue_message(session_id, id, text)?)

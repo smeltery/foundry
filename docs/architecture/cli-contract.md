@@ -80,7 +80,7 @@ canonical `--effort low|medium|high|xhigh` on the four task-bearing routes.
 | C30 | Help/version | Short top-level help, exhaustive `help all`, nested help and version must be configuration-free. Short help does not define the whole command inventory. |
 | C31 | TUI | Key help, command menu, machine selection, image paste/removal and resume. Failed sends retain draft attachments. Machine changes preserve session identity; complete keymap/menu qualification remains required. |
 | C32 | Local/custom models | Explicit model selection and worker-side localhost/LAN/tailnet requests; chat-completions, responses and messages formats. Public cloud endpoints require HTTPS. Enforce private-network boundaries and value-free DNS/connect/timeout/TLS/HTTP diagnostics. |
-| C33 | Task exits | Success/accepted detach 0; task failure 1; runtime/auth/usage failure 2; action-required 3; local interruption 130. Acceptance is not completed work. |
+| C33 | Task exits | Success/accepted detach 0; task failure 1; runtime/auth/usage failure 2; action-required 3; cancelled session 4; local interruption 130. Acceptance is not completed work. |
 | C34 | Signals | First interruption requests graceful cancellation and waits; second forces stop without a fresh snapshot. Observer interruption never cancels an independent producer. Completion races require separate evidence. |
 | C35 | Updater exits | Current/updated/newer installed 0; check finds update 10; check/update failure 1; unverifiable installed version 75. Do not substitute task-error mapping. |
 | C36 | Output | Task final JSON object, progress on stderr; session JSON selectors equivalent; ACP stdout protocol-only. Event streams, query values and terminal task results are separate domains. |
