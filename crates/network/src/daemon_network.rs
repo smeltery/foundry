@@ -198,12 +198,12 @@ impl State {
         use crate::peer_session::{AuthorityStatus, PeerError};
         match self.authority.status().await {
             Ok(AuthorityStatus::Unjoined) | Err(PeerError::Quiescent) => Ok(None),
-            Ok(AuthorityStatus::Active { .. }) => self
-                .authority
-                .routing_view()
-                .await
-                .map(Some)
-                .map_err(|_| ControlError::Storage),
+            Ok(AuthorityStatus::Active { .. }) => match self.authority.routing_view().await {
+                Ok(view) => Ok(Some(view)),
+                // A departure or removal can latch quiescence after the status read.
+                Err(PeerError::Quiescent) => Ok(None),
+                Err(_) => Err(ControlError::Storage),
+            },
             Err(_) => Err(ControlError::Storage),
         }
     }
