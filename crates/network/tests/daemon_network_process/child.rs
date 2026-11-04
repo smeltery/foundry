@@ -113,6 +113,24 @@ impl Node {
         );
         self.check_logs(secrets).await;
     }
+    /// Shut down like `stop`, then return the daemon's complete stderr.
+    pub async fn stop_logged(mut self, client: &mut Client, auth: &Value) -> Vec<u8> {
+        client.ok(json!({"op":"shutdown","auth":auth})).await;
+        assert!(
+            tokio::time::timeout(DEADLINE, self.child.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+        (&mut self.output).await.unwrap();
+        (&mut self.error).await.unwrap()
+    }
+    /// Freeze or resume the whole child, so its sockets stay open but silent.
+    pub fn signal(&self, signal: libc::c_int) {
+        let pid = libc::pid_t::try_from(self.child.id().expect("running daemon")).unwrap();
+        assert_eq!(unsafe { libc::kill(pid, signal) }, 0, "daemon signal");
+    }
     pub async fn kill(mut self) -> Config {
         self.child.kill().await.unwrap();
         self.child.wait().await.unwrap();

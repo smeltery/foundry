@@ -27,6 +27,14 @@ pub(super) fn pins(state: &State, team: &str, founder: EndpointId) -> Result<(),
     }
     Ok(())
 }
+/// A JOIN spends the inviter's invitation, so the local durable gate refuses an
+/// already joined or revoked store before any network I/O begins.
+pub(super) async fn require_unjoined(state: &State) -> Result<(), ControlError> {
+    match state.authority.status().await {
+        Ok(crate::peer_session::AuthorityStatus::Unjoined) => Ok(()),
+        _ => Err(ControlError::Rejected),
+    }
+}
 pub(super) fn reconcile_team(
     common: Option<&str>,
     selected: Option<&str>,

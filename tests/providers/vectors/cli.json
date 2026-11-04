@@ -1,0 +1,60 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "connect-a-provider-from-the-cli",
+  "cases": [
+    {
+      "name": "connect_flags_parse_into_exact_request",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/computer_routes.rs::desktop_permissions_accounts_and_update_routes_preserve_exact_shapes"],
+      "request": {"argv": ["providers", "connect", "fixture-provider", "--token-stdin"]},
+      "expect": {"result": "ok", "parsed": {"provider": "fixture-provider", "pair": null, "browser": false, "token_stdin": true}},
+      "note": "Parsing only; no backend implements the request."
+    },
+    {
+      "name": "browser_and_token_stdin_are_exclusive",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/computer_contract.rs::credential_modes_and_worker_lifetime_are_exclusive"],
+      "request": {"argv": ["providers", "connect", "fixture", "--browser", "--token-stdin"]},
+      "expect": {"result": "error", "error": "invalid_request", "exit_status": 2}
+    },
+    {
+      "name": "unknown_provider_fails_before_any_prompt",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": false,
+      "given": {"catalog": ["fixture"]},
+      "request": {"argv": ["providers", "connect", "hosted-z", "--token-stdin"], "provider_id": "hosted-z"},
+      "expect": {"result": "error", "error": "not_found", "stdin_read": false, "network_calls": 0}
+    },
+    {
+      "name": "token_stdin_is_stored_without_echo",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": false,
+      "request": {"argv": ["providers", "connect", "fixture", "--token-stdin"], "token": "fixture-token-canary"},
+      "expect": {"result": "ok", "state": "configured", "stdout_contains_input": false, "terminal_echo": false}
+    },
+    {
+      "name": "empty_stdin_token_is_invalid",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": false,
+      "request": {"argv": ["providers", "connect", "fixture", "--token-stdin"], "token": ""},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "browser_callback_bind_failure_falls_back_to_pasted_code",
+      "operation": "cli.providers_connect",
+      "rows": ["CLI-027"],
+      "implemented": false,
+      "given": {"loopback_callback_available": false},
+      "request": {"argv": ["providers", "connect", "fixture", "--browser"]},
+      "expect": {"result": "accepted", "login_method": "browser", "next_action": "prompt", "prompt_type": "manual_code"}
+    }
+  ]
+}

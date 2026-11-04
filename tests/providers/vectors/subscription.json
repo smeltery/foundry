@@ -1,0 +1,79 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "subscription-connection",
+  "cases": [
+    {
+      "name": "refreshable_credential_connects",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "absent"},
+      "request": {"provider_id": "hosted-a", "access_token": "fixture-access-canary", "refresh_token": "fixture-refresh-canary",
+                  "expires_at": "2026-02-01T00:00:00Z"},
+      "expect": {"result": "ok", "state": "configured", "credential_kind": "oauth", "account_key": "account-1", "refreshable": true}
+    },
+    {
+      "name": "long_lived_token_connects_without_refresh",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "absent"},
+      "request": {"provider_id": "hosted-a", "setup_token": "fixture-setup-canary"},
+      "expect": {"result": "ok", "state": "configured", "credential_kind": "oauth", "refreshable": false}
+    },
+    {
+      "name": "partial_oauth_set_is_invalid",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-a", "access_token": "fixture-access-canary"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "both_credential_forms_are_invalid",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "request": {"provider_id": "hosted-a", "setup_token": "fixture-setup-canary", "access_token": "fixture-access-canary",
+                  "refresh_token": "fixture-refresh-canary", "expires_at": "2026-02-01T00:00:00Z"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "reconnect_restores_expired_long_lived_slot",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "reconnect_required", "connected_by": "caller"},
+      "request": {"provider_id": "hosted-a", "account_key": "account-1", "setup_token": "fixture-setup-canary"},
+      "expect": {"result": "ok", "state": "configured", "account_key": "account-1"}
+    },
+    {
+      "name": "reconnecting_another_members_slot_needs_admin",
+      "operation": "credentials.connect_subscription",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "configured", "connected_by": "member-b", "caller_role": "member"},
+      "request": {"provider_id": "hosted-a", "account_key": "account-1", "setup_token": "fixture-setup-canary"},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "long_lived_token_expiry_requires_reconnect",
+      "operation": "credential.state",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "configured"},
+      "request": {"event": "token_expired"},
+      "expect": {"state": "reconnect_required"}
+    },
+    {
+      "name": "reconnect_event_restores_configured",
+      "operation": "credential.state",
+      "rows": ["API-EBD6CBFF835BE"],
+      "implemented": false,
+      "given": {"state": "reconnect_required"},
+      "request": {"event": "reconnect"},
+      "expect": {"state": "configured"}
+    }
+  ]
+}
