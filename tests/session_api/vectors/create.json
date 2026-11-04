@@ -97,15 +97,18 @@
       "name": "exclusive_checkout_selectors_are_invalid",
       "operation": "session.create",
       "rows": ["AG-02"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/create.rs::exclusive_checkout_selectors_are_invalid"],
       "request": {"prompt": "Fix the sample test.", "repository": "sample/repo", "branch": "topic", "change_request": 7},
-      "expect": {"result": "error", "error": "invalid_request"}
+      "expect": {"result": "error", "error": "invalid_request"},
+      "note": "Foundry nests the selector as workspace.checkout, a single-key object."
     },
     {
       "name": "machine_target_without_name_is_invalid",
       "operation": "session.create",
       "rows": ["API-001"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/create.rs::machine_target_without_name_is_invalid"],
       "request": {"prompt": "Run the sample.", "target": {"kind": "machine"}},
       "expect": {"result": "error", "error": "invalid_request"}
     },

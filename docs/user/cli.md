@@ -97,7 +97,9 @@ confirms that persisted state. The database remains at `$demo_dir/state.db`.
 The example uses Python only to extract the returned session ID. `ls` is also
 available for listing, and `cancel ID` is an alias for the cancellation operation.
 For a running attempt, cancellation records a request; it does not prove the
-process has already stopped. See [session lifecycle](sessions.md).
+process has already stopped. Cancelling a suspended session makes it terminally
+`cancelled`. The JSON output includes the cancel `receipt`. See
+[session lifecycle](sessions.md).
 
 ## Queue a follow-up instruction
 
@@ -159,9 +161,10 @@ checkpoint requirements and the distinction between inspection and execution.
 
 The [application service](../architecture/service.md) persists events and the
 terminal session. Completion maps success to status 0, failure to 1,
-action-required to 3 and suspension to 130. Success requires completion criteria
-that the runtime verified; a settled turn without them is action-required (see
-the [completion policy](../architecture/completion-policy.md)). Runtime or persistence errors fail
+action-required to 3, a cancelled session to 4 and suspension to 130. Success
+requires completion criteria that the runtime verified; a settled turn without
+them is action-required (see the
+[completion policy](../architecture/completion-policy.md)). Runtime or persistence errors fail
 explicitly. The synchronous result is not a live output-streaming interface.
 
 ### Completion criteria

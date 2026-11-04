@@ -40,6 +40,7 @@ pub(crate) fn admit(
 ) -> Result<(AttemptFence, Session)> {
     exclusive(tx, session_id, restore)?;
     let mut session = read_session(tx, session_id)?;
+    crate::attempts::refuse_cancelled(&session)?;
     if session.version != expected_version || session.active_attempt_id.is_some() {
         return Err(conflict("session changed or already has an active attempt"));
     }

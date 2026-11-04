@@ -124,6 +124,7 @@ process status or event history.
 | `exit` + `action_required` | 3 | 3 | `isError: false`, `outcome: "action_required"` |
 | `error` | 2 (execution error) | 2 | `isError: false`, `lifecycle: "error"`, no outcome |
 | `suspended` | 130 | 130 | `isError: false`, `lifecycle: "suspended"`, no outcome |
+| `cancelled` | 4 | 4 | `isError: false`, `lifecycle: "cancelled"`, no outcome |
 
 MCP `isError` reports a failed tool invocation, such as an unknown session or a
 storage error. It never reports a task outcome.
@@ -182,6 +183,14 @@ storage error. It never reports a task outcome.
   tool calls and unaccepted messages, and defaults a missing completion to
   `action_required` (`packages/adapter/src/controller.ts`). Its `success` is only
   a proposal to the runtime.
+- **Native terminal binding.** On the native path the adapter's outcome and
+  result are encoded into the checkpoint terminal digest
+  (`crates/runtime/src/coordinated/capture/terminal.rs`). A permission stop
+  becomes `action_required` with `permission_action_required`
+  (`crates/runtime/src/coordinated/engine_exit.rs`).
+- **Exit mapping.** `terminal_response` maps 0/1/3/4/130
+  (`apps/cli/src/runner.rs`) and `emit_result` adds 2 for `error`
+  (`apps/cli/src/watch.rs`).
 
 Acceptance tests: `crates/store/tests/completion_decisions.rs` (stale, missing
 and forged evidence, downgrade, pending instruction, cancellation, pre-policy

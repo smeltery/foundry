@@ -64,10 +64,12 @@ impl LocalBackend {
     /// A durable cancellation request is not proof that a running process stopped.
     pub fn cancel(&mut self, id: &str, mode: CancelMode) -> Result<Value, CommandError> {
         nonempty(id)?;
-        Ok(
-            json!({"session":self.store()?.request_cancel(id, mode).map_err(store_error)?,
-            "cancellation":"requested"}),
-        )
+        let record = self
+            .store()?
+            .cancel_session(id, mode)
+            .map_err(store_error)?;
+        Ok(json!({"session":record.session,"receipt":record.receipt,
+            "cancellation":"requested"}))
     }
 
     /// Enqueue only. Retries preserve pending/in-flight/delivered/withdrawn state;
@@ -315,6 +317,8 @@ fn contract_error(error: ContractError) -> CommandError {
         ContractError::Conflict(_) => "conflict",
         ContractError::NotFound(_) => "not_found",
         ContractError::Unsupported(_) => "unsupported",
+        // The neutral class for a state that refuses the operation.
+        ContractError::Cancelled(_) => "conflict",
     };
     CommandError::new(code, error.to_string())
 }

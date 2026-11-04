@@ -59,7 +59,7 @@ fn pending_instruction_at_settlement_requires_action_and_stays_queued() {
 
 #[test]
 fn cancellation_wins_and_a_later_request_does_not_rewrite_a_decision() {
-    let (_dir, mut store, id) = open(vec![check("build")]);
+    let (dir, mut store, id) = open(vec![check("build")]);
     let (fence, admission) = admit(&mut store, &id);
     let passed = evidence(
         &store,
@@ -85,6 +85,18 @@ fn cancellation_wins_and_a_later_request_does_not_rewrite_a_decision() {
             .is_none()
     );
     assert!(store.current_completion_decision(&id).unwrap().is_none());
+    // Cancelling the suspended session is terminal and still records no decision.
+    let cancelled = store.request_cancel(&id, CancelMode::Graceful).unwrap();
+    assert_eq!(cancelled.lifecycle, Lifecycle::Cancelled);
+    assert!(cancelled.outcome.is_none());
+    assert!(store.current_completion_decision(&id).unwrap().is_none());
+    let rows: i64 = Connection::open(dir.path().join("db"))
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM completion_decisions", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(rows, 0);
 
     let (_dir, mut store, id) = open(Vec::new());
     let fence = store.begin_attempt(&id, 0).unwrap();

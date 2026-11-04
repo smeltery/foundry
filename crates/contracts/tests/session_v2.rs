@@ -191,6 +191,34 @@ fn cancel_receipt_has_a_golden_encoding() {
 }
 
 #[test]
+fn cancelled_lifecycle_is_additive_and_existing_encodings_are_unchanged() {
+    for (lifecycle, encoded) in [
+        (Lifecycle::Queued, "\"queued\""),
+        (Lifecycle::Running, "\"running\""),
+        (Lifecycle::Exit, "\"exit\""),
+        (Lifecycle::Error, "\"error\""),
+        (Lifecycle::Suspended, "\"suspended\""),
+        (Lifecycle::Cancelled, "\"cancelled\""),
+    ] {
+        assert_eq!(serde_json::to_string(&lifecycle).unwrap(), encoded);
+        assert_eq!(
+            serde_json::from_str::<Lifecycle>(encoded).unwrap(),
+            lifecycle
+        );
+    }
+    let receipt = CancelReceipt {
+        ok: true,
+        requested: true,
+        mode: CancelMode::Graceful,
+        status: Lifecycle::Cancelled,
+    };
+    assert_eq!(
+        serde_json::to_string(&receipt).unwrap(),
+        r#"{"ok":true,"requested":true,"mode":"graceful","status":"cancelled"}"#
+    );
+}
+
+#[test]
 fn unknown_conflicting_or_incomplete_fields_are_rejected_when_decoding() {
     let base = r#""prompt":"p","directory":"/d","model":null,"idempotency_key":null"#;
     let rejected = [

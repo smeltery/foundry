@@ -151,7 +151,7 @@ def check_lifecycle(case, catalog):
         triple = {'from': given, 'event': case['request'].get('event'), 'to': after}
         if triple not in transitions:
             raise InvalidVectors(f'{case["name"]}: transition is not in the catalog: {triple}')
-    elif given and after and not any(t['from'] == given and t['to'] == after for t in transitions):
+    elif given != after and given and after and not any(t['from'] == given and t['to'] == after for t in transitions):
         raise InvalidVectors(f'{case["name"]}: {given} cannot become {after}')
 
 

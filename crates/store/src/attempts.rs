@@ -1,6 +1,6 @@
 use crate::completion_decisions::{DecisionInput, Proposal};
 use crate::{Result, Store, conflict, now_ms, read_session, save_session};
-use foundry_contracts::{CancelMode, ContractError, Lifecycle, Outcome, Session};
+use foundry_contracts::{CancelMode, CancelReceipt, ContractError, Lifecycle, Outcome, Session};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 /// Treat the token as an ownership credential; do not expose it in event output.
@@ -9,6 +9,13 @@ pub struct AttemptFence {
     pub session_id: String,
     pub attempt_id: String,
     pub token: String,
+}
+
+/// Session state after a cancel call, with the receipt reported to callers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CancelRecord {
+    pub session: Session,
+    pub receipt: CancelReceipt,
 }
 
 impl Store {
@@ -97,40 +104,56 @@ impl Store {
 
     /// Cancellation is a durable request, not evidence that execution has stopped.
     pub fn request_cancel(&mut self, session_id: &str, mode: CancelMode) -> Result<Session> {
+        Ok(self.cancel_session(session_id, mode)?.session)
+    }
+
+    /// Record a cancel and describe its effect. A live attempt or restore owner
+    /// gets an upgrade-only request and keeps its lifecycle until it settles; a
+    /// queued session suspends; a suspended session becomes terminally
+    /// `cancelled`. Settled and cancelled sessions are left unchanged.
+    pub fn cancel_session(&mut self, session_id: &str, mode: CancelMode) -> Result<CancelRecord> {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut session = read_session(&tx, session_id)?;
-        if crate::restores::cancel_reserved(&tx, session_id, mode)? {
-            tx.commit()?;
-            return Ok(session);
-        }
-        if let Some(id) = &session.active_attempt_id {
+        let (requested, effective) = if let Some(change) =
+            crate::restores::cancel_reserved(&tx, session_id, mode)?
+        {
+            change
+        } else if let Some(id) = &session.active_attempt_id {
             let previous = cancel_mode(&tx, id)?;
-            let next = if previous == Some(CancelMode::Hard) {
-                CancelMode::Hard
-            } else {
-                mode
-            };
-            if previous != Some(next) {
+            let next = upgraded(previous, mode);
+            let requested = previous != Some(next);
+            if requested {
                 tx.execute(
                     "UPDATE attempts SET cancel=?1 WHERE id=?2",
-                    params![
-                        match next {
-                            CancelMode::Graceful => "graceful",
-                            CancelMode::Hard => "hard",
-                        },
-                        id
-                    ],
+                    params![cancel_text(next), id],
                 )?;
                 save_session(&tx, &mut session)?;
             }
-        } else if session.lifecycle == Lifecycle::Queued {
-            session.lifecycle = Lifecycle::Suspended;
-            save_session(&tx, &mut session)?;
-        }
+            (requested, next)
+        } else {
+            let next = match session.lifecycle {
+                Lifecycle::Queued => Some(Lifecycle::Suspended),
+                Lifecycle::Suspended => Some(Lifecycle::Cancelled),
+                Lifecycle::Running | Lifecycle::Exit | Lifecycle::Error | Lifecycle::Cancelled => {
+                    None
+                }
+            };
+            if let Some(lifecycle) = next {
+                session.lifecycle = lifecycle;
+                save_session(&tx, &mut session)?;
+            }
+            (next.is_some(), mode)
+        };
         tx.commit()?;
-        Ok(session)
+        let receipt = CancelReceipt {
+            ok: true,
+            requested,
+            mode: effective,
+            status: session.lifecycle,
+        };
+        Ok(CancelRecord { session, receipt })
     }
 
     pub fn cancellation(&self, fence: &AttemptFence) -> Result<Option<CancelMode>> {
@@ -184,16 +207,50 @@ fn cancel_mode(connection: &Connection, attempt: &str) -> Result<Option<CancelMo
             r.get(0)
         })
         .optional()?;
-    Ok(match value.flatten().as_deref() {
+    Ok(parse_cancel(value.flatten().as_deref()))
+}
+
+pub(crate) fn parse_cancel(value: Option<&str>) -> Option<CancelMode> {
+    match value {
         Some("hard") => Some(CancelMode::Hard),
         Some("graceful") => Some(CancelMode::Graceful),
         _ => None,
-    })
+    }
+}
+
+pub(crate) fn cancel_text(mode: CancelMode) -> &'static str {
+    match mode {
+        CancelMode::Graceful => "graceful",
+        CancelMode::Hard => "hard",
+    }
+}
+
+/// Hard is sticky: a later graceful request never downgrades it.
+pub(crate) fn upgraded(previous: Option<CancelMode>, mode: CancelMode) -> CancelMode {
+    if previous == Some(CancelMode::Hard) {
+        CancelMode::Hard
+    } else {
+        mode
+    }
+}
+
+/// A cancelled session is terminal: no attempt, restore or follow-up may start.
+pub(crate) fn refuse_cancelled(session: &Session) -> Result<()> {
+    if session.lifecycle == Lifecycle::Cancelled {
+        return Err(ContractError::Cancelled(
+            "a cancelled session cannot be resumed or continued".into(),
+        )
+        .into());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_terminal(lifecycle: Lifecycle, outcome: Option<Outcome>) -> Result<()> {
-    if matches!(lifecycle, Lifecycle::Queued | Lifecycle::Running)
-        || (lifecycle == Lifecycle::Exit) != outcome.is_some()
+    // `cancelled` is reached only through the cancel path, never by settling.
+    if matches!(
+        lifecycle,
+        Lifecycle::Queued | Lifecycle::Running | Lifecycle::Cancelled
+    ) || (lifecycle == Lifecycle::Exit) != outcome.is_some()
     {
         return Err(ContractError::Invalid(
             "exit requires an outcome; error/suspended must not have one".into(),

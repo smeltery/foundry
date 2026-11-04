@@ -58,6 +58,7 @@ impl Store {
         crate::work::advance(&tx, &fence.session_id)?;
         tx.execute("INSERT INTO events(session_id,sequence,id,attempt_id,revision,kind,data) VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![fence.session_id,sequence,id,fence.attempt_id,revision_sql,kind,serde_json::to_string(&data)?])?;
+        crate::event_delivery::stamp_session(&tx, &fence.session_id)?;
         tx.commit()?;
         Ok(Event {
             id: id.into(),

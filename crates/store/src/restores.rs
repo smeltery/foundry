@@ -1,6 +1,7 @@
 use crate::{
     BeginRestoreInput, BeginRestoreResult, RestoreClose, RestoreFence, RestoreRef, Result, Store,
-    admission, checkpoint_codec, checkpoint_read, conflict, now_ms, read_session, restore_read,
+    admission, attempts, checkpoint_codec, checkpoint_read, conflict, now_ms, read_session,
+    restore_read,
 };
 use foundry_contracts::CancelMode;
 use rusqlite::{Connection, TransactionBehavior, params};
@@ -37,6 +38,7 @@ impl Store {
         check_capacity(&tx, session_id)?;
         admission::exclusive(&tx, session_id, None)?;
         let session = read_session(&tx, session_id)?;
+        attempts::refuse_cancelled(&session)?;
         if session.version != input.expected_session_version || session.active_attempt_id.is_some()
         {
             return Err(conflict("restore session version or owner changed"));
@@ -204,27 +206,36 @@ pub(crate) fn changed(count: usize) -> Result<()> {
     }
     Ok(())
 }
+/// Upgrade-only cancel of a live restore owner. Returns whether this call changed
+/// the recorded mode and the effective mode, or `None` when no owner is live.
 pub(crate) fn cancel_reserved(
     connection: &Connection,
     session: &str,
     mode: CancelMode,
-) -> Result<bool> {
-    let count = connection.execute(
-        "UPDATE context_restores SET cancel=CASE WHEN cancel='hard' THEN cancel ELSE ?1 END
-         WHERE session_id=?2 AND phase IN ('loading','restored')",
-        params![
-            if mode == CancelMode::Hard {
-                "hard"
-            } else {
-                "graceful"
-            },
-            session
-        ],
-    )?;
-    if count > 1 {
-        return Err(conflict("multiple restore owners"));
+) -> Result<Option<(bool, CancelMode)>> {
+    let previous = {
+        let mut statement = connection.prepare(
+            "SELECT cancel FROM context_restores
+             WHERE session_id=?1 AND phase IN ('loading','restored')",
+        )?;
+        let rows = statement.query_map([session], |row| row.get::<_, Option<String>>(0))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let previous = match previous.as_slice() {
+        [] => return Ok(None),
+        [one] => attempts::parse_cancel(one.as_deref()),
+        _ => return Err(conflict("multiple restore owners")),
+    };
+    let next = attempts::upgraded(previous, mode);
+    let requested = previous != Some(next);
+    if requested {
+        connection.execute(
+            "UPDATE context_restores SET cancel=?1
+             WHERE session_id=?2 AND phase IN ('loading','restored')",
+            params![attempts::cancel_text(next), session],
+        )?;
     }
-    Ok(count == 1)
+    Ok(Some((requested, next)))
 }
 
 fn check_capacity(connection: &Connection, session: &str) -> Result<()> {
