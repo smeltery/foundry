@@ -19,6 +19,7 @@ pub mod profile_host;
 mod publication;
 pub mod restoration_owner;
 mod run_lease;
+pub mod session_query;
 mod tool_digest;
 mod tool_worker;
 pub mod workspace_snapshot;

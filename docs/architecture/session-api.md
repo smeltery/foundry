@@ -357,12 +357,43 @@ stay separate: an expired or failed attempt never becomes success. Evidence:
 Audit rows (external `capabilities.json`, group GAP-005): API-002, API-X019.
 Vectors: `tests/session_api/vectors/read.json`.
 
-**Foundry today.** `list` returns newest created sessions first; later updates do
-not reorder them. No test yet asserts that order across several sessions. The
-CLI default limit is 100 and zero is `invalid_request`; there is no cursor,
-filter or cap. Evidence:
+**Foundry today.** The CLI `list` returns newest created sessions first with a
+default limit of 100; zero is `invalid_request`, and it has no cursor, filter or
+cap. Evidence:
 [`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
 (`durable_create_list_get_and_snapshot`, `validation_and_error_codes`).
+
+The service operation `Service::list_sessions` implements the specified query
+but is not yet wired to the CLI, MCP or any transport:
+
+- Order is newest created first; updates never reorder. The cursor names the
+  last returned session and is bound to the archive, origin and search filter,
+  so sessions created while a reader pages never shift or repeat later pages.
+  A cursor from another filter, a forged cursor or one naming an unknown
+  session fails with `invalid_request`; the contract has no distinct
+  `invalid_cursor` class yet.
+- Archive filter `active` (default), `archived` or `all`, and origin filters
+  for interactive, any external, or one external interface. Filters read the
+  schema v12 metadata columns. Sessions written before origins existed match
+  no origin filter.
+- Page size `page_size`, with `limit` as its alias, defaults to 50 and is capped
+  at 200, or 24 with a title search; zero is `invalid_request`.
+- Title search is a literal, case-insensitive substring of 3 to 500 characters
+  over the stored title, or the first 200 prompt characters when none is set.
+  It scans the filtered sessions in order, so its cost grows with the store.
+- Sparse fields always keep `id`; an unknown name is `invalid_request`.
+- Each page carries a weak validator over the query and the selected rows. It
+  changes only when a selected value, the page membership or the next cursor
+  changes, and a matching `if_none_match` returns "not modified".
+
+Evidence: [`store session_query.rs`](../../crates/store/tests/session_query.rs)
+(`cursor_pages_stay_stable_under_concurrent_creates`,
+`title_search_is_literal_case_insensitive_and_title_only`,
+`page_search_and_origin_bounds`),
+[`service session_query.rs`](../../crates/service/tests/session_query.rs)
+(`page_size_defaults_caps_and_alias`, `etag_is_stable_until_a_visible_change`).
+Project grouping, the older archive spelling, account and workspace keyed
+caching and search capacity limits are not implemented.
 
 **Specified.**
 
