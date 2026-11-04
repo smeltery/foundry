@@ -1,0 +1,175 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "send-a-follow-up",
+  "cases": [
+    {
+      "name": "send_queues_without_resuming",
+      "operation": "session.send",
+      "rows": ["API-004", "AG-04"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/message_entrypoint.rs::cli_messages_persist_across_processes_without_resuming_stopped_session"],
+      "given": {"lifecycle": "suspended"},
+      "request": {"message_id": "m-1", "text": "Also update the notes."},
+      "expect": {"result": "accepted", "lifecycle": "suspended", "message_state": "pending", "completion": "not_confirmed"}
+    },
+    {
+      "name": "same_id_and_text_returns_current_record",
+      "operation": "session.send",
+      "rows": ["AG-04", "API-X036"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::mcp_send_retries_preserve_claiming_ambiguity_and_reject_conflicts"],
+      "given": {"messages": [{"message_id": "m-1", "text": "Also update the notes.", "state": "in_flight"}]},
+      "request": {"message_id": "m-1", "text": "Also update the notes."},
+      "expect": {"result": "replayed", "message_state": "in_flight"}
+    },
+    {
+      "name": "same_id_with_different_text_conflicts",
+      "operation": "session.send",
+      "rows": ["AG-04", "API-X036"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::mcp_send_retries_preserve_claiming_ambiguity_and_reject_conflicts"],
+      "given": {"messages": [{"message_id": "m-1", "text": "Also update the notes."}]},
+      "request": {"message_id": "m-1", "text": "Something else."},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "withdrawn_retry_is_not_requeued",
+      "operation": "session.send",
+      "rows": ["AG-04"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::withdrawn_retry_is_not_requeued"],
+      "given": {"messages": [{"message_id": "m-1", "text": "Also update the notes.", "state": "withdrawn"}]},
+      "request": {"message_id": "m-1", "text": "Also update the notes."},
+      "expect": {"result": "replayed", "message_state": "withdrawn"}
+    },
+    {
+      "name": "blank_message_is_invalid",
+      "operation": "session.send",
+      "rows": ["API-X036"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::send_validates_before_opening_database"],
+      "limit": {"name": "message_bytes", "value": 0},
+      "request": {"message_id": "m-1", "text": {"utf8_bytes": 0}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "message_over_limit_reports_payload_too_large",
+      "operation": "session.send",
+      "rows": ["API-X036"],
+      "implemented": false,
+      "limit": {"name": "message_bytes", "value": 262145},
+      "request": {"message_id": "m-1", "text": {"utf8_bytes": 262145}},
+      "expect": {"result": "error", "error": "payload_too_large", "max_bytes": 262144},
+      "note": "Foundry rejects this size today, but as invalid_request."
+    },
+    {
+      "name": "caller_message_id_over_limit_is_invalid",
+      "operation": "session.send",
+      "rows": ["API-X036"],
+      "implemented": false,
+      "limit": {"name": "caller_message_id_chars", "value": 161},
+      "request": {"message_id": {"chars": 161}, "text": "Also update the notes."},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "delivery_requires_exact_receipt",
+      "operation": "session.send",
+      "rows": ["AG-04"],
+      "implemented": true,
+      "evidence": [
+        "crates/service/tests/messages.rs::missing_malformed_or_wrong_receipt_never_marks_message_delivered",
+        "crates/runtime/tests/messages.rs::rejects_foreign_and_stale_attempt_acknowledgments"
+      ],
+      "given": {"lifecycle": "running", "messages": [{"message_id": "m-1", "state": "in_flight"}]},
+      "request": {"acknowledge": {"message_id": "m-1", "receipt": "wrong"}},
+      "expect": {"result": "error", "error": "conflict", "message_state": "in_flight"}
+    },
+    {
+      "name": "uncertain_in_flight_message_blocks_later_claims",
+      "operation": "session.send",
+      "rows": ["AG-04"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/messages.rs::uncertain_delivery_survives_recovery_without_requeue"],
+      "given": {"messages": [{"message_id": "m-1", "state": "in_flight"}, {"message_id": "m-2", "state": "pending"}], "recovered": true},
+      "request": {"claim_next": true},
+      "expect": {"result": "ok", "claimed": null, "message_state": "in_flight"}
+    },
+    {
+      "name": "steer_reaches_running_turn",
+      "operation": "session.send",
+      "rows": ["API-X036", "AG-04"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {"message_id": "m-1", "text": "Prefer the smaller fix.", "delivery": "steer"},
+      "expect": {"result": "accepted", "delivery": "steer", "lifecycle": "running"}
+    },
+    {
+      "name": "follow_up_resumes_settled_session",
+      "operation": "session.send",
+      "rows": ["API-004", "API-X036"],
+      "implemented": false,
+      "given": {"lifecycle": "exit"},
+      "request": {"message_id": "m-1", "text": "Now add a test."},
+      "expect": {"result": "accepted", "lifecycle": "running", "same_session": true, "new_attempt": true}
+    },
+    {
+      "name": "child_session_from_another_owner_is_forbidden",
+      "operation": "session.send",
+      "rows": ["API-X036", "AG-04"],
+      "implemented": false,
+      "given": {"child_of": "other-owner"},
+      "request": {"message_id": "m-1", "text": "Continue."},
+      "expect": {"result": "error", "error": "forbidden"}
+    },
+    {
+      "name": "withdraw_pending_message",
+      "operation": "session.withdraw",
+      "rows": ["API-X037", "AG-04"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/messages.rs::adapter_without_capability_leaves_message_pending_and_withdrawable"],
+      "given": {"messages": [{"message_id": "m-1", "state": "pending"}]},
+      "request": {"message_id": "m-1"},
+      "expect": {"result": "ok", "message_state": "withdrawn"}
+    },
+    {
+      "name": "withdraw_in_flight_message_conflicts",
+      "operation": "session.withdraw",
+      "rows": ["API-X037"],
+      "implemented": true,
+      "evidence": ["crates/service/tests/messages.rs::inflight_withdrawal_fails_and_cancellation_retains_ambiguity"],
+      "given": {"messages": [{"message_id": "m-1", "state": "in_flight"}]},
+      "request": {"message_id": "m-1"},
+      "expect": {"result": "error", "error": "conflict", "message_state": "in_flight"},
+      "note": "Open decision: the specified operation may report success and leave the message unchanged."
+    },
+    {
+      "name": "claim_and_withdraw_have_one_winner",
+      "operation": "session.withdraw",
+      "rows": ["API-X037"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/messages.rs::claim_and_withdraw_cannot_both_win"],
+      "given": {"messages": [{"message_id": "m-1", "state": "pending"}]},
+      "request": {"message_id": "m-1", "concurrent_claim": true},
+      "expect": {"result": "ok", "winners": 1}
+    },
+    {
+      "name": "steer_queued_message_reports_queue_depth",
+      "operation": "session.steer",
+      "rows": ["API-X038", "AG-04"],
+      "implemented": false,
+      "given": {"lifecycle": "running", "messages": [{"message_id": "m-1", "state": "pending"}, {"message_id": "m-2", "state": "pending"}]},
+      "request": {"message_id": "m-1"},
+      "expect": {"result": "ok", "lifecycle": "running", "queue_depth": 1}
+    },
+    {
+      "name": "steer_delivered_message_conflicts",
+      "operation": "session.steer",
+      "rows": ["API-X038"],
+      "implemented": false,
+      "given": {"lifecycle": "running", "messages": [{"message_id": "m-1", "state": "delivered"}]},
+      "request": {"message_id": "m-1"},
+      "expect": {"result": "error", "error": "conflict"}
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "insights-and-trajectory-export",
+  "cases": [
+    {
+      "name": "missing_insight_is_placeholder",
+      "operation": "session.insight.get",
+      "rows": ["API-X033"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "status": "not_generated", "detail_fields": false}
+    },
+    {
+      "name": "generate_builds_and_stores_once",
+      "operation": "session.insight.generate",
+      "rows": ["API-X034"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "created", "status": "generated", "model_call": false}
+    },
+    {
+      "name": "generate_again_returns_stored_insight",
+      "operation": "session.insight.generate",
+      "rows": ["API-X034"],
+      "implemented": false,
+      "given": {"insight": "stored"},
+      "request": {},
+      "expect": {"result": "replayed", "status": "generated", "changed": false}
+    },
+    {
+      "name": "insight_list_default_and_cap",
+      "operation": "session.list_insights",
+      "rows": ["API-X021"],
+      "implemented": false,
+      "limit": {"name": "insight_page", "value": 500},
+      "request": {"limit": 500},
+      "expect": {"result": "ok", "effective_page": 100, "generates": false}
+    },
+    {
+      "name": "trajectory_masks_run_secrets",
+      "operation": "session.trajectory",
+      "rows": ["API-X050"],
+      "implemented": false,
+      "given": {"mode": "standard", "secret_values": ["sample-secret-value"]},
+      "request": {},
+      "expect": {"result": "ok", "contains_secret": false, "masks_long_token_runs": true}
+    },
+    {
+      "name": "isolated_trajectory_masks_only_run_secrets",
+      "operation": "session.trajectory",
+      "rows": ["API-X050"],
+      "implemented": false,
+      "given": {"mode": "isolated", "secret_values": ["sample-secret-value"]},
+      "request": {},
+      "expect": {"result": "ok", "contains_secret": false, "masks_long_token_runs": false}
+    }
+  ]
+}

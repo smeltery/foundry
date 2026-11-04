@@ -1,0 +1,181 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "create-a-session",
+  "cases": [
+    {
+      "name": "create_records_queued_session_without_execution",
+      "operation": "session.create",
+      "rows": ["API-001", "AG-02"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::start_is_explicitly_a_local_queued_record"],
+      "request": {"prompt": "Summarize the sample notes.", "directory": "/workspace/sample"},
+      "expect": {"result": "created", "lifecycle": "queued", "version": 0},
+      "note": "Foundry's internal queued admission; the specified operation reports running."
+    },
+    {
+      "name": "create_starts_execution_asynchronously",
+      "operation": "session.create",
+      "rows": ["API-X020"],
+      "implemented": false,
+      "request": {"prompt": "Summarize the sample notes.", "directory": "/workspace/sample"},
+      "expect": {"result": "created", "lifecycle": "running", "response_fields": ["session_id", "link", "lifecycle", "policy", "associations"]}
+    },
+    {
+      "name": "replay_with_same_key_returns_original_session",
+      "operation": "session.create",
+      "rows": ["API-001", "AG-02"],
+      "implemented": true,
+      "evidence": [
+        "crates/store/tests/durability.rs::restart_preserves_session_idempotency_events_and_outcome",
+        "apps/cli/tests/local_backend.rs::durable_create_list_get_and_snapshot"
+      ],
+      "given": {"prior_requests": [{"prompt": "Draft a plan.", "directory": "/workspace/sample", "idempotency_key": "key-1"}]},
+      "request": {"prompt": "Draft a plan.", "directory": "/workspace/sample", "idempotency_key": "key-1"},
+      "expect": {"result": "replayed", "same_session": true, "new_attempt": false},
+      "note": "Foundry returns the original session but does not yet report created versus replayed."
+    },
+    {
+      "name": "key_reuse_with_different_prompt_conflicts",
+      "operation": "session.create",
+      "rows": ["API-001", "API-X020"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/local_backend.rs::validation_and_error_codes"],
+      "given": {"prior_requests": [{"prompt": "Draft a plan.", "directory": "/workspace/sample", "idempotency_key": "key-1"}]},
+      "request": {"prompt": "Draft another plan.", "directory": "/workspace/sample", "idempotency_key": "key-1"},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "concurrent_creates_with_one_key_have_one_winner",
+      "operation": "session.create",
+      "rows": ["AG-02"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::concurrent_create_and_attempt_claim_have_one_winner"],
+      "request": {"prompt": "Draft a plan.", "directory": "/workspace/sample", "idempotency_key": "key-2", "concurrent_callers": 2},
+      "expect": {"result": "created", "distinct_sessions": 1}
+    },
+    {
+      "name": "empty_prompt_is_invalid",
+      "operation": "session.create",
+      "rows": ["API-001"],
+      "implemented": true,
+      "evidence": ["crates/contracts/src/lib.rs::reject_empty_or_oversized_prompt"],
+      "limit": {"name": "prompt_bytes", "value": 0},
+      "request": {"prompt": {"utf8_bytes": 0}, "directory": "/workspace/sample"},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "prompt_at_byte_limit_is_accepted",
+      "operation": "session.create",
+      "rows": ["API-001", "API-X020"],
+      "implemented": true,
+      "evidence": ["crates/contracts/src/lib.rs::reject_empty_or_oversized_prompt"],
+      "limit": {"name": "prompt_bytes", "value": 262144},
+      "request": {"prompt": {"utf8_bytes": 262144}, "directory": "/workspace/sample"},
+      "expect": {"result": "created"}
+    },
+    {
+      "name": "prompt_over_byte_limit_reports_payload_too_large",
+      "operation": "session.create",
+      "rows": ["API-001", "API-X020"],
+      "implemented": false,
+      "limit": {"name": "prompt_bytes", "value": 262145},
+      "request": {"prompt": {"utf8_bytes": 262145}, "directory": "/workspace/sample"},
+      "expect": {"result": "error", "error": "payload_too_large", "max_bytes": 262144},
+      "note": "Foundry rejects this size today, but as invalid_request."
+    },
+    {
+      "name": "request_over_body_limit_reports_payload_too_large",
+      "operation": "session.create",
+      "rows": ["API-001"],
+      "implemented": false,
+      "limit": {"name": "request_bytes", "value": 116042413},
+      "request": {"prompt": "Review the attachments.", "directory": "/workspace/sample", "body_bytes": 116042413},
+      "expect": {"result": "error", "error": "payload_too_large", "max_bytes": 116042412}
+    },
+    {
+      "name": "exclusive_checkout_selectors_are_invalid",
+      "operation": "session.create",
+      "rows": ["AG-02"],
+      "implemented": false,
+      "request": {"prompt": "Fix the sample test.", "repository": "sample/repo", "branch": "topic", "change_request": 7},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "machine_target_without_name_is_invalid",
+      "operation": "session.create",
+      "rows": ["API-001"],
+      "implemented": false,
+      "request": {"prompt": "Run the sample.", "target": {"kind": "machine"}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "unsupported_target_policy_fails_before_execution",
+      "operation": "session.create",
+      "rows": ["API-001", "API-X020"],
+      "implemented": false,
+      "request": {"prompt": "Run for a long time.", "long_running": true},
+      "expect": {"result": "error", "error": "unsupported_policy", "new_attempt": false}
+    },
+    {
+      "name": "default_policy_is_echoed",
+      "operation": "session.create",
+      "rows": ["AG-10"],
+      "implemented": false,
+      "request": {"prompt": "Summarize the sample notes."},
+      "expect": {"result": "created", "policy": {"secret_injection": true, "personal_context": true, "workspace_ownership": "managed", "version": 1}}
+    },
+    {
+      "name": "tool_grants_default_to_empty",
+      "operation": "session.create",
+      "rows": ["AG-10"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/tool_grants.rs::absent_grants_preserve_existing_wire_and_yes_never_grants"],
+      "request": {"prompt": "Summarize the sample notes.", "confirm_all": true},
+      "expect": {"result": "created", "tool_grants": []}
+    },
+    {
+      "name": "child_session_cannot_widen_parent_policy",
+      "operation": "session.create",
+      "rows": ["AG-10"],
+      "implemented": false,
+      "given": {"parent_policy": {"secret_injection": false}},
+      "request": {"prompt": "Continue as a child.", "parent": "parent-1", "policy": {"secret_injection": true}},
+      "expect": {"result": "error", "error": "unsupported_policy"}
+    },
+    {
+      "name": "isolated_session_rejects_follow_up",
+      "operation": "session.send",
+      "rows": ["AG-15"],
+      "implemented": false,
+      "given": {"mode": "isolated", "lifecycle": "exit"},
+      "request": {"text": "One more thing."},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "unknown_experimental_feature_is_invalid",
+      "operation": "session.create",
+      "rows": ["AG-15"],
+      "implemented": false,
+      "request": {"prompt": "Summarize the sample notes.", "experimental_features": ["not-a-feature"]},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "prestart_reserves_warm_resources",
+      "operation": "session.prestart",
+      "rows": ["API-X022", "AG-15"],
+      "implemented": false,
+      "request": {"session_id": "00000000-0000-4000-8000-000000000001"},
+      "expect": {"result": "accepted", "status": "starting", "reservation_seconds": 75}
+    },
+    {
+      "name": "prestart_disabled_starts_nothing",
+      "operation": "session.prestart",
+      "rows": ["API-X022"],
+      "implemented": false,
+      "given": {"prestart_enabled": false},
+      "request": {"session_id": "00000000-0000-4000-8000-000000000002"},
+      "expect": {"result": "ok", "started": false}
+    }
+  ]
+}

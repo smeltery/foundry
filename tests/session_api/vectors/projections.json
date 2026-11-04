@@ -1,0 +1,80 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "messages-and-conversation-views",
+  "cases": [
+    {
+      "name": "message_view_pages_by_exclusive_cursor",
+      "operation": "session.messages",
+      "rows": ["API-X035", "API-004"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/messages.rs::idempotency_pagination_and_withdrawal_survive_restart"],
+      "given": {"messages": ["m-1", "m-2", "m-3"]},
+      "request": {"after": 1, "limit": 1},
+      "expect": {"result": "ok", "message_ids": ["m-2"]}
+    },
+    {
+      "name": "new_session_message_view_is_empty",
+      "operation": "session.messages",
+      "rows": ["API-X035", "AG-08"],
+      "implemented": false,
+      "given": {"prompt": "Summarize the sample notes.", "replies": 1},
+      "request": {},
+      "expect": {"result": "ok", "message_ids": []},
+      "note": "Structurally true today because the opening prompt is not a queued message; no dedicated test."
+    },
+    {
+      "name": "each_message_is_followed_by_delivery_note",
+      "operation": "session.messages",
+      "rows": ["API-X035"],
+      "implemented": false,
+      "given": {"messages": ["m-1"], "delivered": ["m-1"]},
+      "request": {},
+      "expect": {"result": "ok", "kinds": ["user", "system"]}
+    },
+    {
+      "name": "conversation_lists_prompt_messages_and_replies",
+      "operation": "session.conversation",
+      "rows": ["API-X030", "AG-08"],
+      "implemented": false,
+      "given": {"prompt": "Start.", "turns": [{"messages": [], "reply": "Done one."}, {"messages": ["Next."], "reply": "Done two."}]},
+      "request": {},
+      "expect": {"result": "ok", "kinds": ["prompt", "reply", "message", "reply"]}
+    },
+    {
+      "name": "failed_turn_reply_is_listed_with_status",
+      "operation": "session.conversation",
+      "rows": ["API-X030"],
+      "implemented": false,
+      "given": {"prompt": "Start.", "turns": [{"messages": [], "reply": "", "lifecycle": "error"}]},
+      "request": {},
+      "expect": {"result": "ok", "kinds": ["prompt", "reply"], "reply_lifecycle": "error", "reply_text": ""}
+    },
+    {
+      "name": "reply_waits_for_earlier_turns",
+      "operation": "session.conversation",
+      "rows": ["API-X030"],
+      "implemented": false,
+      "given": {"prompt": "Start.", "turns": [{"messages": [], "reply": null, "lifecycle": "running"}, {"messages": ["Steer."], "reply": "Done."}]},
+      "request": {},
+      "expect": {"result": "ok", "kinds": ["prompt", "message"]}
+    },
+    {
+      "name": "conversation_excludes_delivery_notes",
+      "operation": "session.conversation",
+      "rows": ["API-X030", "AG-08"],
+      "implemented": false,
+      "given": {"prompt": "Start.", "turns": [{"messages": ["Next."], "reply": "Done."}], "delivery_notes": 1},
+      "request": {},
+      "expect": {"result": "ok", "kinds": ["prompt", "message", "reply"]}
+    },
+    {
+      "name": "conversation_rejects_foreign_cursor",
+      "operation": "session.conversation",
+      "rows": ["API-X030"],
+      "implemented": false,
+      "request": {"after": "events-cursor-7"},
+      "expect": {"result": "error", "error": "invalid_cursor"}
+    }
+  ]
+}

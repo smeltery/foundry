@@ -1,0 +1,134 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "retry-fork-rewind-and-compact",
+  "cases": [
+    {
+      "name": "retry_running_session_is_not_terminal",
+      "operation": "session.retry",
+      "rows": ["API-X041", "AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {},
+      "expect": {"result": "error", "error": "not_terminal", "lifecycle": "running"}
+    },
+    {
+      "name": "retry_settled_session_starts_new_attempt",
+      "operation": "session.retry",
+      "rows": ["API-X041", "AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "error"},
+      "request": {},
+      "expect": {"result": "accepted", "lifecycle": "running", "same_session": true, "new_attempt": true}
+    },
+    {
+      "name": "retry_without_usage_reports_recorded_attempt",
+      "operation": "session.retry",
+      "rows": ["API-X041"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "usage_available": false},
+      "request": {},
+      "expect": {"result": "error", "error": "quota_exhausted", "attempt_recorded": true}
+    },
+    {
+      "name": "fork_leaves_source_unchanged",
+      "operation": "session.fork",
+      "rows": ["API-X032", "AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "replies": 2},
+      "request": {"caller_session_id": "00000000-0000-4000-8000-000000000003", "title": "Alternative"},
+      "expect": {"result": "created", "same_session": false, "source_changed": false}
+    },
+    {
+      "name": "fork_replay_returns_first_fork",
+      "operation": "session.fork",
+      "rows": ["API-X032"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "replies": 1, "prior_forks": ["00000000-0000-4000-8000-000000000003"]},
+      "request": {"caller_session_id": "00000000-0000-4000-8000-000000000003"},
+      "expect": {"result": "replayed", "same_session": false}
+    },
+    {
+      "name": "fork_without_reply_is_not_found",
+      "operation": "session.fork",
+      "rows": ["API-X032"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "replies": 0},
+      "request": {},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "fork_title_over_limit_is_invalid",
+      "operation": "session.fork",
+      "rows": ["API-X032"],
+      "implemented": false,
+      "limit": {"name": "fork_title_chars", "value": 121},
+      "given": {"lifecycle": "exit", "replies": 1},
+      "request": {"title": {"chars": 121}},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "fork_running_source_is_not_terminal",
+      "operation": "session.fork",
+      "rows": ["API-X032"],
+      "implemented": false,
+      "given": {"lifecycle": "running", "replies": 1},
+      "request": {},
+      "expect": {"result": "error", "error": "not_terminal"}
+    },
+    {
+      "name": "rewind_replaces_message_and_starts_turn",
+      "operation": "session.rewind",
+      "rows": ["API-X042", "AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "messages": ["m-1", "m-2"]},
+      "request": {"message_id": "m-1", "content": "Use the other approach.", "request_id": "00000000-0000-4000-8000-000000000004"},
+      "expect": {"result": "accepted", "lifecycle": "running", "deduplicated": false, "history_retained": true, "filesystem_rolled_back": false}
+    },
+    {
+      "name": "rewind_repeat_is_deduplicated",
+      "operation": "session.rewind",
+      "rows": ["API-X042"],
+      "implemented": false,
+      "given": {"lifecycle": "running", "prior_rewinds": ["00000000-0000-4000-8000-000000000004"]},
+      "request": {"message_id": "m-1", "content": "Use the other approach.", "request_id": "00000000-0000-4000-8000-000000000004"},
+      "expect": {"result": "replayed", "deduplicated": true}
+    },
+    {
+      "name": "opening_prompt_is_named_only_by_caller_id",
+      "operation": "session.rewind",
+      "rows": ["API-X042"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "prompt_caller_id": "prompt-1"},
+      "request": {"message_id": "prompt", "content": "Start over."},
+      "expect": {"result": "error", "error": "not_found"}
+    },
+    {
+      "name": "compact_settled_session_keeps_history",
+      "operation": "session.compact",
+      "rows": ["API-X029", "AG-06"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "outcome": "success"},
+      "request": {},
+      "expect": {"result": "accepted", "compaction": "queued", "lifecycle": "exit", "outcome": "success", "history_retained": true}
+    },
+    {
+      "name": "compact_twice_reports_already_compacted",
+      "operation": "session.compact",
+      "rows": ["API-X029"],
+      "implemented": false,
+      "given": {"lifecycle": "exit", "outcome": "success", "compacted": true},
+      "request": {},
+      "expect": {"result": "ok", "compaction": "already_compacted", "lifecycle": "exit", "outcome": "success"}
+    },
+    {
+      "name": "compact_running_turn_is_not_terminal",
+      "operation": "session.compact",
+      "rows": ["API-X029"],
+      "implemented": false,
+      "given": {"lifecycle": "running"},
+      "request": {},
+      "expect": {"result": "error", "error": "not_terminal"}
+    }
+  ]
+}

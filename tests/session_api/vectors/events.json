@@ -1,0 +1,145 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "read-events",
+  "cases": [
+    {
+      "name": "cursor_is_exclusive_and_pages_drain",
+      "operation": "session.events",
+      "rows": ["API-003", "API-X031"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/watch.rs::drains_multiple_pages_and_honors_exclusive_cursor"],
+      "given": {"sequences": [1, 2, 3]},
+      "request": {"after": 1, "limit": 2},
+      "expect": {"result": "ok", "sequences": [2, 3], "next_cursor": 3}
+    },
+    {
+      "name": "growing_event_reappears_with_higher_sequence",
+      "operation": "session.events",
+      "rows": ["AG-07", "API-X031"],
+      "implemented": true,
+      "evidence": ["apps/cli/tests/watch.rs::follows_concurrent_commits_and_streams_each_revision_once_before_terminal"],
+      "given": {"events": [
+        {"id": "text-1", "revision": 0, "sequence": 1},
+        {"id": "tool-1", "revision": 0, "sequence": 2},
+        {"id": "text-1", "revision": 1, "sequence": 3}
+      ]},
+      "request": {"after": 0},
+      "expect": {"result": "ok", "ids_in_delivery_order": ["text-1", "tool-1", "text-1"]}
+    },
+    {
+      "name": "exact_duplicate_revision_is_idempotent",
+      "operation": "session.events",
+      "rows": ["AG-07"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::duplicate_events_are_idempotent_and_conflicts_are_rejected"],
+      "given": {"events": [{"id": "text-1", "revision": 0, "sequence": 1, "data": "hello"}]},
+      "request": {"append": {"id": "text-1", "revision": 0, "data": "hello"}},
+      "expect": {"result": "replayed", "sequence": 1}
+    },
+    {
+      "name": "changed_revision_content_conflicts",
+      "operation": "session.events",
+      "rows": ["AG-07"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::duplicate_events_are_idempotent_and_conflicts_are_rejected"],
+      "given": {"events": [{"id": "text-1", "revision": 0, "sequence": 1, "data": "hello"}]},
+      "request": {"append": {"id": "text-1", "revision": 0, "data": "changed"}},
+      "expect": {"result": "error", "error": "conflict"}
+    },
+    {
+      "name": "concurrent_appends_get_distinct_sequences",
+      "operation": "session.events",
+      "rows": ["AG-07", "API-003"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/durability.rs::concurrent_events_are_sequenced_without_lost_writes"],
+      "request": {"concurrent_appends": 2},
+      "expect": {"result": "ok", "distinct_sequences": 2}
+    },
+    {
+      "name": "default_page_is_two_hundred",
+      "operation": "session.events",
+      "rows": ["API-003", "API-X031"],
+      "implemented": false,
+      "request": {},
+      "expect": {"result": "ok", "effective_page": 200, "cursor_origin": "before_first_event"}
+    },
+    {
+      "name": "page_size_zero_is_invalid",
+      "operation": "session.events",
+      "rows": ["API-003"],
+      "implemented": false,
+      "limit": {"name": "events_page", "value": 0},
+      "request": {"limit": 0},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "page_size_over_limit_is_invalid",
+      "operation": "session.events",
+      "rows": ["API-003"],
+      "implemented": false,
+      "limit": {"name": "events_page", "value": 1001},
+      "request": {"limit": 1001},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "wait_budget_over_limit_is_invalid",
+      "operation": "session.events",
+      "rows": ["API-003", "API-X031"],
+      "implemented": false,
+      "limit": {"name": "events_wait_ms", "value": 20001},
+      "request": {"wait_ms": 20001},
+      "expect": {"result": "error", "error": "invalid_request"}
+    },
+    {
+      "name": "empty_wait_may_return_before_terminal",
+      "operation": "session.events",
+      "rows": ["API-003"],
+      "implemented": false,
+      "limit": {"name": "events_wait_ms", "value": 20000},
+      "given": {"lifecycle": "running", "sequences": [1]},
+      "request": {"after": 1, "wait_ms": 20000},
+      "expect": {"result": "ok", "sequences": [], "lifecycle": "running", "reader_continues": true}
+    },
+    {
+      "name": "later_attempt_sequence_space_is_offset",
+      "operation": "session.events",
+      "rows": ["AG-07", "API-003"],
+      "implemented": false,
+      "given": {"attempt_index": 1},
+      "request": {"after": 0},
+      "expect": {"result": "ok", "first_sequence_at_least": 4294967296},
+      "note": "A new delivery cursor; the stored sequence that feeds checkpoint cut hashes stays unchanged."
+    },
+    {
+      "name": "transcript_uses_highest_copy_ordered_by_position",
+      "operation": "session.events",
+      "rows": ["AG-07", "API-X031"],
+      "implemented": false,
+      "given": {"events": [
+        {"id": "text-1", "revision": 0, "sequence": 1, "position": 1},
+        {"id": "tool-1", "revision": 0, "sequence": 2, "position": 2},
+        {"id": "text-1", "revision": 1, "sequence": 3, "position": 1}
+      ]},
+      "request": {"after": 0},
+      "expect": {"result": "ok", "display_order": [{"id": "text-1", "revision": 1}, {"id": "tool-1", "revision": 0}]}
+    },
+    {
+      "name": "conversation_filter_excludes_diagnostics",
+      "operation": "session.events",
+      "rows": ["API-X031"],
+      "implemented": false,
+      "given": {"kinds": ["assistant", "status", "tool_use", "diagnostic", "tool_result", "thinking"]},
+      "request": {"view": "conversation"},
+      "expect": {"result": "ok", "kinds": ["assistant", "tool_use", "tool_result", "thinking"]}
+    },
+    {
+      "name": "cursor_from_another_view_is_rejected",
+      "operation": "session.events",
+      "rows": ["API-X031"],
+      "implemented": false,
+      "request": {"after": "conversation-cursor-1"},
+      "expect": {"result": "error", "error": "invalid_cursor"}
+    }
+  ]
+}

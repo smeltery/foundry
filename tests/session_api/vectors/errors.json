@@ -1,0 +1,42 @@
+{
+  "format": 1,
+  "wire_names": "provisional",
+  "section": "throttling-errors-and-retries",
+  "cases": [
+    {
+      "name": "rate_limit_carries_retry_delay",
+      "operation": "session.any",
+      "rows": ["API-008"],
+      "implemented": false,
+      "given": {"throttled": true},
+      "request": {},
+      "expect": {"result": "error", "error": "rate_limited", "retry_after_seconds": 5, "client_waits_seconds_at_least": 5}
+    },
+    {
+      "name": "string_and_object_error_forms_decode_alike",
+      "operation": "session.any",
+      "rows": ["API-008"],
+      "implemented": false,
+      "request": {"responses": [{"error": "not_found"}, {"error": {"type": "not_found", "message": "No such session."}}]},
+      "expect": {"result": "error", "error": "not_found", "decoded_forms": 2}
+    },
+    {
+      "name": "unkeyed_mutation_is_not_retried",
+      "operation": "session.any",
+      "rows": ["API-008"],
+      "implemented": false,
+      "given": {"first_attempt": "unavailable"},
+      "request": {"mutation": true, "idempotency_key": null},
+      "expect": {"result": "error", "error": "unavailable", "automatic_retries": 0}
+    },
+    {
+      "name": "keyed_mutation_retries_with_same_key",
+      "operation": "session.any",
+      "rows": ["API-008"],
+      "implemented": false,
+      "given": {"first_attempt": "unavailable"},
+      "request": {"mutation": true, "idempotency_key": "key-3"},
+      "expect": {"result": "replayed", "same_key": true}
+    }
+  ]
+}
