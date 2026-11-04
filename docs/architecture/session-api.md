@@ -545,7 +545,7 @@ Cancelling a suspended session with no live owner makes it `cancelled`, a
 terminal state: attempt admission, restoration and new messages are then
 refused with the typed `ContractError::Cancelled`, reported as `conflict`.
 Cancelling an exit, error or cancelled session is a no-op with
-`requested: false`. The CLI and watch map `cancelled` to exit code 130 with the
+`requested: false`. The CLI and watch map `cancelled` to its own exit code 4 with the
 text `Session cancelled`; MCP `session_get` reports `lifecycle: "cancelled"`.
 Evidence:
 [`cancel_contract.rs`](../../crates/store/tests/cancel_contract.rs)
@@ -558,7 +558,7 @@ Evidence:
 [`local_backend.rs`](../../apps/cli/tests/local_backend.rs)
 (`cli_and_mcp_report_cancel_receipts_and_the_terminal_cancelled_state`),
 [`watch.rs`](../../apps/cli/tests/watch.rs)
-(`cancelled_session_maps_to_interruption_exit_and_names_the_state`),
+(`cancelled_session_has_its_own_exit_code_and_names_the_state`),
 [`durability.rs`](../../crates/store/tests/durability.rs)
 (`cancel_only_upgrades_and_requires_suspended_completion`),
 [`control.rs`](../../crates/service/tests/control.rs)

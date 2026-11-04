@@ -250,7 +250,7 @@ fn terminal_response(session: Session) -> Result<Response, CommandError> {
             (code, session.result.clone().unwrap_or_default())
         }
         (Lifecycle::Suspended, None) => (130, "Session suspended".into()),
-        (Lifecycle::Cancelled, None) => (130, "Session cancelled".into()),
+        (Lifecycle::Cancelled, None) => (4, "Session cancelled".into()),
         _ => {
             return Err(CommandError::new(
                 "execution",
@@ -300,5 +300,41 @@ fn service_error(error: ServiceError) -> CommandError {
         ServiceError::Store(error) => CommandError::new("storage", error.to_string()),
         ServiceError::Invalid(message) => invalid(message),
         other => CommandError::new("execution", other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod terminal_tests {
+    use super::*;
+
+    fn settled(lifecycle: Lifecycle, outcome: Option<Outcome>) -> Session {
+        Session {
+            id: "session".into(),
+            prompt: "p".into(),
+            directory: "/workspace/".into(),
+            model: None,
+            lifecycle,
+            outcome,
+            result: None,
+            active_attempt_id: None,
+            version: 1,
+            metadata: Default::default(),
+        }
+    }
+
+    #[test]
+    fn terminal_lifecycles_map_to_distinct_task_exit_codes() {
+        for (lifecycle, outcome, code, text) in [
+            (Lifecycle::Exit, Some(Outcome::Success), 0, ""),
+            (Lifecycle::Exit, Some(Outcome::Failure), 1, ""),
+            (Lifecycle::Exit, Some(Outcome::ActionRequired), 3, ""),
+            (Lifecycle::Cancelled, None, 4, "Session cancelled"),
+            (Lifecycle::Suspended, None, 130, "Session suspended"),
+        ] {
+            let response = terminal_response(settled(lifecycle, outcome)).unwrap();
+            assert_eq!((response.exit_code, response.text.as_str()), (code, text));
+            assert_eq!(response.json["session"]["lifecycle"], json!(lifecycle));
+        }
+        assert!(terminal_response(settled(Lifecycle::Error, None)).is_err());
     }
 }

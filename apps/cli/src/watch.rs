@@ -82,7 +82,8 @@ impl From<StoreError> for WatchError {
 /// Each durable sequence is emitted once per invocation, including newer revisions
 /// of an existing event. Writes are flushed before advancing the in-memory cursor.
 /// Text progress uses stderr; text results and all JSONL records use stdout.
-/// Returns 0/success, 1/failure, 3/action required, 2/error, or 130/suspended.
+/// Returns 0/success, 1/failure, 3/action required, 2/error, 4/cancelled, or
+/// 130/suspended.
 /// Errors are returned to the caller without hiding database or output failures.
 pub fn watch(
     database: impl AsRef<Path>,
@@ -232,7 +233,7 @@ fn emit_result(
         (Lifecycle::Exit, Some(Outcome::ActionRequired)) => (3, "Session requires action"),
         (Lifecycle::Error, None) => (2, "Session ended with an error"),
         (Lifecycle::Suspended, None) => (130, "Session suspended"),
-        (Lifecycle::Cancelled, None) => (130, "Session cancelled"),
+        (Lifecycle::Cancelled, None) => (4, "Session cancelled"),
         _ => {
             return Err(WatchError::Invalid(
                 "inconsistent terminal session state".into(),

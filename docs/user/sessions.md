@@ -58,7 +58,9 @@ Cancelling a suspended session makes it `cancelled`. This state is terminal: the
 store refuses new attempts, restoration and new follow-up messages for it.
 Cancelling an exit, error or cancelled session changes nothing. Every cancel call
 reports a receipt with `ok`, `requested` (whether this call changed anything),
-the effective `mode` and the lifecycle `status` after the call.
+the effective `mode` and the lifecycle `status` after the call. The CLI run and
+watch commands exit with 4 for a cancelled session, distinct from 130 for a
+suspended one.
 
 After a crash, opening the database preserves its state. Explicit recovery marks
 expired attempts suspended and retains their event history. It does not replay

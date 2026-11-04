@@ -125,7 +125,7 @@ process status or event history.
 | `exit` + `action_required` | 3 | 3 | `isError: false`, `outcome: "action_required"` |
 | `error` | 2 (execution error) | 2 | `isError: false`, `lifecycle: "error"`, no outcome |
 | `suspended` | 130 | 130 | `isError: false`, `lifecycle: "suspended"`, no outcome |
-| `cancelled` | 130 | 130 | `isError: false`, `lifecycle: "cancelled"`, no outcome |
+| `cancelled` | 4 | 4 | `isError: false`, `lifecycle: "cancelled"`, no outcome |
 
 MCP `isError` reports a failed tool invocation, such as an unknown session or a
 storage error. It never reports a task outcome.
@@ -157,7 +157,7 @@ storage error. It never reports a task outcome.
   (`crates/runtime/src/coordinated/capture/terminal.rs`). A permission stop
   becomes `action_required` with `permission_action_required`
   (`crates/runtime/src/coordinated/engine_exit.rs`).
-- **Exit mapping.** `terminal_response` maps 0/1/3/130
+- **Exit mapping.** `terminal_response` maps 0/1/3/4/130
   (`apps/cli/src/runner.rs`) and `emit_result` adds 2 for `error`
   (`apps/cli/src/watch.rs`). `outcomes_map_to_task_exit_codes` in
   `apps/cli/tests/local_execution.rs` proves the **mapping only**: its fixture
