@@ -982,9 +982,16 @@ dependencies = [
  "foundry-identity",
  "foundry-service",
  "libc",
+ "rcgen",
+ "reqwest",
  "rusqlite",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde_json",
  "subtle",
  "tempfile",
+ "tokio",
+ "url",
  "zeroize",
 ]
 
