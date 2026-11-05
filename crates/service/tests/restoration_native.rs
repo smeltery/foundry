@@ -1,9 +1,10 @@
 mod restoration_native_support;
-use foundry_contracts::{Lifecycle, MessageState, context::ContextDigest};
-use foundry_service::restoration_owner::*;
+use foundry_contracts::{CancelMode, Lifecycle, MessageState, context::ContextDigest};
+use foundry_service::{ServiceError, restoration_owner::*};
 use foundry_store::{RestorePhase, Store};
 use restoration_native_support::*;
 use std::{
+    sync::atomic::Ordering,
     thread,
     time::{Duration, Instant},
 };
@@ -121,11 +122,22 @@ fn real_grant_and_acceptance_use_retained_job_and_receipt_without_second_attempt
 
 #[test]
 fn completed_runtime_cannot_be_confirmed_by_later_comparator_success() {
-    let h = Harness::new(4, "continue_quiet");
+    let h = Harness::new(GATED_COMPARATOR, "continue_quiet");
+    // close() returns only after runtime cleanup completes; only then may comparison succeed.
     h.loaded.close().unwrap();
-    thread::sleep(Duration::from_millis(180));
+    h.comparator_release.store(true, Ordering::Release);
+    // Before shutdown, a Hard cancel can only come from the owner ending service itself.
+    assert_eq!(
+        h.cancelled.recv_timeout(Duration::from_secs(10)),
+        Ok(CancelMode::Hard)
+    );
     let report = h.owner.shutdown();
-    assert!(report.operation.is_err());
+    assert!(matches!(
+        report.operation,
+        Err(ServiceError::Coordination(
+            "native runtime cleanup already started"
+        ))
+    ));
     let store = Store::open(&h.fixture.path).unwrap();
     assert_ne!(
         store
