@@ -1,10 +1,17 @@
 use super::{Result, ToolProcessError as Error, ToolProcessSpec};
+#[cfg(unix)]
+use crate::pipe_workers::POLL_INTERVAL;
 use std::{
     process::{Child, ExitStatus},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+};
+#[cfg(unix)]
+use std::{
+    thread,
+    time::{Duration, Instant},
 };
 
 pub(super) struct OwnedChild {
@@ -183,9 +190,16 @@ impl OwnedChild {
             })?;
             self.status = Some(status);
             if let Some(error) = failure {
-                let absent = unsafe { libc::kill(group, 0) } < 0
-                    && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
-                if error.raw_os_error() != Some(libc::EPERM) || !absent {
+                let probe = || {
+                    if unsafe { libc::kill(group, 0) } == 0 {
+                        None
+                    } else {
+                        std::io::Error::last_os_error().raw_os_error()
+                    }
+                };
+                if error.raw_os_error() != Some(libc::EPERM)
+                    || !group_vanishes(probe, GROUP_TEARDOWN_GRACE)
+                {
                     return Err(Error::Cleanup);
                 }
             }
@@ -197,6 +211,28 @@ impl OwnedChild {
         }
     }
 }
+
+/// Bound for the kernel to drop an exited group after its leader is reaped.
+#[cfg(unix)]
+const GROUP_TEARDOWN_GRACE: Duration = Duration::from_secs(1);
+
+/// macOS rejects group signals with EPERM while the only member is a zombie, and under
+/// load it can keep reporting the group for tens of milliseconds after that member is
+/// reaped. Accept the group as gone only once a probe reports ESRCH within `grace`.
+/// `probe` returns `None` when signal 0 is delivered, otherwise the errno; it sends no
+/// signal, so polling cannot reach a process that later reuses the released PID.
+#[cfg(unix)]
+pub(super) fn group_vanishes(mut probe: impl FnMut() -> Option<i32>, grace: Duration) -> bool {
+    let started = Instant::now();
+    loop {
+        match probe() {
+            Some(libc::ESRCH) => return true,
+            Some(libc::EPERM) if started.elapsed() < grace => thread::sleep(POLL_INTERVAL),
+            _ => return false,
+        }
+    }
+}
+
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         let _ = self.cleanup();
