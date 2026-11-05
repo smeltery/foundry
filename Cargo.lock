@@ -979,13 +979,20 @@ dependencies = [
 name = "foundry-providers"
 version = "0.1.0"
 dependencies = [
+ "foundry-identity",
+ "foundry-service",
+ "libc",
  "rcgen",
  "reqwest",
+ "rusqlite",
  "rustls",
  "rustls-platform-verifier",
  "serde_json",
+ "subtle",
+ "tempfile",
  "tokio",
  "url",
+ "zeroize",
 ]
 
 [[package]]

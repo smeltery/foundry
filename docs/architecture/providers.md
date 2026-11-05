@@ -44,10 +44,10 @@ mapping for an HTTP transport, which is itself an open decision.
 | CLI-027 | `cli.providers_connect` | Local foundation | [Connect a provider from the CLI](#connect-a-provider-from-the-cli) |
 | API-E5297A5569474 | `providers.catalog` | Local foundation | [Provider catalog and inference status](#provider-catalog-and-inference-status) |
 | API-E1BC704592670 | `providers.status` | Specified | [Provider catalog and inference status](#provider-catalog-and-inference-status) |
-| API-E12E38D9F7C28 | `credentials.list` | Specified | [Provider credentials](#provider-credentials) |
+| API-E12E38D9F7C28 | `credentials.list` | Local foundation | [Provider credentials](#provider-credentials) |
 | API-E5BEDB65EA9B9 | `credentials.configure` | Local foundation | [Provider credentials](#provider-credentials) |
-| API-EE72FDBBD3375 | `credentials.validate` | Held | [Provider credentials](#provider-credentials) |
-| API-E817CF68A9E53 | `credentials.delete` | Specified | [Provider credentials](#provider-credentials) |
+| API-EE72FDBBD3375 | `credentials.validate` | Local foundation | [Provider credentials](#provider-credentials) |
+| API-E817CF68A9E53 | `credentials.delete` | Local foundation | [Provider credentials](#provider-credentials) |
 | API-EBD6CBFF835BE | `credentials.connect_subscription` | Held | [Subscription connection](#subscription-connection) |
 | API-EFAE326F7F539 | `oauth_logins.start` | Held | [Provider OAuth logins](#provider-oauth-logins) |
 | API-E40CE908FFC7A | `oauth_logins.start_keyed` | Held | [Provider OAuth logins](#provider-oauth-logins) |
@@ -55,7 +55,7 @@ mapping for an HTTP transport, which is itself an open decision.
 | API-E2A7C9B425D67 | `oauth_logins.get` | Held | [Provider OAuth logins](#provider-oauth-logins) |
 | API-E2CBA38EEBB25 | `oauth_logins.respond` | Held | [Provider OAuth logins](#provider-oauth-logins) |
 | API-E4881077B6501 | `oauth_logins.cancel` | Held | [Provider OAuth logins](#provider-oauth-logins) |
-| API-E28E3F3BCFA6D | `accounts.check` | Held | [Account checks and provider usage](#account-checks-and-provider-usage) |
+| API-E28E3F3BCFA6D | `accounts.check` | Local foundation | [Account checks and provider usage](#account-checks-and-provider-usage) |
 | API-E7619AD9B11AD | `accounts.usage` | Held | [Account checks and provider usage](#account-checks-and-provider-usage) |
 | API-EA0E3BF6C25F6 | `models.list` | Local foundation | [Model availability, auto resolution and effort](#model-availability-auto-resolution-and-effort) |
 | AG-09 | `session.model_selection` | Local foundation | [Model availability, auto resolution and effort](#model-availability-auto-resolution-and-effort) |
@@ -85,16 +85,16 @@ purposes, never as success.
 | `unauthenticated` | 401 | Missing, invalid or expired caller credential | No authentication |
 | `budget_exhausted` | 402 | A local budget ceiling or deadline refuses the work; carries the budget ID and cause | Not implemented |
 | `quota_exhausted` | 402 | A provider account, hosted plan or billing refuses the work; carries a cause code | Not implemented; hosted billing Held D46-5 |
-| `forbidden` | 403 | Caller lacks scope, role or ownership of the account or login | Not implemented |
+| `forbidden` | 403 | Caller lacks scope, role or ownership of the account or login | `CredentialError` (provider credentials) |
 | `endpoint_not_permitted` | 403 | A loopback, LAN or tailnet endpoint without its explicit opt-in | `ConnectorError::UnsafeHost` (connector client), `EndpointError::NotPermitted` (local endpoint client) |
-| `not_found` | 404 | Provider, account, login or model is absent or not visible | Not implemented |
-| `conflict` | 409 | Key reused with a different intent; stale prompt; login not pending | Not implemented |
+| `not_found` | 404 | Provider, account, login or model is absent or not visible | `CredentialError` (provider credentials) |
+| `conflict` | 409 | Key reused with a different intent; stale prompt; login not pending | `CredentialError` (provider credentials), for a slot state an operation does not apply to |
 | `model_unavailable` | 409 | The named model exists but cannot run now | Not implemented |
 | `gone` | 410 | A keyed login's receipt survives but its result was purged | Not implemented |
-| `unsupported_provider` | 422 | The provider or credential kind cannot serve this operation | Not implemented |
+| `unsupported_provider` | 422 | The provider or credential kind cannot serve this operation | `CredentialError` (provider credentials) |
 | `rate_limited` | 429 | Caller must wait; carries a retry delay in seconds | Not implemented |
 | `endpoint_failure` | 502 | An endpoint call failed; carries one category from the table in [local and custom endpoints](#local-and-custom-endpoints) | `EndpointError::Failure` (local endpoint client) |
-| `unavailable` | 503 | Credential or login storage temporarily unavailable | Not implemented |
+| `unavailable` | 503 | Credential or login storage temporarily unavailable | `CredentialError` (provider credentials) |
 | `unsupported` | none yet | Operation or capability not built in this binary | CLI `unsupported`, exit status 2 |
 
 ### Provider descriptors
@@ -243,7 +243,7 @@ Vectors: `tests/providers/vectors/descriptors.json`.
 descriptors (kind, auth kinds, config fields, login availability, effort
 vocabulary and endpoint format, with `chat` as the local endpoint default) and
 lists them in `provider_id` order. Availability comes from an injected
-credential source; nothing is stored or read. No operation, transport or
+credential source, which the credential store provides per workspace. No operation, transport or
 authentication exposes the catalog, and `providers.status` is not implemented.
 Execution still takes its provider identity only from the explicit
 `selection.provider` string in private adapter configuration. Evidence:
@@ -275,11 +275,49 @@ Vectors: `tests/providers/vectors/credential_slots.json`.
 **Foundry today.** A private adapter configuration file holds one explicit
 credential, `api_key` with a provider and value or `none`. Links, wrong
 permissions and non-regular files never supply a credential, and errors never
-echo the value. There is no credential store, list or delete. Evidence:
+echo the value. Evidence:
 [`configuration_tests.rs`](../../apps/cli/src/runner/configuration_tests.rs)
 (`explicit_selection_and_private_values_are_preserved`,
 `links_permissions_and_nonregular_files_do_not_supply_credentials`,
 `file_and_private_value_limits_reject_without_echoing_input`).
+
+The `foundry-providers` credential store implements configure, list, validate
+and delete for API keys as a library, with several account slots per provider.
+Every slot belongs to one workspace and is invisible from others. Config names
+are checked against the provider's own descriptor, and reads return only names
+and state. Viewers only read; members manage slots they connected; owners and
+administrators manage any slot. Validation runs through an injected validator,
+and only the deterministic, offline fixture validator exists. A configured key
+leaves the store only through a handoff into the adapter's private inputs. Keys
+never appear in `Debug` output, errors or check results, and a replaced or
+deleted key is removed from the database file and its WAL.
+
+The store is its own SQLite file with its own version and application ID,
+created owner-only (0600). A link, a non-regular, shared or foreign-owned file
+or sidecar, and a foreign or newer database are refused before anything is
+written. **Keys are stored in plaintext inside that file**: there is no
+keychain or at-rest encryption, so protection rests on the file permissions
+and the directory the caller chooses. No transport, CLI command or runtime
+path uses the store yet; `f5y providers connect --token-stdin` is not wired to
+it. Evidence:
+[`credentials_lifecycle.rs`](../../crates/providers/tests/credentials_lifecycle.rs)
+(`configure_stores_key_and_returns_only_names`,
+`several_accounts_per_provider_list_in_provider_then_account_order`,
+`config_is_checked_against_and_kept_with_its_own_provider`,
+`provider_events_follow_the_state_table`,
+`delete_targets_one_slot_or_every_slot_of_the_provider`),
+[`credentials_access.rs`](../../crates/providers/tests/credentials_access.rs)
+(`members_manage_only_slots_they_connected`,
+`workspaces_never_see_or_change_each_others_slots`),
+[`credentials_secrets.rs`](../../crates/providers/tests/credentials_secrets.rs)
+(`canary_never_appears_in_debug_display_or_errors`,
+`delete_and_replace_remove_secret_material_from_disk`,
+`handoff_feeds_the_adapter_private_inputs`),
+[`credentials_checks.rs`](../../crates/providers/tests/credentials_checks.rs)
+(`fixture_validation_is_deterministic_and_saves_nothing`) and
+[`credentials_database.rs`](../../crates/providers/tests/credentials_database.rs)
+(`new_file_is_owner_only_wal_with_its_own_identity`,
+`newer_or_unversioned_credential_files_are_refused_before_wal`).
 
 **Specified.**
 
@@ -410,7 +448,13 @@ Audit rows (external `capabilities.json`, group GAP-013): API-E28E3F3BCFA6D,
 API-E7619AD9B11AD.
 Vectors: `tests/providers/vectors/accounts.json`.
 
-**Foundry today.** None.
+**Foundry today.** The credential store's `check_account` implements
+`accounts.check` against an injected validator; only the deterministic fixture
+validator exists, so no live provider is ever asked. Viewers are refused before
+any read. `accounts.usage` is not implemented. Evidence:
+[`credentials_checks.rs`](../../crates/providers/tests/credentials_checks.rs)
+(`check_reports_metadata_evidence_without_persisting_a_verdict`,
+`check_reports_missing_and_unreadable_slots_as_states`).
 
 **Held specification.** Real checks are live provider calls and wait on D46-1
 and D46-6; the `fixture` provider makes them deterministic.
