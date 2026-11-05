@@ -1,10 +1,8 @@
+mod support_lease;
 use foundry_contracts::{CancelMode, CreateSession, Lifecycle, Outcome};
 use foundry_store::Store;
 use serde_json::json;
-use std::{
-    sync::{Arc, Barrier},
-    time::Duration,
-};
+use std::sync::{Arc, Barrier};
 use tempfile::tempdir;
 
 fn request() -> CreateSession {
@@ -135,14 +133,14 @@ fn open_and_recovery_do_not_disturb_a_live_lease() {
 fn expired_owner_is_fenced_and_recovery_does_not_invent_success() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("store.db");
-    let mut owner = Store::open_with_lease(&path, Duration::from_millis(30)).unwrap();
+    let mut owner = Store::open(&path).unwrap();
     let session = owner.create(request()).unwrap();
     let stale = owner.begin_attempt(&session.id, 0).unwrap();
     owner
         .append_event(&stale, "tool", 0, "tool_started", json!({"name":"test"}))
         .unwrap();
     drop(owner);
-    std::thread::sleep(Duration::from_millis(60));
+    support_lease::expire_attempt_leases(&path, &session.id);
     let mut replacement = Store::open(&path).unwrap();
     assert_eq!(
         replacement.get(&session.id).unwrap().lifecycle,
