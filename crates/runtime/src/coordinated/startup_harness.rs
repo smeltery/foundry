@@ -3,6 +3,14 @@ use crate::{AdapterMessage, AdapterSpec, RunResult, coordinated::*};
 use foundry_contracts::{AdapterEvent, CancelMode, Lifecycle};
 use std::{path::PathBuf, process::Command, sync::mpsc, thread::JoinHandle};
 
+#[path = "../../tests/coordinated/helper_install.rs"]
+mod helper_install;
+// Each test's phase timeout decides its outcome. These bounds only detect a stuck run,
+// so they sit far above process startup on a loaded workstation.
+pub(super) const WAIT: Duration = Duration::from_secs(20);
+const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+const HELPER_TIMEOUT: Duration = Duration::from_secs(20);
+
 pub(super) struct Harness {
     pub root: PathBuf,
     pub requests: mpsc::Receiver<PersistenceRequest>,
@@ -39,17 +47,14 @@ impl Harness {
         .collect();
         let policy = helper.map(|helper| {
             use foundry_tools::host;
-            use std::os::unix::fs::PermissionsExt;
-            let path = root.join("helper");
-            if helper != "missing" {
-                let source = format!(
-                    "#!{}\nmode={helper:?}\n{}",
-                    spec.executable.display(),
-                    include_str!("../../tests/coordinated/helper.py")
-                );
-                std::fs::write(&path, source).unwrap();
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-            }
+            let path = if helper == "missing" {
+                root.join("helper")
+            } else {
+                std::fs::write(root.join("helper-mode"), helper).unwrap();
+                // Unit tests get no CARGO_TARGET_TMPDIR; install beside the test binary.
+                let binary = std::env::current_exe().unwrap();
+                helper_install::installed_helper(binary.parent().unwrap(), &spec.executable)
+            };
             TrustedToolPolicy::new(
                 path,
                 cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()).unwrap(),
@@ -61,11 +66,11 @@ impl Harness {
                     output_bytes: host::MAX_REPLY_BYTES,
                     entries: 256,
                 },
-                Duration::from_secs(1),
+                HELPER_TIMEOUT,
             )
             .unwrap()
         });
-        spec.run_timeout = Duration::from_secs(4);
+        spec.run_timeout = RUN_TIMEOUT;
         spec.cancel_timeout = Duration::from_millis(80);
         let session = Session {
             id: "s".into(),
@@ -122,16 +127,13 @@ impl Harness {
         }
     }
     pub fn event(&self) -> (CheckpointId, AdapterEvent) {
-        let request = self
-            .requests
-            .recv_timeout(Duration::from_secs(2))
-            .unwrap_or_else(|failure| {
-                let detail = match self.result.try_recv() {
-                    Ok(Err(error)) => format!("{error:?}"),
-                    _ => "no runtime failure available".into(),
-                };
-                panic!("expected persistence event: {failure:?}; {detail}");
-            });
+        let request = self.requests.recv_timeout(WAIT).unwrap_or_else(|failure| {
+            let detail = match self.result.try_recv() {
+                Ok(Err(error)) => format!("{error:?}"),
+                _ => "no runtime failure available".into(),
+            };
+            panic!("expected persistence event: {failure:?}; {detail}");
+        });
         match request {
             PersistenceRequest::Event { checkpoint, event } => (checkpoint, event),
             _ => panic!("unexpected tool authority"),
@@ -151,15 +153,11 @@ impl Harness {
         let CaptureRequest::ActivateAdmission {
             correlation,
             message_ack,
-        } = self
-            .owner
-            .requests
-            .recv_timeout(Duration::from_secs(2))
-            .unwrap()
+        } = self.owner.requests.recv_timeout(WAIT).unwrap()
         else {
             panic!("expected activation")
         };
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Instant::now() + WAIT;
         while self.commands().len() < 2 {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(5));
@@ -196,7 +194,7 @@ impl Harness {
         }
     }
     pub fn finish_owned(&mut self) -> Result<engine::EngineExit, RuntimeError> {
-        let result = self.result.recv_timeout(Duration::from_secs(2)).unwrap();
+        let result = self.result.recv_timeout(WAIT).unwrap();
         self.worker.take().unwrap().join().unwrap();
         result
     }

@@ -136,3 +136,56 @@ time.sleep(10)
     assert!(process.child.try_wait().unwrap().is_some());
     process.stop().unwrap();
 }
+
+/// Spawns an adapter that exits at once and leaves it an unreaped zombie.
+fn exited_adapter(fixture: &Fixture) -> Process {
+    let process = fixture.spawn("");
+    let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+    let waited = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            process.child.id(),
+            &mut info,
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(waited, 0);
+    process
+}
+
+#[test]
+fn exited_adapter_waits_out_group_teardown_lag_but_not_a_live_member() {
+    // macOS can keep reporting a reaped zombie's group with EPERM before ESRCH.
+    let fixture = Fixture::new();
+    let mut process = exited_adapter(&fixture);
+    let mut probes = [libc::EPERM, libc::EPERM, libc::ESRCH]
+        .into_iter()
+        .map(Some);
+    assert!(
+        process
+            .reap_exiting_group(|| probes.next().unwrap())
+            .unwrap()
+    );
+    assert!(process.stopped);
+    process.stop().unwrap();
+    // A signalable member after the reap means the group is not proven gone.
+    let mut process = exited_adapter(&fixture);
+    let mut probes = [Some(libc::EPERM), None].into_iter();
+    assert!(
+        !process
+            .reap_exiting_group(|| probes.next().unwrap())
+            .unwrap()
+    );
+}
+
+#[test]
+fn exited_adapter_group_stop_reaches_the_reap_probe() {
+    // Only checks that stop runs the EPERM, reap and probe path with the real signal
+    // probe; whether macOS lags here depends on load, so it cannot prove lag handling.
+    let fixture = Fixture::new();
+    for _ in 0..3 {
+        let mut process = exited_adapter(&fixture);
+        process.stop().unwrap();
+        assert!(process.child.try_wait().unwrap().is_some());
+    }
+}
