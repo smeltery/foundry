@@ -215,9 +215,10 @@ tool profile and completion criteria are read back from the stored request.
 Every `exit` terminal writes one `completion_decisions` row in its transaction
 (see the [completion policy](completion-policy.md)); outcomes stored before that
 have no row and are not rewritten. Event writes and delivery reads use the event
-delivery fields below. No store API reads or writes the other new columns and
-tables yet. Lineage columns carry no
-foreign key while delete semantics are undecided.
+delivery fields below. Archive, rename and tag operations write the archive flag,
+title and `session_tags`. No store
+API reads or writes the other new columns and tables yet. Lineage columns carry
+no foreign key; a tombstoned session row stays, so lineage never dangles.
 
 ### Event delivery fields
 
@@ -239,6 +240,20 @@ same values whenever it runs. The delivery sequence is
 the stored sequence during the first attempt. Ordinals above 2^32 and sequences at
 or above 2^32 are out of range and fail rather than wrap. Stamping updates only
 the two new columns, so checkpoint cut hashes are unchanged.
+
+## Tombstone delete
+
+Schema version 13 adds one nullable column, `sessions.deleted_ms`. A set value
+hides the session from every read and list. `delete_session` refuses a session
+with a live attempt or restore owner. Otherwise, in one transaction, it clears
+the prompt, result and title in the stored body, replaces the stored create
+request with `{}`, deletes the session's tags and empties message text and event
+data. Identity, lifecycle, outcome, version, origin, lineage and the idempotency
+key stay. Attempts, tool receipts, checkpoints and their payloads, witnesses,
+continuation records and completion decisions are not changed, so stored cut
+hashes and digests and the witness integrity read stay verifiable. A cut can no
+longer be recomputed from the dropped content. Archive, rename and tag writes
+never change `Session::version`.
 
 ## Recovery limits
 

@@ -317,6 +317,14 @@ isolation. All tests remain counted and every owned file retains the 400-line
 limit. This allocation does not establish full command conformance or implement
 remote authentication, native services, installation or release packaging.
 
+Session archive, rename, tags and tombstone delete (NIC-92) raise the store
+allocation by 796 lines to 18,000 and the service allocation by 292 lines to
+17,820, both at their measured totals. The store share is a 170-line module, a
+9-line schema-13 migration, 3 net lines of read and list wiring and 614 test lines
+for metadata, concurrent writers, tombstone retention and the migration; the
+service share is an 85-line module, its registration line and a 206-line test.
+Every file stays under 400 lines.
+
 ## Failure handling
 
 CI provisioning has a 150-line allocation for its reviewed 128-line installer

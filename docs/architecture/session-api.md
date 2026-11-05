@@ -69,13 +69,13 @@ the provisional mapping for an HTTP transport, which is itself an open decision.
 | API-X032 | `session.fork` | Specified | [Retry, fork, rewind and compact](#retry-fork-rewind-and-compact) |
 | API-X042 | `session.rewind` | Specified | [Retry, fork, rewind and compact](#retry-fork-rewind-and-compact) |
 | API-X029 | `session.compact` | Held | [Retry, fork, rewind and compact](#retry-fork-rewind-and-compact) |
-| API-X025 | `session.archive` | Specified | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
-| API-X051 | `session.unarchive` | Specified | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
-| API-X024 | `session.delete` | Held | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
-| API-X040 | `session.rename` | Specified | [Title, tags and project grouping](#title-tags-and-project-grouping) |
-| API-X046 | `session.tags.list` | Specified | [Title, tags and project grouping](#title-tags-and-project-grouping) |
-| API-X047 | `session.tags.append` | Specified | [Title, tags and project grouping](#title-tags-and-project-grouping) |
-| API-X048 | `session.tags.replace` | Specified | [Title, tags and project grouping](#title-tags-and-project-grouping) |
+| API-X025 | `session.archive` | Local foundation | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
+| API-X051 | `session.unarchive` | Local foundation | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
+| API-X024 | `session.delete` | Local foundation | [Archive, unarchive and delete](#archive-unarchive-and-delete) |
+| API-X040 | `session.rename` | Local foundation | [Title, tags and project grouping](#title-tags-and-project-grouping) |
+| API-X046 | `session.tags.list` | Local foundation | [Title, tags and project grouping](#title-tags-and-project-grouping) |
+| API-X047 | `session.tags.append` | Local foundation | [Title, tags and project grouping](#title-tags-and-project-grouping) |
+| API-X048 | `session.tags.replace` | Local foundation | [Title, tags and project grouping](#title-tags-and-project-grouping) |
 | API-X049 | `session.tags.replace` | Specified | [Title, tags and project grouping](#title-tags-and-project-grouping) |
 | API-X039 | `session.move_project` | Held | [Title, tags and project grouping](#title-tags-and-project-grouping) |
 | API-006 | attachments and links | Held | [Attachments and shared links](#attachments-and-shared-links) |
@@ -696,7 +696,30 @@ not as a public operation. Evidence:
 Audit rows (external `capabilities.json`, group GAP-005): API-X025, API-X051, API-X024.
 Vectors: `tests/session_api/vectors/retention.json`.
 
-**Foundry today.** None.
+**Foundry today.** Store and service operations only; no CLI, MCP or HTTP
+surface exposes them yet. `Service::archive` and `Service::unarchive`
+(`crates/service/src/session_meta.rs`) set the archive flag and return the
+session. They are repeatable and never change lifecycle, outcome, attempts or
+`Session::version`, so they are accepted while an attempt runs and do not
+disturb its fence or an expected-version admission. `Service::delete` with
+`DeleteMode::Preserve` archives. `DeleteMode::Tombstone` follows the approved
+decision (2026-11-04, NIC-92): a session with a live attempt or restore owner is
+refused with `conflict` (the specified `not_terminal` class is not distinct
+yet). Otherwise one transaction (`Store::delete_session`,
+`crates/store/src/session_meta.rs`) hides the session from every read and list
+and drops its content: prompt, result, title, stored create request, tags,
+message text and event data. The session row keeps its identity, lifecycle,
+outcome, version, origin, lineage and idempotency key, and attempts, tool
+receipts, checkpoints, witnesses, continuation and completion records are not
+changed, so their digests and the witness integrity read
+(`read_checkpoint_witness`) stay verifiable. A later create with the same
+idempotency key reports `conflict`; deleting again reports `not_found`. Evidence:
+`crates/store/tests/session_meta.rs`, `crates/store/tests/session_meta_delete.rs`
+and `crates/service/tests/session_meta.rs`. Private checkpoint payloads are kept: the
+schema requires a non-empty payload and its integrity read needs the bytes, so
+dropping them needs a separate decision. Unarchive does not touch project
+grouping, which does not exist yet; usage settlement and retention protections
+(`delete_blocked`) and delete timeouts are not implemented.
 
 **Specified.**
 
@@ -707,7 +730,7 @@ Vectors: `tests/session_api/vectors/retention.json`.
 - Delete removes the session permanently, or archives it when the caller asks to
   preserve it. Deletion is `delete_blocked` while usage awaits settlement or
   history must be retained, and a timed-out deletion rolls back and reports
-  `unavailable`. Held: hard delete versus tombstone is an open decision.
+  `unavailable`. Delete is a tombstone (decided 2026-11-04).
 - None of these change lifecycle, outcome or attempt history.
 
 ### Title, tags and project grouping
@@ -716,7 +739,18 @@ Audit rows (external `capabilities.json`, group GAP-005): API-X040, API-X046,
 API-X047, API-X048, API-X049, API-X039.
 Vectors: `tests/session_api/vectors/metadata.json`.
 
-**Foundry today.** None.
+**Foundry today.** Store and service operations only, with no CLI, MCP or HTTP
+surface yet (`crates/service/src/session_meta.rs`). `Service::rename` stores a
+title of 1 to 200 characters, or clears it for an empty or absent title, and
+reports the stored or derived title. `Service::tags`, `append_tags` and
+`replace_tags` read and write `session_tags` and return the stored list; append
+is an ordered union, replace drops duplicates and an empty list clears. Each
+write is one IMMEDIATE store transaction, so concurrent patches from separate
+connections serialize and none is lost. None of these changes lifecycle or
+`Session::version`, and none waits for a running turn. The second replace wire
+form (API-X049) has no transport yet. Evidence:
+`crates/store/tests/session_meta.rs`, `crates/store/tests/session_meta_races.rs`
+and `crates/service/tests/session_meta.rs`.
 
 **Specified.**
 
@@ -824,7 +858,8 @@ These need a user or owner decision before the held parts are built:
    NIC-36 for authentication).
 2. Resolved 2026-11-04: cancelling a suspended session makes it the terminal
    `cancelled` state (implemented).
-3. Delete semantics: hard delete or tombstone, and the retention protections.
+3. Resolved 2026-11-04: delete is a tombstone (implemented). Retention
+   protections and whether private checkpoint payloads are dropped remain open.
 4. Create idempotency equivalence: the complete-request comparison Foundry uses
    today, or prompt-only conflict.
 5. Whether create starts execution or keeps Foundry's queued admission, and

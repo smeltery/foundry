@@ -170,7 +170,7 @@ fn origin_columns(origin: Option<&SessionOrigin>) -> (Option<&'static str>, Opti
 fn read_associations(connection: &Connection, session_id: &str) -> Result<SessionAssociations> {
     let creation: Option<String> = connection
         .query_row(
-            "SELECT creation FROM sessions WHERE id=?1",
+            "SELECT creation FROM sessions WHERE id=?1 AND deleted_ms IS NULL",
             [session_id],
             |row| row.get(0),
         )
