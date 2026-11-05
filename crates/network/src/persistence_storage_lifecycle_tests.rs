@@ -306,6 +306,7 @@ fn wal_index_locked_elsewhere(shm: &Path) -> bool {
     probe.l_whence = libc::SEEK_SET as _;
     probe.l_start = 120;
     probe.l_len = 9;
+    let unlocked: libc::c_short = libc::F_UNLCK as _;
     // The child calls only async-signal-safe functions before `_exit`.
     let child = unsafe { libc::fork() };
     if child == 0 {
@@ -313,7 +314,7 @@ fn wal_index_locked_elsewhere(shm: &Path) -> bool {
             let fd = libc::open(path.as_ptr(), libc::O_RDWR | libc::O_NOFOLLOW);
             let code = if fd < 0 || libc::fcntl(fd, libc::F_GETLK, &mut probe) != 0 {
                 2
-            } else if i32::from(probe.l_type) == i32::from(libc::F_UNLCK) {
+            } else if probe.l_type == unlocked {
                 1
             } else {
                 0
