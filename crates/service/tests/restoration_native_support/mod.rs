@@ -9,21 +9,29 @@ use foundry_runtime::{
 use foundry_service::{native_validation::*, restoration_owner::*};
 use foundry_store::{RestoreBaselineSnapshot, witness::LogicalRecord};
 use std::{
-    sync::{Arc, mpsc::Receiver},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::Receiver,
+    },
     thread,
     time::{Duration, Instant},
 };
 pub use support::{Fixture, receive};
 
+/// Comparator mode that holds its successful result until the test releases it.
+pub const GATED_COMPARATOR: u8 = 4;
+
 // Test-only comparator: validates a transport fixture, never real native history.
-pub struct Comparator(pub u8);
+pub struct Comparator(pub u8, pub Arc<AtomicBool>);
 impl NativeComparator for Comparator {
     fn compare(
         &self,
         job: &NativeValidationJob,
     ) -> Result<NativeComparison, NativeValidationFailure> {
-        if self.0 == 4 {
-            thread::sleep(Duration::from_millis(100));
+        // Also stop on cancellation, so dropping an unreleased owner cannot hang.
+        while self.0 == GATED_COMPARATOR && !self.1.load(Ordering::Acquire) && !job.cancelled() {
+            thread::sleep(Duration::from_millis(2));
         }
         if self.0 == 1 {
             return Err(NativeValidationFailure::Mapping);
@@ -94,6 +102,7 @@ pub struct Harness {
     pub loaded: LoadedProcess,
     pub cancelled: Receiver<CancelMode>,
     pub binding: ContinuationBinding,
+    pub comparator_release: Arc<AtomicBool>,
 }
 impl Harness {
     pub fn new(comparator: u8, mode: &str) -> Self {
@@ -137,12 +146,19 @@ impl Harness {
         let profile = ContextDigest::of(b"fixture-profile");
         let baseline = origin(&snapshot, profile);
         let baseline_copy = OriginIdentity::decode(&baseline.encode().unwrap()).unwrap();
+        let comparator_release = Arc::new(AtomicBool::new(false));
+        // The gated mode is ordered by its release, so its deadline must not win first.
+        let timeout = if comparator == GATED_COMPARATOR {
+            Duration::from_secs(30)
+        } else {
+            Duration::from_millis(300)
+        };
         owner
             .prepare_native(
                 NativeValidatorRegistration {
                     identity: ContextDigest::of(b"fixture-registration"),
-                    timeout: Duration::from_millis(300),
-                    comparator: Arc::new(Comparator(comparator)),
+                    timeout,
+                    comparator: Arc::new(Comparator(comparator, comparator_release.clone())),
                 },
                 NativeExpectations {
                     profile_digest: profile,
@@ -211,6 +227,7 @@ impl Harness {
                 instance_id,
                 baseline,
             },
+            comparator_release,
         }
     }
     pub fn validated(&mut self) -> ContextDigest {
