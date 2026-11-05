@@ -104,7 +104,9 @@ fn the_settlement_time_fixes_the_day() {
         .reserve_attempt(budget, money("1"), attempt("late"))
         .unwrap();
     clock.set(at("2026-01-02") + 1);
-    reservation.commit(money("0.4")).unwrap();
+    reservation
+        .commit_usage(money("0.4"), Usage::default())
+        .unwrap();
     let range = window("2026-01-01", "2026-01-03");
     let report = store.usage().daily(range, currency()).unwrap();
     assert_eq!(report.daily.len(), 1);
@@ -198,8 +200,13 @@ fn a_failed_settlement_writes_no_usage() {
         .reserve_attempt(budget, money("1"), attempt("a"))
         .unwrap();
     let tokens = Amount::from_atoms(CostUnit::InputTokens, 1).unwrap();
-    let refused = reservation.commit(tokens).unwrap_err();
-    assert_eq!(refused.class(), "invalid_request");
+    let refused = reservation.commit_usage(tokens, calls(1, 0)).unwrap_err();
+    assert_eq!(refused.to_string(), "invalid_request: unit");
+    // A metered call must report its counts, so a plain nonzero commit is
+    // refused before anything is settled.
+    let uncounted = reservation.commit(money("0.6")).unwrap_err();
+    assert_eq!(uncounted.to_string(), "invalid_request: usage");
+    assert_eq!(store.snapshot(budget).unwrap().reserved, money("1"));
     let range = window("2026-01-01", "2026-01-02");
     assert!(
         store
@@ -209,7 +216,7 @@ fn a_failed_settlement_writes_no_usage() {
             .is_empty()
     );
     // The reservation stayed open; the corrected retry writes exactly one row.
-    reservation.commit(money("0.6")).unwrap();
+    reservation.commit_usage(money("0.6"), calls(1, 0)).unwrap();
     let report = store.usage().daily(range, currency()).unwrap();
     assert_eq!(report.total.settlements, 1);
     assert_eq!(

@@ -2,8 +2,10 @@
 //! read-only reports over them (daily consumption, totals grouped by session,
 //! user, account or attempt, and metric time series).
 //!
-//! A reservation made with [`crate::BudgetStore::reserve_attempt`] carries its
-//! [`Attempt`]. Settling it, by commit, release or drop, writes the usage row in
+//! A reservation made with [`crate::BudgetStore::reserve_attempt`] persists its
+//! [`Attempt`] beside the reservation row until it settles, so even an orphaned
+//! reservation still names its attempt. Settling it, by `commit_usage`,
+//! release or drop, writes the usage row in
 //! the same `BEGIN IMMEDIATE` transaction that commits the ledger, with the
 //! committed amount as the cost and the settlement time as the day. Reports
 //! therefore always agree with `committed` spend: a dropped reservation is

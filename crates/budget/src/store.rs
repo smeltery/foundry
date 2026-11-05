@@ -12,7 +12,12 @@
 //! Known limitations:
 //! - A reservation left open by a crash, or by a drop whose settlement failed,
 //!   stays counted against its ceilings. That refuses spend rather than
-//!   allowing it, but there is no API yet to reconcile such reservations.
+//!   allowing it, but there is no API yet to reconcile such reservations. A
+//!   metered reservation keeps its attempt persisted beside it, so a later
+//!   reconcile can still write its usage row.
+//! - A metered settlement whose usage row cannot be written fails as a whole,
+//!   so the reservation stays open and counted (fail-closed), as for any other
+//!   failed settlement.
 //! - Every operation, including the settlement a dropped [`Reservation`] runs,
 //!   can block for up to the 30-second busy timeout while another connection
 //!   holds the write lock.
@@ -213,9 +218,19 @@ impl BudgetStore {
             }
             ledger::reserve(&mut chain, amount, now_ms)?;
             database::save(transaction, &chain)?;
-            database::insert_reservation(transaction, budget, amount.atoms())
+            let id = database::insert_reservation(transaction, budget, amount.atoms())?;
+            if let Some(attempt) = &attempt {
+                usage::database::insert_attempt(transaction, id, attempt)?;
+            }
+            Ok(id)
         })?;
-        Ok(Reservation::new(self.clone(), id, budget, amount, attempt))
+        Ok(Reservation::new(
+            self.clone(),
+            id,
+            budget,
+            amount,
+            attempt.is_some(),
+        ))
     }
 
     pub fn snapshot(&self, budget: BudgetId) -> Result<BudgetSnapshot, BudgetError> {
@@ -236,23 +251,33 @@ impl BudgetStore {
     }
 
     /// Commits `actual` for the reservation and releases the rest along the chain.
-    /// A metered reservation also writes its usage row, costed at `actual` and
-    /// dated now, in the same transaction.
+    /// A metered reservation also writes its usage row, from the attempt
+    /// persisted with it, costed at `actual` and dated now, in the same
+    /// transaction. A reservation that is already gone was settled before, so
+    /// it is `conflict`.
     pub(crate) fn settle(
         &self,
         id: ReservationId,
         actual: Amount,
-        metered: Option<(&Attempt, Usage)>,
+        usage: Usage,
     ) -> Result<Settlement, BudgetError> {
         self.write(|transaction, now_ms| {
-            let (budget, reserved_atoms) = database::take_reservation(transaction, id)?;
+            let attempt = usage::database::take_attempt(transaction, id)?;
+            let (budget, reserved_atoms) = match database::take_reservation(transaction, id) {
+                Err(BudgetError::NotFound { .. }) => {
+                    return Err(BudgetError::Conflict {
+                        what: "reservation",
+                    });
+                }
+                taken => taken?,
+            };
             let mut chain = database::chain(transaction, budget)?;
             if chain[0].unit != actual.unit() {
                 return Err(BudgetError::invalid("unit"));
             }
             let overrun = ledger::settle(&mut chain, reserved_atoms, actual)?;
             database::save(transaction, &chain)?;
-            if let Some((attempt, usage)) = metered {
+            if let Some(attempt) = &attempt {
                 usage::database::insert(transaction, attempt, usage, actual, now_ms)?;
             }
             let unit = actual.unit();

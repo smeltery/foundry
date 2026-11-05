@@ -12,12 +12,14 @@ use crate::amount::Amount;
 use crate::database::{Storage, unit_columns, unit_from};
 use crate::error::BudgetError;
 use crate::price::Usage;
+use crate::store::ReservationId;
 use crate::usage::calendar::Window;
 use crate::usage::record::Attempt;
 use crate::usage::report::Stored;
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
-/// Schema step 2: one usage row per metered settlement.
+/// Schema step 2: one usage row per metered settlement, and the attempt of
+/// each open metered reservation.
 pub(crate) const SCHEMA_STEP: &str = "
 CREATE TABLE usage_records (
     id INTEGER PRIMARY KEY,
@@ -36,7 +38,73 @@ CREATE TABLE usage_records (
     settled_at_ms INTEGER NOT NULL
 );
 CREATE INDEX usage_records_by_time ON usage_records (settled_at_ms, id);
+CREATE TABLE reservation_attempts (
+    reservation INTEGER PRIMARY KEY REFERENCES reservations(id),
+    attempt_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    account_key TEXT NOT NULL,
+    model TEXT NOT NULL,
+    session_id TEXT,
+    user_id TEXT
+);
 ";
+
+const ATTEMPT_COLUMNS: &str = "attempt_id, provider_id, account_key, model, session_id, user_id";
+
+/// Persists the attempt of an open metered reservation, in the reserving
+/// transaction, so an orphaned reservation still names its attempt.
+pub(crate) fn insert_attempt(
+    connection: &Connection,
+    reservation: ReservationId,
+    attempt: &Attempt,
+) -> Result<(), BudgetError> {
+    connection
+        .execute(
+            &format!(
+                "INSERT INTO reservation_attempts (reservation, {ATTEMPT_COLUMNS})
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+            ),
+            params![
+                reservation.get_sql(),
+                attempt.attempt_id,
+                attempt.provider_id,
+                attempt.account_key,
+                attempt.model,
+                attempt.session_id,
+                attempt.user_id,
+            ],
+        )
+        .storage()?;
+    Ok(())
+}
+
+/// Removes and returns the attempt persisted for `reservation`; `None` for an
+/// unmetered reservation. Runs before the reservation row itself is removed.
+pub(crate) fn take_attempt(
+    connection: &Connection,
+    reservation: ReservationId,
+) -> Result<Option<Attempt>, BudgetError> {
+    connection
+        .query_row(
+            &format!(
+                "DELETE FROM reservation_attempts WHERE reservation = ?1
+                 RETURNING {ATTEMPT_COLUMNS}"
+            ),
+            [reservation.get_sql()],
+            |row| {
+                Ok(Attempt {
+                    attempt_id: row.get(0)?,
+                    provider_id: row.get(1)?,
+                    account_key: row.get(2)?,
+                    model: row.get(3)?,
+                    session_id: row.get(4)?,
+                    user_id: row.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .storage()
+}
 
 const COLUMNS: &str = "attempt_id, provider_id, account_key, model, session_id, user_id,
                        input_tokens, output_tokens, compute_ms, unit, currency, cost,
