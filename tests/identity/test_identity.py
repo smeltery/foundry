@@ -18,11 +18,11 @@ class IdentityVectorTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.directory = self.root / 'tests/identity'
         shutil.copytree(HERE, self.directory, ignore=shutil.ignore_patterns('__pycache__'))
-        document = vectors.ROOT / 'docs/architecture/identity.md'
         (self.root / 'docs/architecture').mkdir(parents=True)
         self.document = self.root / 'docs/architecture/identity.md'
-        shutil.copy(document, self.document)
+        shutil.copy(vectors.ROOT / 'docs/architecture/identity.md', self.document)
         shutil.copytree(vectors.ROOT / 'apps/cli/tests', self.root / 'apps/cli/tests')
+        shutil.copytree(vectors.ROOT / 'crates/identity/tests', self.root / 'crates/identity/tests')
         self.catalog = vectors.read_json(self.directory / 'catalog.json')
 
     def load(self, name):
