@@ -2,3 +2,4 @@
 
 pub mod authz;
 pub mod network_policy;
+pub mod store;
