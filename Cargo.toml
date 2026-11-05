@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/cli", "crates/contracts", "crates/store", "crates/runtime", "crates/mcp", "crates/service", "crates/network", "crates/connectors", "crates/tools"]
+members = ["apps/cli", "crates/contracts", "crates/store", "crates/runtime", "crates/mcp", "crates/service", "crates/network", "crates/connectors", "crates/tools", "crates/identity", "crates/providers", "crates/budget"]
 resolver = "3"
 exclude = ["vendor/netwatch"]
 

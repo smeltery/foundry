@@ -8,7 +8,8 @@ import re
 import subprocess
 
 GROUPS = ("rust", "dependencies", "python", "adapter", "integration", "mcp-sdk", "docs", "hygiene")
-CRATES = {"contracts", "store", "runtime", "mcp", "service", "network", "connectors", "tools"}
+CRATES = {"contracts", "store", "runtime", "mcp", "service", "network", "connectors", "tools",
+          "identity", "providers", "budget"}
 SHARED = (".github/", ".flox/", "scripts/", "tests/", "vendor/", "crates/contracts/")
 # Groups that finish in a minute or two share one runner instead of each paying for setup.
 DEDICATED = ("rust", "integration")

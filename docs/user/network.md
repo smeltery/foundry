@@ -56,8 +56,10 @@ calls do not inherit root `--output-format` or database options.
 `send` preserves message words and repeated `--file` paths for its future backend.
 An omitted message or sole `-` represents stdin input; the shell does not read it
 or open attachments. Explicit blank message words are rejected. `--fyi` and
-`--notify` conflict. `approve` and `reject` require IDs or `--all` at dispatch;
-IDs and `--all` may coexist. Parsing these requests does not settle messages.
+`--notify` conflict. `approve` and `reject` parse without IDs or `--all`, but
+that empty selection fails before any backend request with `Select message IDs
+or --all` and exit status 2. IDs and `--all` may coexist. Parsing these requests
+does not settle messages.
 
 `invite --hours` defaults to 24. `listen --as` defaults to `agent` and `--wait`
 to 600; zero remains a valid requested wait. These are parsed values, not evidence
