@@ -293,3 +293,63 @@ fn observed_main_database_disappearance_cannot_create_a_replacement() {
     assert!(!path.exists());
     assert_eq!(fs::read(old).unwrap(), b"original");
 }
+
+/// Whether another process sees any lock on SQLite's WAL-index lock bytes
+/// (unix VFS: eight slots from offset 120, then the dead-man switch at 128).
+/// POSIX locks belong to a process, so only a separate process can observe
+/// them; the forked child opens the file without touching this process's.
+fn wal_index_locked_elsewhere(shm: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(shm.as_os_str().as_bytes()).unwrap();
+    let mut probe: libc::flock = unsafe { std::mem::zeroed() };
+    probe.l_type = libc::F_WRLCK as _;
+    probe.l_whence = libc::SEEK_SET as _;
+    probe.l_start = 120;
+    probe.l_len = 9;
+    let unlocked: libc::c_short = libc::F_UNLCK as _;
+    // The child calls only async-signal-safe functions before `_exit`.
+    let child = unsafe { libc::fork() };
+    if child == 0 {
+        unsafe {
+            let fd = libc::open(path.as_ptr(), libc::O_RDWR | libc::O_NOFOLLOW);
+            let code = if fd < 0 || libc::fcntl(fd, libc::F_GETLK, &mut probe) != 0 {
+                2
+            } else if probe.l_type == unlocked {
+                1
+            } else {
+                0
+            };
+            libc::_exit(code)
+        }
+    }
+    assert!(child > 0, "fork lock probe");
+    let mut status = 0;
+    assert_eq!(unsafe { libc::waitpid(child, &mut status, 0) }, child);
+    assert!(libc::WIFEXITED(status), "lock probe exited abnormally");
+    match libc::WEXITSTATUS(status) {
+        0 => true,
+        1 => false,
+        _ => panic!("lock probe could not inspect the WAL index"),
+    }
+}
+#[test]
+fn check_keeps_sqlite_wal_index_locks_held_by_this_process() {
+    let root = Root::new();
+    let store = Protection::open_named(&root.0, "wal.sqlite3", OpenMode::CreateOrOpen).unwrap();
+    let connection = Connection::open(store.path()).unwrap();
+    connection
+        .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE sample(value INTEGER); BEGIN")
+        .unwrap();
+    // A live read transaction holds a read-mark slot besides the dead-man switch.
+    let _: i64 = connection
+        .query_row("SELECT count(*) FROM sample", [], |row| row.get(0))
+        .unwrap();
+    let shm = root.0.join("wal.sqlite3-shm");
+    assert!(wal_index_locked_elsewhere(&shm));
+    store.check().unwrap();
+    assert!(
+        wal_index_locked_elsewhere(&shm),
+        "protection check released SQLite's WAL-index locks"
+    );
+    connection.execute_batch("COMMIT").unwrap();
+}
