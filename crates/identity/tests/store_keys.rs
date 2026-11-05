@@ -41,22 +41,30 @@ fn issued_key_authenticates_as_its_service_principal_and_workspace() {
 
 #[test]
 fn listing_shows_the_display_prefix_and_state_within_one_workspace() {
-    let (store, _) = store();
+    let (store, clock) = store();
+    // `first` and `second` share a millisecond, so issue order decides; `third`
+    // is later, so its time does.
     let first = store.issue_key(&who("svc-a"), &ws("ws-a"), []).unwrap();
     let second = store.issue_key(&who("svc-b"), &ws("ws-a"), []).unwrap();
-    store.issue_key(&who("svc-c"), &ws("ws-b"), []).unwrap();
+    clock.advance(5);
+    let third = store.issue_key(&who("svc-c"), &ws("ws-a"), []).unwrap();
+    store.issue_key(&who("svc-d"), &ws("ws-b"), []).unwrap();
     store
         .issue_login(&who("user-a"), &ws("ws-a"), [], HOUR)
         .unwrap();
     assert!(store.revoke_key(&ws("ws-a"), &first.record.prefix).unwrap());
 
     let keys = store.list_keys(&ws("ws-a")).unwrap();
-    let listed: Vec<_> = keys.iter().map(|key| (&key.prefix, key.state)).collect();
+    let listed: Vec<_> = keys
+        .iter()
+        .map(|key| (&key.prefix, key.state, key.created_ms))
+        .collect();
     assert_eq!(
         listed,
         [
-            (&first.record.prefix, CredentialState::Revoked),
-            (&second.record.prefix, CredentialState::Active),
+            (&first.record.prefix, CredentialState::Revoked, 0),
+            (&second.record.prefix, CredentialState::Active, 0),
+            (&third.record.prefix, CredentialState::Active, 5),
         ]
     );
     assert!(first.record.prefix.starts_with("key_"));

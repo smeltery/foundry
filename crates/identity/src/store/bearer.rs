@@ -105,7 +105,7 @@ fn record_from_row(
 
 /// The record the presented text proves possession of, in any state. Unknown
 /// or non-matching text is `Unauthenticated`.
-fn verify(
+pub(super) fn verify(
     connection: &Connection,
     presented: &str,
     now_ms: u64,
@@ -153,13 +153,14 @@ impl CredentialStore {
         })
     }
 
-    /// Every scoped key bound to `workspace`, oldest first, in any state.
+    /// Every scoped key bound to `workspace`, oldest first, in any state. Keys
+    /// issued in the same millisecond keep their insertion order.
     pub fn list_keys(&self, workspace: &WorkspaceId) -> Result<Vec<CredentialRecord>, StoreError> {
         self.read(|transaction, now_ms| {
             let mut statement = transaction
                 .prepare_cached(&format!(
                     "SELECT {COLUMNS} FROM credentials WHERE workspace = ?1 AND kind = ?2
-                     ORDER BY created_ms, prefix"
+                     ORDER BY created_ms, sequence"
                 ))
                 .storage()?;
             let mut rows = statement

@@ -1,15 +1,19 @@
-//! Pairing codes: single use, expiry, attempt limits and concurrent claims
-//! through separate connections.
+//! Pairing codes: single use, expiry, attempt limits, digest erasure and
+//! concurrent claims through separate connections.
+use std::path::Path;
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
-use foundry_identity::authz::{
-    Credential, CredentialKind, CredentialState, Principal, PrincipalId, WorkspaceId,
+use foundry_identity::authz::{PrincipalId, WorkspaceId};
+use foundry_identity::store::{
+    CredentialStore, ManualClock, PAIRING_MAX_ATTEMPTS, PAIRING_MAX_LIFETIME, PairingState,
+    StoreError,
 };
-use foundry_identity::store::{CredentialStore, ManualClock, PairingState, StoreError};
+use rusqlite::Connection;
 
 const WINDOW: Duration = Duration::from_secs(600);
+const HOUR: Duration = Duration::from_secs(3600);
 
 fn ws(id: &str) -> WorkspaceId {
     WorkspaceId::new(id)
@@ -19,12 +23,12 @@ fn who(id: &str) -> PrincipalId {
     PrincipalId::new(id)
 }
 
-fn caller(kind: CredentialKind, user: &str, workspace: &str) -> Principal {
-    Principal::new(who(user), Credential::new(kind, ws(workspace)))
-}
-
-fn login(user: &str, workspace: &str) -> Principal {
-    caller(CredentialKind::LoginGrant, user, workspace)
+/// Presentable text of a fresh login for `user` in `workspace`.
+fn login(store: &CredentialStore, user: &str, workspace: &str) -> String {
+    let issued = store
+        .issue_login(&who(user), &ws(workspace), [], HOUR)
+        .unwrap();
+    issued.secret.expose().to_owned()
 }
 
 /// The issued code with its secret half replaced, keeping the public prefix.
@@ -53,45 +57,44 @@ fn claim_binds_one_client_and_only_that_client_may_repeat_it() {
         .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 5)
         .unwrap();
     let code = issued.code.expose();
-    let claimed = store
-        .claim_pairing(&login("user-a", "ws-a"), "cli-1", code)
-        .unwrap();
+    let own = login(&store, "user-a", "ws-a");
+    let claimed = store.claim_pairing(&own, "cli-1", code).unwrap();
     assert_eq!(claimed.state, PairingState::Claimed);
     assert_eq!(claimed.client.as_deref(), Some("cli-1"));
     assert_eq!(claimed.prefix, issued.record.prefix);
 
-    let repeated = store
-        .claim_pairing(&login("user-a", "ws-a"), "cli-1", code)
-        .unwrap();
-    assert_eq!(repeated, claimed);
+    assert_eq!(store.claim_pairing(&own, "cli-1", code).unwrap(), claimed);
     assert_eq!(
-        store.claim_pairing(&login("user-a", "ws-a"), "cli-2", code),
+        store.claim_pairing(&own, "cli-2", code),
         Err(StoreError::PairingInvalid)
     );
 }
 
 #[test]
-fn only_the_issuing_users_active_login_in_its_workspace_may_claim() {
+fn only_the_issuing_users_login_in_its_workspace_may_claim() {
     let (store, _) = store();
     let issued = store
         .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 5)
         .unwrap();
     let code = issued.code.expose();
-    let revoked_login = Principal::new(
-        who("user-a"),
-        Credential::new(CredentialKind::LoginGrant, ws("ws-a"))
-            .with_state(CredentialState::Revoked),
-    );
+    let key = store.issue_key(&who("user-a"), &ws("ws-a"), []).unwrap();
     for claimant in [
-        caller(CredentialKind::ScopedKey, "user-a", "ws-a"),
-        login("user-b", "ws-a"),
-        login("user-a", "ws-b"),
-        revoked_login,
+        key.secret.expose().to_owned(),
+        login(&store, "user-b", "ws-a"),
+        login(&store, "user-a", "ws-b"),
     ] {
         let refused = store.claim_pairing(&claimant, "cli-1", code).unwrap_err();
         assert_eq!(refused, StoreError::PairingInvalid);
         assert_eq!(refused.class(), "invalid_request");
         assert_eq!(refused.cause(), Some("pairing_invalid"));
+    }
+    let revoked = login(&store, "user-a", "ws-a");
+    assert!(store.logout(&revoked).unwrap());
+    for unauthenticated in [revoked.as_str(), "", "login_UNKNOWN234_X"] {
+        assert_eq!(
+            store.claim_pairing(unauthenticated, "cli-1", code),
+            Err(StoreError::Unauthenticated)
+        );
     }
     let record = store.pairing(&ws("ws-a"), &issued.record.prefix).unwrap();
     assert_eq!(
@@ -101,14 +104,39 @@ fn only_the_issuing_users_active_login_in_its_workspace_may_claim() {
 }
 
 #[test]
+fn other_callers_guessing_never_use_up_the_issuers_attempts() {
+    let (store, _) = store();
+    let issued = store
+        .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 2)
+        .unwrap();
+    let guess = wrong_secret(issued.code.expose());
+    let intruder = login(&store, "user-b", "ws-a");
+    for _ in 0..10 {
+        assert_eq!(
+            store.claim_pairing(&intruder, "cli-x", &guess),
+            Err(StoreError::PairingInvalid)
+        );
+    }
+    let record = store.pairing(&ws("ws-a"), &issued.record.prefix).unwrap();
+    assert_eq!(record.failed_attempts, 0);
+    let own = login(&store, "user-a", "ws-a");
+    assert!(
+        store
+            .claim_pairing(&own, "cli-1", issued.code.expose())
+            .is_ok()
+    );
+}
+
+#[test]
 fn an_expired_code_cannot_be_claimed() {
     let (store, clock) = store();
     let issued = store
         .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 5)
         .unwrap();
+    let own = login(&store, "user-a", "ws-a");
     clock.advance(600_000);
     assert_eq!(
-        store.claim_pairing(&login("user-a", "ws-a"), "cli-1", issued.code.expose()),
+        store.claim_pairing(&own, "cli-1", issued.code.expose()),
         Err(StoreError::PairingInvalid)
     );
     let record = store.pairing(&ws("ws-a"), &issued.record.prefix).unwrap();
@@ -123,9 +151,10 @@ fn wrong_secrets_exhaust_the_pairing_and_the_right_one_then_fails() {
         .unwrap();
     let code = issued.code.expose();
     let guess = wrong_secret(code);
+    let own = login(&store, "user-a", "ws-a");
     for _ in 0..3 {
         assert_eq!(
-            store.claim_pairing(&login("user-a", "ws-a"), "cli-1", &guess),
+            store.claim_pairing(&own, "cli-1", &guess),
             Err(StoreError::PairingInvalid)
         );
     }
@@ -135,9 +164,32 @@ fn wrong_secrets_exhaust_the_pairing_and_the_right_one_then_fails() {
         (PairingState::Exhausted, 3)
     );
     assert_eq!(
-        store.claim_pairing(&login("user-a", "ws-a"), "cli-1", code),
+        store.claim_pairing(&own, "cli-1", code),
         Err(StoreError::PairingInvalid)
     );
+}
+
+#[test]
+fn lifetime_and_attempts_are_capped() {
+    let (store, _) = store();
+    let issue = |lifetime, attempts| {
+        store
+            .issue_pairing(&who("user-a"), &ws("ws-a"), lifetime, attempts)
+            .map(|_| ())
+    };
+    let invalid = |field| Err(StoreError::InvalidRequest { field });
+    assert_eq!(issue(PAIRING_MAX_LIFETIME, PAIRING_MAX_ATTEMPTS), Ok(()));
+    assert_eq!(
+        issue(PAIRING_MAX_LIFETIME + Duration::from_millis(1), 3),
+        invalid("lifetime")
+    );
+    assert_eq!(issue(Duration::ZERO, 3), invalid("lifetime"));
+    assert_eq!(
+        issue(WINDOW, PAIRING_MAX_ATTEMPTS + 1),
+        invalid("max_attempts")
+    );
+    assert_eq!(issue(WINDOW, 0), invalid("max_attempts"));
+    assert!(PAIRING_MAX_ATTEMPTS < 10 && PAIRING_MAX_LIFETIME <= Duration::from_secs(600));
 }
 
 #[test]
@@ -147,7 +199,7 @@ fn malformed_codes_and_bad_inputs_are_refused() {
         .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 3)
         .unwrap();
     let code = issued.code.expose();
-    let claimant = login("user-a", "ws-a");
+    let own = login(&store, "user-a", "ws-a");
     for text in [
         "",
         "-",
@@ -156,27 +208,13 @@ fn malformed_codes_and_bad_inputs_are_refused() {
         &code.replace('-', "_"),
     ] {
         assert_eq!(
-            store.claim_pairing(&claimant, "cli-1", text),
+            store.claim_pairing(&own, "cli-1", text),
             Err(StoreError::PairingInvalid)
         );
     }
     assert_eq!(
-        store.claim_pairing(&claimant, "", code),
+        store.claim_pairing(&own, "", code),
         Err(StoreError::InvalidRequest { field: "client" })
-    );
-    assert_eq!(
-        store
-            .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 0)
-            .unwrap_err(),
-        StoreError::InvalidRequest {
-            field: "max_attempts"
-        }
-    );
-    assert_eq!(
-        store
-            .issue_pairing(&who("user-a"), &ws("ws-a"), Duration::ZERO, 3)
-            .unwrap_err(),
-        StoreError::InvalidRequest { field: "lifetime" }
     );
     assert_eq!(
         store.pairing(&ws("ws-b"), &issued.record.prefix),
@@ -184,10 +222,56 @@ fn malformed_codes_and_bad_inputs_are_refused() {
     );
 }
 
+fn digest_erased(path: &Path, prefix: &str) -> bool {
+    Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT secret_digest IS NULL FROM pairings WHERE prefix = ?1",
+            [prefix],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn digests_are_erased_once_a_pairing_is_claimed_exhausted_or_expired() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("identity.sqlite3");
+    let clock = Arc::new(ManualClock::default());
+    let store = CredentialStore::open(&path, clock.clone()).unwrap();
+    let own = login(&store, "user-a", "ws-a");
+    let issue = |lifetime| {
+        store
+            .issue_pairing(&who("user-a"), &ws("ws-a"), lifetime, 2)
+            .unwrap()
+    };
+    let claimed = issue(WINDOW);
+    let exhausted = issue(WINDOW);
+    let expiring = issue(Duration::from_secs(60));
+    assert!(!digest_erased(&path, &claimed.record.prefix));
+
+    store
+        .claim_pairing(&own, "cli-1", claimed.code.expose())
+        .unwrap();
+    assert!(digest_erased(&path, &claimed.record.prefix));
+
+    let guess = wrong_secret(exhausted.code.expose());
+    store.claim_pairing(&own, "cli-1", &guess).unwrap_err();
+    assert!(!digest_erased(&path, &exhausted.record.prefix));
+    store.claim_pairing(&own, "cli-1", &guess).unwrap_err();
+    assert!(digest_erased(&path, &exhausted.record.prefix));
+
+    clock.advance(60_000);
+    assert!(!digest_erased(&path, &expiring.record.prefix));
+    let live = issue(WINDOW);
+    assert!(digest_erased(&path, &expiring.record.prefix));
+    assert!(!digest_erased(&path, &live.record.prefix));
+}
+
 /// Runs `claim` on `threads` threads at once, each through its own connection
 /// to the database at `path`, and returns every result.
 fn race<T: Send + 'static>(
-    path: &std::path::Path,
+    path: &Path,
     threads: usize,
     claim: impl Fn(&CredentialStore, usize) -> T + Send + Sync + 'static,
 ) -> Vec<T> {
@@ -214,13 +298,15 @@ fn concurrent_claims_on_separate_connections_have_exactly_one_winner() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("identity.sqlite3");
     let issuer = CredentialStore::open(&path, Arc::new(ManualClock::default())).unwrap();
+    let own = login(&issuer, "user-a", "ws-a");
     for _ in 0..5 {
         let issued = issuer
             .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 5)
             .unwrap();
         let code = issued.code.expose().to_owned();
+        let own = own.clone();
         let results = race(&path, 8, move |store, index| {
-            store.claim_pairing(&login("user-a", "ws-a"), &format!("cli-{index}"), &code)
+            store.claim_pairing(&own, &format!("cli-{index}"), &code)
         });
         let winners: Vec<_> = results
             .iter()
@@ -242,12 +328,13 @@ fn concurrent_wrong_guesses_never_exceed_the_attempt_limit() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("identity.sqlite3");
     let issuer = CredentialStore::open(&path, Arc::new(ManualClock::default())).unwrap();
+    let own = login(&issuer, "user-a", "ws-a");
     let issued = issuer
         .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 3)
         .unwrap();
     let guess = wrong_secret(issued.code.expose());
     let results = race(&path, 8, move |store, index| {
-        store.claim_pairing(&login("user-a", "ws-a"), &format!("cli-{index}"), &guess)
+        store.claim_pairing(&own, &format!("cli-{index}"), &guess)
     });
     assert!(
         results

@@ -21,11 +21,14 @@ const APPLICATION_ID: i64 = 0x4649_444E;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Times are milliseconds since the Unix epoch. Only digests of credential
-/// bytes are stored, never the bytes themselves.
+/// bytes are stored, never the bytes themselves; a pairing's digest is erased
+/// (NULL) once it can no longer be claimed. `sequence` orders credentials
+/// issued in the same millisecond.
 const SCHEMA: &str = "
 CREATE TABLE identity_schema_version (version INTEGER NOT NULL);
 CREATE TABLE credentials (
-    prefix TEXT PRIMARY KEY,
+    sequence INTEGER PRIMARY KEY,
+    prefix TEXT NOT NULL UNIQUE,
     kind TEXT NOT NULL,
     principal TEXT NOT NULL,
     workspace TEXT NOT NULL,
@@ -40,7 +43,7 @@ CREATE TABLE pairings (
     prefix TEXT PRIMARY KEY,
     principal TEXT NOT NULL,
     workspace TEXT NOT NULL,
-    secret_digest BLOB NOT NULL,
+    secret_digest BLOB,
     created_ms INTEGER NOT NULL,
     expires_ms INTEGER NOT NULL,
     max_attempts INTEGER NOT NULL,
@@ -54,8 +57,11 @@ pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
     create_private(path)?;
     let connection = Connection::open(path).storage()?;
     connection.busy_timeout(BUSY_TIMEOUT).storage()?;
+    // Identify the file before switching its journal mode, so a foreign or
+    // newer database is refused without being converted to WAL.
+    let connection = prepare(connection)?;
     enable_wal(&connection)?;
-    prepare(connection)
+    Ok(connection)
 }
 
 /// An in-memory database has no journal file, so it skips WAL.

@@ -14,11 +14,12 @@
 //!
 //! Known limitations:
 //! - Plaintext lives in ordinary heap memory until dropped and is not zeroed.
-//! - A pairing code carries 40 secret bits, which bounds online guessing
-//!   together with the attempt limit but not an offline search of a copied
-//!   database during the code's short lifetime.
+//! - A pairing code carries 40 secret bits. Online guessing is bounded by
+//!   [`PAIRING_MAX_ATTEMPTS`]. Offline, its digest exists only while the
+//!   pairing is live, for at most [`PAIRING_MAX_LIFETIME`]; a database copied
+//!   inside that window can still be searched by brute force.
 //! - Approval-window and pairing durations are unknown in the specification,
-//!   so callers supply them; there are no defaults.
+//!   so callers supply them; pairings are capped by provisional maximums.
 //!
 //! [`authz::Principal`]: crate::authz::Principal
 //! [`authz::authorize`]: crate::authz::authorize
@@ -38,7 +39,9 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 pub use bearer::{CredentialRecord, IssuedCredential};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use error::StoreError;
-pub use pairing::{IssuedPairing, PairingRecord, PairingState};
+pub use pairing::{
+    IssuedPairing, PAIRING_MAX_ATTEMPTS, PAIRING_MAX_LIFETIME, PairingRecord, PairingState,
+};
 pub use secret::SecretText;
 
 use crate::authz::Scope;

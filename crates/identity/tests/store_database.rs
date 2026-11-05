@@ -169,12 +169,25 @@ fn assert_refused(path: &Path) {
     assert_eq!(refused.class(), "unavailable");
 }
 
+fn journal_mode(connection: &Connection) -> String {
+    connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap()
+}
+
+/// A refused file keeps its rollback journal: no WAL switch, no WAL file.
+fn assert_journal_untouched(raw: &Connection, path: &Path) {
+    assert_eq!(journal_mode(raw), "delete");
+    assert!(!Path::new(&format!("{}-wal", path.display())).exists());
+}
+
 #[test]
 fn a_foreign_database_is_refused_untouched() {
     let (_directory, path) = database();
     let raw = Connection::open(&path).unwrap();
     raw.execute_batch("CREATE TABLE notes (body TEXT); INSERT INTO notes VALUES ('kept');")
         .unwrap();
+    assert_eq!(journal_mode(&raw), "delete");
     assert_refused(&path);
     let body: String = raw
         .query_row("SELECT body FROM notes", [], |row| row.get(0))
@@ -183,16 +196,16 @@ fn a_foreign_database_is_refused_untouched() {
         .query_row("PRAGMA application_id", [], |row| row.get(0))
         .unwrap();
     assert_eq!((body.as_str(), application_id), ("kept", 0));
+    assert_journal_untouched(&raw, &path);
 }
 
 #[test]
 fn another_application_id_is_refused() {
     let (_directory, path) = database();
-    Connection::open(&path)
-        .unwrap()
-        .execute_batch("PRAGMA application_id = 7;")
-        .unwrap();
+    let raw = Connection::open(&path).unwrap();
+    raw.execute_batch("PRAGMA application_id = 7;").unwrap();
     assert_refused(&path);
+    assert_journal_untouched(&raw, &path);
 }
 
 #[test]
