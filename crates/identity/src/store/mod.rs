@@ -14,10 +14,11 @@
 //!
 //! Known limitations:
 //! - Plaintext lives in ordinary heap memory until dropped and is not zeroed.
-//! - A pairing code carries 40 secret bits. Online guessing is bounded by
-//!   [`PAIRING_MAX_ATTEMPTS`]. Offline, its digest exists only while the
-//!   pairing is live, for at most [`PAIRING_MAX_LIFETIME`]; a database copied
-//!   inside that window can still be searched by brute force.
+//! - A pairing code carries 60 secret bits. Online guessing is bounded by
+//!   [`PAIRING_MAX_ATTEMPTS`]. Offline, a database copied while a code is live
+//!   holds its digest, but searching 60 bits is impractical within the code's
+//!   lifetime of at most [`PAIRING_MAX_LIFETIME`]. An expired code's digest
+//!   stays until the next pairing write, when it can no longer be claimed.
 //! - Approval-window and pairing durations are unknown in the specification,
 //!   so callers supply them; pairings are capped by provisional maximums.
 //!
