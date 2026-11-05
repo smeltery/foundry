@@ -2,7 +2,7 @@
   "default_file_lines": 400,
   "components": {
     ".flox/toolchain/": 140,
-    "apps/cli/": 14671,
+    "apps/cli/": 14696,
     "crates/contracts/": 4717,
     "crates/store/": 17204,
     "crates/runtime/": 15592,
@@ -11,6 +11,9 @@
     "crates/network/": 46287,
     "crates/connectors/": 3000,
     "crates/tools/": 3000,
+    "crates/identity/": 3000,
+    "crates/providers/": 3000,
+    "crates/budget/": 3000,
     "packages/adapter/": 4000,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
