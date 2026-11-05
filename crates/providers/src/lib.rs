@@ -1,1 +1,3 @@
-//! Providers crate placeholder. It is registered in the workspace and has no logic yet.
+//! Provider descriptors and model capabilities. No credential storage or network calls.
+
+pub mod catalog;
