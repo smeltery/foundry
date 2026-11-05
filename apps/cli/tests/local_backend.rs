@@ -322,3 +322,23 @@ fn withdrawn_retry_is_not_requeued() {
     assert_eq!(retry["message"]["state"], "withdrawn");
     assert_eq!(retry["delivery_not_confirmed"], true);
 }
+
+#[test]
+fn create_refuses_an_unresolved_tool_profile_before_writing() {
+    let db = Database::new();
+    let mut backend = LocalBackend::new(db.path());
+    let with_profile = |profile: &str| CreateSession {
+        idempotency_key: None,
+        tool_profile: Some(profile.into()),
+        ..create()
+    };
+    for profile in ["default/read-write", "Default", "../default"] {
+        let error = backend.create(with_profile(profile)).unwrap_err();
+        assert_eq!(error.code, "unsupported", "{profile}");
+    }
+    assert!(Store::open(db.path()).unwrap().list(10).unwrap().is_empty());
+    let created = backend.create(with_profile("default")).unwrap();
+    let id = created["session"]["id"].as_str().unwrap();
+    let associations = Store::open(db.path()).unwrap().associations(id).unwrap();
+    assert_eq!(associations.tool_profile.as_deref(), Some("default"));
+}
