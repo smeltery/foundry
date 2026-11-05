@@ -5,17 +5,15 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Instant,
 };
 
 pub(super) struct OwnedChild {
     pub process: Child,
     status: Option<ExitStatus>,
     ownership_lost: bool,
-    // Cancellation and the run deadline shorten the post-reap group probe.
+    // Cancellation shortens the post-reap group probe.
     stop: Arc<AtomicBool>,
     caller: Arc<AtomicBool>,
-    deadline: Instant,
     #[cfg(test)]
     pub(super) signals_sent: usize,
 }
@@ -46,10 +44,6 @@ impl OwnedChild {
         {
             return Err(Error::Invalid);
         }
-        // Taken just after run's own deadline, so it never cuts the probe short sooner.
-        let deadline = Instant::now()
-            .checked_add(spec.timeout)
-            .ok_or(Error::Invalid)?;
         let fd = spec.directory.as_raw_fd();
         // Include extant descriptors above a lowered soft limit. The parent must
         // not race descriptor-limit changes against this trusted spawn operation.
@@ -108,7 +102,6 @@ impl OwnedChild {
             ownership_lost: false,
             stop: Arc::clone(stop),
             caller: Arc::clone(caller),
-            deadline,
             #[cfg(test)]
             signals_sent: 0,
         })
@@ -195,15 +188,8 @@ impl OwnedChild {
             })?;
             self.status = Some(status);
             if let Some(error) = failure {
-                let interrupted = || {
-                    super::cancelled(&self.stop, &self.caller) || Instant::now() >= self.deadline
-                };
-                if error.raw_os_error() != Some(libc::EPERM)
-                    || !crate::process::group::reaped_group_vanishes(
-                        self.process.id() as i32,
-                        interrupted,
-                    )
-                {
+                let probe = crate::process::group::signal_probe(self.process.id() as i32);
+                if error.raw_os_error() != Some(libc::EPERM) || !self.reaped_group_vanishes(probe) {
                     return Err(Error::Cleanup);
                 }
             }
@@ -213,6 +199,17 @@ impl OwnedChild {
         {
             Err(Error::Unsupported)
         }
+    }
+}
+
+impl OwnedChild {
+    /// Only cancellation shortens the wait. A helper that exits cleanly near its
+    /// deadline keeps the full grace rather than becoming a cleanup failure.
+    #[cfg(unix)]
+    pub(super) fn reaped_group_vanishes(&self, probe: impl FnMut() -> Option<i32>) -> bool {
+        crate::process::group::reaped_group_vanishes(probe, || {
+            super::cancelled(&self.stop, &self.caller)
+        })
     }
 }
 

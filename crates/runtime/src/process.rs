@@ -209,24 +209,6 @@ impl Process {
             .map_err(|_| RuntimeError::CommandQueue)
     }
 
-    #[cfg(unix)]
-    fn reap_exiting_group(&mut self) -> Result<bool, RuntimeError> {
-        let pgid = self.child.id() as i32;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
-        loop {
-            self.check_child_ownership()?;
-            if self.child.try_wait()?.is_some() {
-                // Reaping releases the PID: never signal the group again. Stop has no deadline.
-                self.stopped = true;
-                return Ok(group::reaped_group_vanishes(pgid, || false));
-            }
-            if std::time::Instant::now() >= deadline {
-                return Ok(false);
-            }
-            thread::sleep(std::time::Duration::from_millis(2));
-        }
-    }
-
     pub fn stop(&mut self) -> Result<(), RuntimeError> {
         if let Some(cleanup) = &self.cleanup {
             cleanup.begin_shutdown();
@@ -264,7 +246,10 @@ impl Process {
                 if error.raw_os_error() != Some(libc::ESRCH) {
                     // An exiting leader may briefly reject group signals before becoming
                     // waitable. Only accept that race after reaping and proving the group gone.
-                    if error.raw_os_error() == Some(libc::EPERM) && self.reap_exiting_group()? {
+                    let probe = group::signal_probe(self.child.id() as i32);
+                    if error.raw_os_error() == Some(libc::EPERM)
+                        && self.reap_exiting_group(probe)?
+                    {
                         return Ok(());
                     }
                     return Err(error.into());

@@ -1,5 +1,6 @@
 //! Signal-free proof that an owned process group is gone after its leader is reaped.
 #![cfg(unix)]
+use super::{Process, RuntimeError};
 use crate::pipe_workers::POLL_INTERVAL;
 use std::{
     thread,
@@ -8,41 +9,71 @@ use std::{
 
 /// Bound for the kernel to drop an exited group after its leader is reaped.
 const TEARDOWN_GRACE: Duration = Duration::from_secs(1);
-/// Bound once the caller is cancelled or past its deadline. It still exceeds the
-/// measured teardown lag (about 33ms under load), so cancellation shortens the wait
-/// without turning a cleanly exited group into a cleanup failure.
-const INTERRUPTED_GRACE: Duration = Duration::from_millis(100);
+/// Bound once the caller is cancelled. It still exceeds the measured teardown lag
+/// (about 33ms under load), so cancellation shortens the wait without turning a
+/// cleanly exited group into a cleanup failure.
+const CANCELLED_GRACE: Duration = Duration::from_millis(100);
 
 /// macOS rejects group signals with EPERM while the only member is a zombie, and under
 /// load it can keep reporting the group for tens of milliseconds after that member is
 /// reaped. Accept the group as gone only once signal 0 reports ESRCH within the grace.
 /// Fails on a signalable member, persistent EPERM or any other errno. The probe sends
 /// no signal, so polling cannot reach a process that later reuses the released PID.
-/// `interrupted` reports caller cancellation or a passed deadline; it shortens the wait.
-pub(crate) fn reaped_group_vanishes(pgid: i32, interrupted: impl FnMut() -> bool) -> bool {
-    let probe = || {
+/// `cancelled` reports caller cancellation; it shortens the wait.
+pub(crate) fn reaped_group_vanishes(
+    probe: impl FnMut() -> Option<i32>,
+    cancelled: impl FnMut() -> bool,
+) -> bool {
+    vanishes(probe, TEARDOWN_GRACE, cancelled)
+}
+
+/// Sends signal 0 to the group: `None` when delivered, otherwise the errno.
+pub(crate) fn signal_probe(pgid: i32) -> impl FnMut() -> Option<i32> {
+    move || {
         if unsafe { libc::kill(-pgid, 0) } == 0 {
             None
         } else {
             std::io::Error::last_os_error().raw_os_error()
         }
-    };
-    vanishes(probe, TEARDOWN_GRACE, interrupted)
+    }
 }
 
-/// `probe` returns `None` when signal 0 is delivered, otherwise the errno.
+impl Process {
+    /// Accepts an EPERM group kill only once the exiting leader is reaped and `probe`
+    /// proves the group gone. Callers past their deadline (loading stops) may still
+    /// wait out the bounded teardown grace here.
+    pub(super) fn reap_exiting_group(
+        &mut self,
+        probe: impl FnMut() -> Option<i32>,
+    ) -> Result<bool, RuntimeError> {
+        let deadline = Instant::now() + Duration::from_millis(100);
+        loop {
+            self.check_child_ownership()?;
+            if self.child.try_wait()?.is_some() {
+                // Reaping releases the PID reservation: never signal this group again.
+                self.stopped = true;
+                return Ok(reaped_group_vanishes(probe, || false));
+            }
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+}
+
 fn vanishes(
     mut probe: impl FnMut() -> Option<i32>,
     grace: Duration,
-    mut interrupted: impl FnMut() -> bool,
+    mut cancelled: impl FnMut() -> bool,
 ) -> bool {
     let started = Instant::now();
     loop {
         match probe() {
             Some(libc::ESRCH) => return true,
             Some(libc::EPERM) => {
-                let limit = if interrupted() {
-                    grace.min(INTERRUPTED_GRACE)
+                let limit = if cancelled() {
+                    grace.min(CANCELLED_GRACE)
                 } else {
                     grace
                 };
@@ -92,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn interruption_shortens_the_wait_but_still_covers_teardown_lag() {
+    fn cancellation_shortens_the_wait_but_still_covers_teardown_lag() {
         // A cancelled caller stops waiting on a stuck group well before the full grace.
         let started = Instant::now();
         assert!(!vanishes(
@@ -101,8 +132,8 @@ mod tests {
             || true
         ));
         assert!(started.elapsed() < Duration::from_secs(5));
-        assert!(started.elapsed() >= INTERRUPTED_GRACE);
-        // Interruption arriving mid-wait ends the wait at the next probe.
+        assert!(started.elapsed() >= CANCELLED_GRACE);
+        // Cancellation arriving mid-wait ends the wait at the next probe.
         let mut polls = 0;
         let started = Instant::now();
         assert!(!vanishes(
@@ -110,7 +141,7 @@ mod tests {
             Duration::from_secs(30),
             || {
                 polls += 1;
-                started.elapsed() >= INTERRUPTED_GRACE * 2
+                started.elapsed() >= CANCELLED_GRACE * 2
             }
         ));
         assert!(started.elapsed() < Duration::from_secs(5));
@@ -137,7 +168,7 @@ mod tests {
             .unwrap();
         let pgid = exited.id() as i32;
         exited.wait().unwrap();
-        assert!(reaped_group_vanishes(pgid, || false));
+        assert!(reaped_group_vanishes(signal_probe(pgid), || false));
         let mut live = std::process::Command::new("/bin/sleep")
             .arg("30")
             .process_group(0)
@@ -145,7 +176,7 @@ mod tests {
             .unwrap();
         let pgid = live.id() as i32;
         let started = Instant::now();
-        let vanished = reaped_group_vanishes(pgid, || false);
+        let vanished = reaped_group_vanishes(signal_probe(pgid), || false);
         live.kill().unwrap();
         live.wait().unwrap();
         assert!(!vanished);

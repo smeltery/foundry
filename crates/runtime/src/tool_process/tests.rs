@@ -93,3 +93,37 @@ fn external_reap_loses_reservation_and_cleanup_never_signals() {
         assert_eq!(owned.signals_sent, 0);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn only_cancellation_shortens_the_wait_for_a_lagging_group() {
+    let spec = ToolProcessSpec {
+        helper: std::path::PathBuf::from("/usr/bin/true"),
+        directory: cap_std::fs::Dir::open_ambient_dir(
+            std::env::temp_dir(),
+            cap_std::ambient_authority(),
+        )
+        .unwrap(),
+        timeout: Duration::from_millis(1),
+    };
+    // The group keeps reporting EPERM well past the shortened cancellation bound.
+    let lagging = || {
+        let started = Instant::now();
+        move || {
+            if started.elapsed() < Duration::from_millis(400) {
+                Some(libc::EPERM)
+            } else {
+                Some(libc::ESRCH)
+            }
+        }
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let caller = Arc::new(AtomicBool::new(false));
+    let mut owned = child::OwnedChild::spawn(&spec, &stop, &caller).unwrap();
+    thread::sleep(Duration::from_millis(5));
+    // Past its deadline but not cancelled: a cleanly exited helper keeps the full grace.
+    assert!(owned.reaped_group_vanishes(lagging()));
+    caller.store(true, Ordering::Release);
+    assert!(!owned.reaped_group_vanishes(lagging()));
+    assert!(owned.cleanup().unwrap().success());
+}
