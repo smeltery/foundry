@@ -129,5 +129,6 @@ fn an_overrun_blocks_every_budget_sharing_the_chain() {
     assert!(!late.overrun);
     assert!(!late.dispatch_allowed);
     assert_eq!(store.snapshot(root).unwrap().committed, money("2"));
-    assert!(!store.snapshot(sibling).unwrap().overrun);
+    // The sibling's own spend did not overrun, but its shared chain did.
+    assert!(store.snapshot(sibling).unwrap().overrun);
 }

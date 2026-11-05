@@ -8,8 +8,15 @@
 //! connections and processes, and a child never spends past any ancestor.
 //!
 //! Committed spend, open reservations, overruns and deadlines survive a restart.
-//! A reservation left open by a crash stays counted against its ceilings, which
-//! refuses spend rather than allowing it.
+//!
+//! Known limitations:
+//! - A reservation left open by a crash, or by a drop whose settlement failed,
+//!   stays counted against its ceilings. That refuses spend rather than
+//!   allowing it, but there is no API yet to reconcile such reservations.
+//! - Every operation, including the settlement a dropped [`Reservation`] runs,
+//!   can block for up to the 30-second busy timeout while another connection
+//!   holds the write lock.
+//! - The database file gets the process umask's default permissions.
 use crate::amount::{Amount, CostUnit};
 use crate::clock::{Clock, WallClock};
 use crate::database::{self, Storage};
@@ -76,6 +83,8 @@ pub struct BudgetSnapshot {
     /// The most a new reservation could take now, across the whole chain;
     /// `None` when no budget in the chain has a ceiling.
     pub remaining: Option<Amount>,
+    /// Some budget in the chain has overrun, so reservations here are refused.
+    /// Children share their ancestors' budget, so this covers the whole chain.
     pub overrun: bool,
     pub deadline: DeadlineState,
 }
@@ -191,7 +200,7 @@ impl BudgetStore {
                 committed: amount(own.committed)?,
                 reserved: amount(own.reserved)?,
                 remaining: ledger::remaining(&chain).map(amount).transpose()?,
-                overrun: own.overrun,
+                overrun: chain.iter().any(|ledger| ledger.overrun),
                 deadline: ledger::deadline(&chain, now_ms),
             })
         })
@@ -230,8 +239,10 @@ impl BudgetStore {
     }
 
     /// Runs `operation` in one transaction and commits it only on success. The
-    /// clock is read after the transaction starts, so the time an operation
-    /// checks is never older than the state it sees.
+    /// clock is read after `BEGIN`. For an immediate transaction the write lock
+    /// is already held then, so no other writer can commit between the reading
+    /// and the checks. A deferred read takes its snapshot at the first query,
+    /// just after the reading, so its state is never older than its time.
     fn transaction<T>(
         &self,
         behavior: TransactionBehavior,

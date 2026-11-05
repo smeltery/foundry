@@ -1,5 +1,6 @@
-//! Concurrency tests against file-backed stores, so every reservation runs
-//! through SQLite's `BEGIN IMMEDIATE` locking as well as the connection mutex.
+//! Concurrency tests against file-backed stores. Threads sharing one handle are
+//! serialized by its connection mutex; the two-connection test also contends
+//! through SQLite's `BEGIN IMMEDIATE` locking, as separate processes would.
 mod support;
 
 use foundry_budget::{BudgetId, BudgetStore, WallClock};

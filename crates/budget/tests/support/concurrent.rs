@@ -18,6 +18,14 @@ pub fn temp_store() -> (tempfile::TempDir, BudgetStore) {
     (directory, store)
 }
 
+/// `count` separate handles, each with its own connection, on one new file.
+pub fn temp_handles(count: usize) -> (tempfile::TempDir, Vec<BudgetStore>) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("budget.sqlite");
+    let handles = (0..count).map(|_| open(&path)).collect();
+    (directory, handles)
+}
+
 pub fn atoms(value: u64) -> Amount {
     Amount::from_atoms(xts(), u128::from(value)).unwrap()
 }

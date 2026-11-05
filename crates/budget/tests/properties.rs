@@ -201,7 +201,11 @@ fn check(store: &foundry_budget::BudgetStore, ids: &[BudgetId], model: &Model) {
             expected.reserved,
             "reserved {index}"
         );
-        assert_eq!(snapshot.overrun, expected.overrun, "overrun {index}");
+        let chain_overrun = model
+            .chain(index)
+            .into_iter()
+            .any(|member| model.budgets[member].overrun);
+        assert_eq!(snapshot.overrun, chain_overrun, "overrun {index}");
         assert_eq!(
             snapshot.remaining.map(|amount| amount.atoms()),
             model.remaining(index)

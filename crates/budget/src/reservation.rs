@@ -24,6 +24,8 @@ pub struct Settlement {
 /// Dropping an unsettled handle, for example when the task holding it is
 /// cancelled or panics, charges the full reservation: the call may have run, and
 /// its cost is unknown, so the conservative choice is the maximum it was allowed.
+/// That settlement can block for up to the store's busy timeout, and if it fails
+/// the reservation stays counted with no reconcile API yet.
 #[must_use = "an unsettled reservation charges its full amount when dropped"]
 #[derive(Debug)]
 pub struct Reservation {

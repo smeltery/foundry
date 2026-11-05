@@ -113,6 +113,10 @@ fn the_database_uses_wal_and_its_own_schema_version() {
         })
         .unwrap();
     assert_eq!(version, 1);
+    let application_id: i64 = connection
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(application_id, 0x4642_4447);
     // Reopening an up-to-date file keeps its data and does not migrate again.
     drop(connection);
     let store = reopen(&path, &clock);
@@ -128,4 +132,71 @@ fn the_database_uses_wal_and_its_own_schema_version() {
     let error = BudgetStore::open(&path, clock).unwrap_err();
     assert_eq!(error.class(), "unavailable");
     assert!(error.to_string().contains("unsupported schema version 2"));
+}
+
+#[test]
+fn concurrent_openers_of_a_fresh_file_all_succeed() {
+    for _ in 0..100 {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite");
+        let start = std::sync::Barrier::new(8);
+        let stores: Vec<BudgetStore> = std::thread::scope(|scope| {
+            let openers: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        start.wait();
+                        BudgetStore::open(&path, Arc::new(ManualClock::default()))
+                    })
+                })
+                .collect();
+            openers
+                .into_iter()
+                .map(|opener| opener.join().unwrap().unwrap())
+                .collect()
+        });
+        // Every handle sees the one schema the first opener created.
+        let budget = stores[0].create(xts(), None, WallClock::NONE).unwrap();
+        for store in &stores {
+            assert_eq!(store.snapshot(budget).unwrap().committed, money("0"));
+        }
+    }
+}
+
+#[test]
+fn a_foreign_database_is_refused_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("other.sqlite");
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("CREATE TABLE runs (id INTEGER PRIMARY KEY); INSERT INTO runs VALUES (7);")
+        .unwrap();
+    drop(connection);
+
+    let error = BudgetStore::open(&path, Arc::new(ManualClock::default())).unwrap_err();
+    assert_eq!(error.class(), "unavailable");
+    assert!(error.to_string().contains("not a budget database"));
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let mut statement = connection
+        .prepare("SELECT name FROM sqlite_master ORDER BY name")
+        .unwrap();
+    let tables: Vec<String> = statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(tables, ["runs"]);
+    let application_id: i64 = connection
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(application_id, 0);
+
+    // A file stamped with another program's application ID is refused even
+    // when it holds no tables.
+    let marked = directory.path().join("marked.sqlite");
+    rusqlite::Connection::open(&marked)
+        .unwrap()
+        .execute_batch("PRAGMA application_id = 1234;")
+        .unwrap();
+    let error = BudgetStore::open(&marked, Arc::new(ManualClock::default())).unwrap_err();
+    assert!(error.to_string().contains("not a budget database"));
 }

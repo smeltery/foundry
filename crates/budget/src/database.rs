@@ -1,5 +1,9 @@
 //! The crate's own SQLite file. It is separate from the main store and its
-//! migration chain, and carries its own schema version table.
+//! migration chain, and carries its own schema version table and
+//! `application_id`, so it never adopts another program's database.
+//!
+//! The file is created with the process umask's default permissions; callers
+//! that need tighter access must place it in a directory they control.
 //!
 //! Amounts are stored as decimal TEXT because money atoms are 128-bit and SQLite
 //! integers are 64-bit.
@@ -7,16 +11,21 @@ use crate::amount::{CostUnit, Currency};
 use crate::error::BudgetError;
 use crate::ledger::Ledger;
 use crate::store::{BudgetId, ReservationId};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior, params};
 use std::path::Path;
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const SCHEMA_VERSION: i64 = 1;
+
+/// Marks a file as a budget database in the SQLite header ("FBDG").
+const APPLICATION_ID: i64 = 0x4642_4447;
 
 /// How long a writer waits for another connection's transaction to finish.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(30);
 
 const SCHEMA: &str = "
+CREATE TABLE budget_schema_version (version INTEGER NOT NULL);
 CREATE TABLE budgets (
     id INTEGER PRIMARY KEY,
     parent INTEGER REFERENCES budgets(id),
@@ -53,34 +62,63 @@ fn unavailable(detail: impl Into<String>) -> BudgetError {
 }
 
 pub(crate) fn open(path: &Path) -> Result<Connection, BudgetError> {
-    prepare(Connection::open(path).storage()?)
-}
-
-pub(crate) fn open_in_memory() -> Result<Connection, BudgetError> {
-    prepare(Connection::open_in_memory().storage()?)
-}
-
-fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
+    let connection = Connection::open(path).storage()?;
     connection.busy_timeout(BUSY_TIMEOUT).storage()?;
+    enable_wal(&connection)?;
+    prepare(connection)
+}
+
+/// An in-memory database has no journal file, so it skips WAL.
+pub(crate) fn open_in_memory() -> Result<Connection, BudgetError> {
+    let connection = Connection::open_in_memory().storage()?;
+    connection.busy_timeout(BUSY_TIMEOUT).storage()?;
+    prepare(connection)
+}
+
+/// Switching a fresh file to WAL needs an exclusive lock and bypasses the busy
+/// handler, so concurrent openers retry here for up to the busy timeout. The
+/// mode SQLite reports back must be `wal`; anything else is refused.
+fn enable_wal(connection: &Connection) -> Result<(), BudgetError> {
+    let started = Instant::now();
+    loop {
+        let mode =
+            connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0));
+        match mode {
+            Ok(mode) if mode.eq_ignore_ascii_case("wal") => return Ok(()),
+            Ok(mode) => return Err(unavailable(format!("journal mode {mode} instead of wal"))),
+            Err(error) if is_busy(&error) && started.elapsed() < BUSY_TIMEOUT => {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => return Err(unavailable(error.to_string())),
+        }
+    }
+}
+
+fn is_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
+}
+
+/// Creates the schema in an empty file, or checks that an existing file is a
+/// budget database at the supported version. A file holding anything else is
+/// refused untouched.
+fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
     connection
-        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")
+        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
         .storage()?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .storage()?;
-    transaction
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS budget_schema_version (version INTEGER NOT NULL);",
-        )
+    let application_id: i64 = transaction
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
         .storage()?;
-    let version: Option<i64> = transaction
-        .query_row("SELECT version FROM budget_schema_version", [], |row| {
-            row.get(0)
-        })
-        .optional()
+    let objects: i64 = transaction
+        .query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))
         .storage()?;
-    match version {
-        None => {
+    match (application_id, objects) {
+        (0, 0) => {
             transaction.execute_batch(SCHEMA).storage()?;
             transaction
                 .execute(
@@ -88,9 +126,23 @@ fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
                     [SCHEMA_VERSION],
                 )
                 .storage()?;
+            transaction
+                .execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
+                .storage()?;
         }
-        Some(SCHEMA_VERSION) => {}
-        Some(other) => return Err(unavailable(format!("unsupported schema version {other}"))),
+        (APPLICATION_ID, _) => {
+            let version: Option<i64> = transaction
+                .query_row("SELECT version FROM budget_schema_version", [], |row| {
+                    row.get(0)
+                })
+                .optional()
+                .storage()?;
+            if version != Some(SCHEMA_VERSION) {
+                let found = version.map_or("none".to_owned(), |version| version.to_string());
+                return Err(unavailable(format!("unsupported schema version {found}")));
+            }
+        }
+        _ => return Err(unavailable("not a budget database")),
     }
     transaction.commit().storage()?;
     Ok(connection)
