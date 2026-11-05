@@ -5,7 +5,10 @@ mod support;
 use serde_json::{Value, json};
 use std::{fs, os::unix::fs::PermissionsExt, process::Stdio};
 use support::*;
-use tokio::process::Command;
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::{Child, Command},
+};
 
 const PREFIX: &str = "surface7";
 
@@ -69,35 +72,70 @@ async fn an_invitation_in_doing_is_shared_only_as_a_team_link() {
     exited(&mut child).await;
 }
 
-#[tokio::test]
-async fn a_free_configured_port_is_used_and_port_zero_picks_one() {
-    let free = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let port = free.local_addr().unwrap().port();
-    drop(free);
-    let state = State::new();
-    enable(&state, &format!("127.0.0.1:{port}"));
-    let mut child = state.start().await;
-    let mut client = state.connect().await;
-    let auth = client.register("terminal", &state.0).await;
-    let address = endpoint(&mut client, &auth).await;
-    assert!(address.contains(&format!("127.0.0.1:{port}")), "{address}");
+/// Start the daemon, or return `None` if it exits before reporting readiness.
+async fn try_start(state: &State) -> Option<Child> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_f5y-daemon"))
+        .arg("--config")
+        .arg(state.0.join("config.json"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    let stdout = child.stdout.take().unwrap();
+    tokio::time::timeout(DEADLINE, BufReader::new(stdout).read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    if line.is_empty() {
+        assert!(!child.wait().await.unwrap().success());
+        return None;
+    }
+    let ready: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(ready["event"], "ready");
+    Some(child)
+}
+/// Bind to a port found free a moment earlier. Another process can take it in
+/// between, so a failed start is retried with a fresh port.
+async fn start_on_free_port(state: &State) -> (Child, u16) {
+    for _ in 0..5 {
+        let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        enable(state, &format!("127.0.0.1:{port}"));
+        if let Some(child) = try_start(state).await {
+            return (child, port);
+        }
+    }
+    panic!("no free configured port could be bound in five attempts");
+}
+async fn shut_down(mut child: Child, client: &mut Client, auth: &Value) {
     client
         .request(json!({"id":44,"op":"shutdown","auth":auth}))
         .await;
     exited(&mut child).await;
+}
+
+#[tokio::test]
+async fn a_free_configured_port_is_used_and_port_zero_picks_one() {
+    let state = State::new();
+    let (child, port) = start_on_free_port(&state).await;
+    let mut client = state.connect().await;
+    let auth = client.register("terminal", &state.0).await;
+    let address = endpoint(&mut client, &auth).await;
+    assert!(address.contains(&format!("127.0.0.1:{port}")), "{address}");
+    shut_down(child, &mut client, &auth).await;
 
     let state = State::new();
     enable(&state, "127.0.0.1:0");
-    let mut child = state.start().await;
+    let child = state.start().await;
     let mut client = state.connect().await;
     let auth = client.register("terminal", &state.0).await;
     let address = endpoint(&mut client, &auth).await;
     assert!(address.contains("127.0.0.1:"), "{address}");
     assert!(!address.contains("127.0.0.1:0\""), "{address}");
-    client
-        .request(json!({"id":45,"op":"shutdown","auth":auth}))
-        .await;
-    exited(&mut child).await;
+    shut_down(child, &mut client, &auth).await;
 }
 
 #[tokio::test]
@@ -112,15 +150,35 @@ async fn a_taken_configured_port_stops_startup_instead_of_moving() {
             .arg("--config")
             .arg(state.0.join("config.json"))
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .output(),
     )
     .await
     .unwrap()
     .unwrap();
-    assert!(!output.status.success());
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("ready"));
+    // The host reports a fixed startup failure without echoing the address.
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "error: daemon startup failed\n"
+    );
+    assert!(output.stdout.is_empty());
     assert!(!state.0.join("daemon.sock").exists());
+    // The held port was the only cause: once released, the same config binds it.
     drop(holder);
+    let mut started = None;
+    for _ in 0..3 {
+        started = try_start(&state).await;
+        if started.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let child = started.expect("released port could not be bound");
+    let mut client = state.connect().await;
+    let auth = client.register("terminal", &state.0).await;
+    let address = endpoint(&mut client, &auth).await;
+    assert!(address.contains(&format!("127.0.0.1:{port}")), "{address}");
+    shut_down(child, &mut client, &auth).await;
 }

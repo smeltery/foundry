@@ -24,7 +24,10 @@ impl Root {
 }
 impl Drop for Root {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
+        // Report, never panic: a second panic would hide the test's own failure.
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            eprintln!("cleanup of {:?} failed: {error}", self.0);
+        }
     }
 }
 fn local(id: &str, recipient: &str) -> Message {

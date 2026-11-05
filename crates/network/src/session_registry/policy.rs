@@ -6,11 +6,11 @@ use std::path::{Component, Path, PathBuf};
 ///
 /// A session is judged by its path as given (made absolute and with `.` and
 /// `..` folded lexically, links not followed), by its resolved path, and by each
-/// spelling that resolves one ancestor of the given path and keeps the rest. It
-/// is excluded if any judgement excludes it, so a link inside an excluded folder
-/// cannot carry a session out, even when the rule and the session reach that
-/// folder through differently linked ancestors, and a link into one cannot
-/// carry it in.
+/// spelling that resolves a leading part of the given path and keeps the rest as
+/// written. It is excluded if any judgement excludes it, so a link inside an
+/// excluded folder cannot carry a session out, even when the rule and the
+/// session reach that folder through differently linked ancestors, and a link
+/// into one cannot carry it in.
 /// A rule matches a path under either its written or its resolved form. Paths
 /// that do not exist are rejected as invalid before any rule is applied.
 #[derive(Debug, Default)]
@@ -51,17 +51,37 @@ impl FolderPolicy {
         if current != path {
             return false;
         }
+        self.allows(given) && self.allows(&current) && self.allows_partly_resolved(given)
+    }
+    /// Walk the given spelling one component at a time, resolving only links, so
+    /// the cost stays linear in depth. The walk ends where the folded spelling no
+    /// longer exists; the given and resolved judgements still cover that path.
+    fn allows_partly_resolved(&self, given: &Path) -> bool {
         if self.rules.is_empty() {
             return true;
         }
-        // The root ancestor yields the given spelling; the full path yields `current`.
-        given.ancestors().all(|ancestor| {
-            let (Ok(resolved), Ok(rest)) = (ancestor.canonicalize(), given.strip_prefix(ancestor))
-            else {
-                return false;
+        let mut resolved = PathBuf::new();
+        let mut components = given.components();
+        while let Some(component) = components.next() {
+            let next = resolved.join(component);
+            let linked = match std::fs::symlink_metadata(&next) {
+                Ok(metadata) => metadata.file_type().is_symlink(),
+                Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
             };
-            self.allows(&resolved.join(rest))
-        })
+            resolved = if linked {
+                // `resolved` is already canonical, so only this link is expanded.
+                match next.canonicalize() {
+                    Ok(target) => target,
+                    Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+                }
+            } else {
+                next
+            };
+            if !self.allows(&resolved.join(components.as_path())) {
+                return false;
+            }
+        }
+        true
     }
     fn allows(&self, path: &Path) -> bool {
         self.rules

@@ -51,7 +51,10 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.root).unwrap();
+        // Report, never panic: a second panic would hide the test's own failure.
+        if let Err(error) = std::fs::remove_dir_all(&self.root) {
+            eprintln!("cleanup of {:?} failed: {error}", self.root);
+        }
     }
 }
 

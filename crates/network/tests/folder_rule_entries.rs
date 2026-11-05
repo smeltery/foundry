@@ -25,8 +25,13 @@ impl Tree {
 }
 impl Drop for Tree {
     fn drop(&mut self) {
-        fs::remove_file(&self.alias).unwrap();
-        fs::remove_dir_all(&self.base).unwrap();
+        // Report, never panic: a second panic would hide the test's own failure.
+        if let Err(error) = fs::remove_file(&self.alias) {
+            eprintln!("cleanup of {:?} failed: {error}", self.alias);
+        }
+        if let Err(error) = fs::remove_dir_all(&self.base) {
+            eprintln!("cleanup of {:?} failed: {error}", self.base);
+        }
     }
 }
 fn at(name: &str, repository: PathBuf) -> Registration {
@@ -113,5 +118,63 @@ fn rules_written_through_a_linked_ancestor_cover_both_spellings() {
             }
             assert_eq!(outcome(policy(), session_root.join("open")), Ok(()));
         }
+    }
+}
+
+#[test]
+fn a_link_into_an_excluded_folder_cannot_climb_back_out_with_dots() {
+    let tree = Tree::new();
+    fs::create_dir(tree.base.join("off").join("sub")).unwrap();
+    let link = tree.base.join("open").join("into-off");
+    symlink(tree.base.join("off").join("sub"), &link).unwrap();
+    let policy = || FolderPolicy::new(vec![(tree.base.join("off"), false)]).unwrap();
+    // Written `open/into-off/..` folds to `open`, but on disk it names `off`.
+    for path in [link.join(".."), link.join("..").join("sub")] {
+        assert_eq!(outcome(policy(), path), Err(RegistryError::Excluded));
+    }
+}
+
+#[test]
+fn missing_paths_stay_invalid_and_unfolded_spellings_do_not_exclude() {
+    let tree = Tree::new();
+    let policy = || FolderPolicy::new(vec![(tree.base.join("off"), false)]).unwrap();
+    for missing in [
+        tree.base.join("open").join("absent"),
+        tree.base.join("off").join("absent"),
+        tree.base.join("absent").join("..").join("open"),
+    ] {
+        assert_eq!(
+            outcome(policy(), missing.clone()),
+            Err(RegistryError::InvalidPath),
+            "{missing:?}"
+        );
+    }
+    // `open/hop/../child` exists only through the link; its folded spelling,
+    // `open/child`, does not exist and must not turn into an exclusion.
+    let elsewhere = tree.base.join("elsewhere");
+    fs::create_dir_all(elsewhere.join("deep")).unwrap();
+    fs::create_dir(elsewhere.join("child")).unwrap();
+    let hop = tree.base.join("open").join("hop");
+    symlink(elsewhere.join("deep"), &hop).unwrap();
+    assert_eq!(outcome(policy(), hop.join("..").join("child")), Ok(()));
+}
+
+#[test]
+fn deep_paths_are_judged_without_rereading_every_ancestor() {
+    let tree = Tree::new();
+    let mut deep = tree.base.join("open");
+    for _ in 0..180 {
+        deep.push("d");
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let policy = FolderPolicy::new(vec![(tree.base.join("off"), false)]).unwrap();
+    let mut registry = SessionRegistry::new(policy);
+    registry.register(at("deep", deep)).unwrap();
+    // Every directory call re-judges the session; it must stay visible.
+    for _ in 0..50 {
+        assert_eq!(
+            registry.who(&DirectoryFilter::default(), 8).unwrap().len(),
+            1
+        );
     }
 }
