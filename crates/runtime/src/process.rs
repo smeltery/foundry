@@ -11,6 +11,8 @@ mod cleanup;
 mod context;
 #[path = "process_continuation.rs"]
 mod continuation;
+#[path = "process_group.rs"]
+pub(crate) mod group;
 #[path = "process_loading.rs"]
 mod loading;
 #[path = "process_messages.rs"]
@@ -209,16 +211,14 @@ impl Process {
 
     #[cfg(unix)]
     fn reap_exiting_group(&mut self) -> Result<bool, RuntimeError> {
-        let group = -(self.child.id() as i32);
+        let pgid = self.child.id() as i32;
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
         loop {
             self.check_child_ownership()?;
             if self.child.try_wait()?.is_some() {
-                // Reaping releases the PID reservation: never signal this group again.
+                // Reaping releases the PID: never signal the group again. Stop has no deadline.
                 self.stopped = true;
-                let probe = unsafe { libc::kill(group, 0) };
-                return Ok(probe != 0
-                    && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH));
+                return Ok(group::reaped_group_vanishes(pgid, || false));
             }
             if std::time::Instant::now() >= deadline {
                 return Ok(false);

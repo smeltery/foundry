@@ -136,3 +136,25 @@ time.sleep(10)
     assert!(process.child.try_wait().unwrap().is_some());
     process.stop().unwrap();
 }
+
+#[test]
+fn cleanly_exited_adapter_group_stops_without_cleanup_failure() {
+    // On macOS the zombie-only group rejects the kill with EPERM and can linger after
+    // the reap; stop must wait for the group to vanish rather than report a failure.
+    let fixture = Fixture::new();
+    for _ in 0..10 {
+        let mut process = fixture.spawn("");
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        let waited = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                process.child.id(),
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        assert_eq!(waited, 0);
+        process.stop().unwrap();
+        assert!(process.child.try_wait().unwrap().is_some());
+    }
+}

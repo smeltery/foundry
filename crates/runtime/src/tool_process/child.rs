@@ -1,23 +1,21 @@
 use super::{Result, ToolProcessError as Error, ToolProcessSpec};
-#[cfg(unix)]
-use crate::pipe_workers::POLL_INTERVAL;
 use std::{
     process::{Child, ExitStatus},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-};
-#[cfg(unix)]
-use std::{
-    thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 pub(super) struct OwnedChild {
     pub process: Child,
     status: Option<ExitStatus>,
     ownership_lost: bool,
+    // Cancellation and the run deadline shorten the post-reap group probe.
+    stop: Arc<AtomicBool>,
+    caller: Arc<AtomicBool>,
+    deadline: Instant,
     #[cfg(test)]
     pub(super) signals_sent: usize,
 }
@@ -48,6 +46,10 @@ impl OwnedChild {
         {
             return Err(Error::Invalid);
         }
+        // Taken just after run's own deadline, so it never cuts the probe short sooner.
+        let deadline = Instant::now()
+            .checked_add(spec.timeout)
+            .ok_or(Error::Invalid)?;
         let fd = spec.directory.as_raw_fd();
         // Include extant descriptors above a lowered soft limit. The parent must
         // not race descriptor-limit changes against this trusted spawn operation.
@@ -104,6 +106,9 @@ impl OwnedChild {
             process,
             status: None,
             ownership_lost: false,
+            stop: Arc::clone(stop),
+            caller: Arc::clone(caller),
+            deadline,
             #[cfg(test)]
             signals_sent: 0,
         })
@@ -190,15 +195,14 @@ impl OwnedChild {
             })?;
             self.status = Some(status);
             if let Some(error) = failure {
-                let probe = || {
-                    if unsafe { libc::kill(group, 0) } == 0 {
-                        None
-                    } else {
-                        std::io::Error::last_os_error().raw_os_error()
-                    }
+                let interrupted = || {
+                    super::cancelled(&self.stop, &self.caller) || Instant::now() >= self.deadline
                 };
                 if error.raw_os_error() != Some(libc::EPERM)
-                    || !group_vanishes(probe, GROUP_TEARDOWN_GRACE)
+                    || !crate::process::group::reaped_group_vanishes(
+                        self.process.id() as i32,
+                        interrupted,
+                    )
                 {
                     return Err(Error::Cleanup);
                 }
@@ -208,27 +212,6 @@ impl OwnedChild {
         #[cfg(not(unix))]
         {
             Err(Error::Unsupported)
-        }
-    }
-}
-
-/// Bound for the kernel to drop an exited group after its leader is reaped.
-#[cfg(unix)]
-const GROUP_TEARDOWN_GRACE: Duration = Duration::from_secs(1);
-
-/// macOS rejects group signals with EPERM while the only member is a zombie, and under
-/// load it can keep reporting the group for tens of milliseconds after that member is
-/// reaped. Accept the group as gone only once a probe reports ESRCH within `grace`.
-/// `probe` returns `None` when signal 0 is delivered, otherwise the errno; it sends no
-/// signal, so polling cannot reach a process that later reuses the released PID.
-#[cfg(unix)]
-pub(super) fn group_vanishes(mut probe: impl FnMut() -> Option<i32>, grace: Duration) -> bool {
-    let started = Instant::now();
-    loop {
-        match probe() {
-            Some(libc::ESRCH) => return true,
-            Some(libc::EPERM) if started.elapsed() < grace => thread::sleep(POLL_INTERVAL),
-            _ => return false,
         }
     }
 }
