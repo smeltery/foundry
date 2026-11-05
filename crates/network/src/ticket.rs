@@ -12,7 +12,6 @@ use iroh::{EndpointAddr, EndpointId};
 use std::net::{IpAddr, SocketAddr};
 #[path = "ticket_text.rs"]
 mod text;
-pub use text::display_name;
 
 pub const MAX_TICKET_BYTES: usize = 65_536;
 

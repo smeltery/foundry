@@ -126,6 +126,11 @@ impl Engine {
         if routes.len() > registry::MAX_RESULTS {
             return Err(EngineError::Limit);
         }
+        // Rows stored before redaction and remote advertisements are shared too.
+        for route in &mut routes {
+            route.entry.status = self.shareable(&route.entry.status)?;
+            route.entry.doing = self.shareable(&route.entry.doing)?;
+        }
         Ok(routes)
     }
     pub(super) fn resolve_route(&self, filter: &Filter) -> Result<Route, EngineError> {

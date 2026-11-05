@@ -45,10 +45,8 @@ Invisible separators and Markdown escapes cannot hide those fragments. Adjacent
 ASCII letters suppress a prefix match; digits, punctuation and non-ASCII letters
 do not. Whitespace is preserved. This is configured ticket detection, not general
 credential removal, and callers must apply it before sharing display text.
-
-`display_name` replaces control characters and Unicode line/paragraph separators
-with spaces, then limits display to 60 characters including an ellipsis when
-truncated. It does not modify the signed team name or redact ticket contents.
+With the network enabled, the daemon applies it to session status and doing text
+before storing it, and again to directory entries and published presence.
 
 `Ticket::peer_addresses` applies a team relay to every peer. Without a team relay,
 only the first peer receives the relay hint; IP hints also apply only to that
