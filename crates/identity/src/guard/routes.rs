@@ -1,6 +1,6 @@
-//! The protected-route table: each provisional method and path template, the
-//! operation it invokes and so the scope it requires. Paths, methods and
-//! segment names are provisional pending NIC-34 D1/D6 and NIC-36 C2.
+//! The protected-route table: each provisional method and path template and
+//! the operation it invokes. Paths, methods, segment names and the parameter
+//! alphabet are provisional pending NIC-34 D1/D6 and NIC-36 C2.
 
 use crate::authz::{Operation, Operation as Op, Scope};
 
@@ -11,9 +11,13 @@ pub enum Method {
     Put,
     Patch,
     Delete,
+    /// Any other method, such as `HEAD` or `OPTIONS`. No route uses it, so
+    /// the guard denies it as an unknown route.
+    Other,
 }
 
 impl Method {
+    /// The routable methods.
     pub const ALL: [Method; 5] = [
         Method::Get,
         Method::Post,
@@ -22,32 +26,41 @@ impl Method {
         Method::Delete,
     ];
 
-    pub fn name(self) -> &'static str {
+    /// The wire name; `Other` has none.
+    pub fn name(self) -> Option<&'static str> {
         match self {
-            Method::Get => "GET",
-            Method::Post => "POST",
-            Method::Put => "PUT",
-            Method::Patch => "PATCH",
-            Method::Delete => "DELETE",
+            Method::Get => Some("GET"),
+            Method::Post => Some("POST"),
+            Method::Put => Some("PUT"),
+            Method::Patch => Some("PATCH"),
+            Method::Delete => Some("DELETE"),
+            Method::Other => None,
         }
     }
 
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|method| method.name() == name)
+    /// Method names are case-sensitive; anything unrecognized is `Other`.
+    pub fn from_name(name: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|method| method.name() == Some(name))
+            .unwrap_or(Method::Other)
     }
 }
 
 /// What a route invokes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
-    /// An operation of the authorization catalog, which owns its scope.
+    /// An operation of the authorization catalog, which owns and enforces its
+    /// scope.
     Catalog(Operation),
-    /// A session API operation. The catalog does not cover session operations
-    /// yet, so the decision denies them by default; `scope` records the scope
-    /// the route will require once it does.
+    /// A session API operation. The catalog has no session operations yet, so
+    /// the decision denies every session route by default.
     Session {
         operation: &'static str,
-        scope: Scope,
+        /// A provisional placeholder that is not enforced and comes from no
+        /// specification: the session API assigns no scope per operation.
+        /// The catalog decides the real scope when session operations join it.
+        placeholder_scope: Scope,
     },
 }
 
@@ -68,15 +81,17 @@ impl Route {
         }
     }
 
-    /// The scope the route requires; `None` admits any valid credential.
-    pub fn scope(&self) -> Option<Scope> {
+    /// The scope the catalog enforces, where `Some(None)` admits any valid
+    /// credential. Session routes have no enforced scope yet.
+    pub fn enforced_scope(&self) -> Option<Option<Scope>> {
         match self.target {
-            Target::Catalog(operation) => operation.rule().scope,
-            Target::Session { scope, .. } => Some(scope),
+            Target::Catalog(operation) => Some(operation.rule().scope),
+            Target::Session { .. } => None,
         }
     }
 
     /// Matches a concrete path and returns its parameters in template order.
+    /// Only canonical parameters match; see `is_canonical_param`.
     fn matches<'p>(&self, path: &'p str) -> Option<Vec<(&'static str, &'p str)>> {
         let mut template = self.path.split('/');
         let mut concrete = path.split('/');
@@ -86,7 +101,7 @@ impl Route {
                 (None, None) => return Some(params),
                 (Some(expected), Some(actual)) => {
                     match expected.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-                        Some(name) if !actual.is_empty() => params.push((name, actual)),
+                        Some(name) if is_canonical_param(actual) => params.push((name, actual)),
                         None if expected == actual => {}
                         _ => return None,
                     }
@@ -97,7 +112,20 @@ impl Route {
     }
 }
 
-/// A matched route and its path parameters.
+/// The one canonical spelling of a path parameter: lowercase ASCII letters,
+/// digits, `-` and `_`. The guard never decodes, so a percent-encoded,
+/// dot-segment or case-variant spelling cannot match a route and reach a
+/// handler that might read a different identifier than the decision did.
+/// The specification defines no identifier alphabet; this one is provisional.
+fn is_canonical_param(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment
+            .bytes()
+            .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_'))
+}
+
+/// A matched route and its canonical path parameters. Handlers use them as
+/// given and never decode them again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteMatch<'p> {
     pub route: &'static Route,
@@ -136,17 +164,19 @@ macro_rules! routes {
     };
 }
 
+// Placeholder split for session routes: reads take `sessions.read` and every
+// other route `sessions.run`. Not enforced; see `Target::Session`.
 const fn read(operation: &'static str) -> Target {
     Target::Session {
         operation,
-        scope: Scope::SessionsRead,
+        placeholder_scope: Scope::SessionsRead,
     }
 }
 
 const fn run(operation: &'static str) -> Target {
     Target::Session {
         operation,
-        scope: Scope::SessionsRun,
+        placeholder_scope: Scope::SessionsRun,
     }
 }
 

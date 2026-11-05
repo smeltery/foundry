@@ -1,5 +1,6 @@
 //! Guard outcomes: bearer extraction, credential resolution, routing and the
 //! decision's 401, 403, 404 and 429 classes, and redaction of token bytes.
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use foundry_identity::authz::*;
@@ -26,10 +27,12 @@ impl CredentialResolver for Down {
     }
 }
 
-struct Limited(u32);
+/// Throttles every request it is asked about and counts how often it was.
+struct Limited(u32, Cell<u32>);
 
 impl Throttle for Limited {
     fn retry_after(&self, _principal: &Principal, _route: Option<&Route>) -> Option<u32> {
+        self.1.set(self.1.get() + 1);
         Some(self.0)
     }
 }
@@ -182,20 +185,83 @@ fn a_workspace_outside_the_binding_is_not_found() {
 #[test]
 fn the_throttle_hook_applies_only_after_authentication() {
     let limited = |header: &'static [&'static str], path: &'static str| {
-        guard(
+        let throttle = Limited(7, Cell::new(0));
+        let rejection = guard(
             &request(Method::Get, path, header),
             &store(READ),
-            &Limited(7),
+            &throttle,
             &org(),
         )
-        .expect_err("refused")
+        .expect_err("refused");
+        (rejection, throttle.1.get())
     };
-    for path in ["/v1/workspaces", "/v1/not-a-route"] {
-        let rejection = limited(BEARER, path);
+    // Throttling precedes binding and scope, so it also wins over a 404.
+    for path in ["/v1/workspaces", "/v1/not-a-route", "/v1/workspaces/w-2"] {
+        let (rejection, calls) = limited(BEARER, path);
         assert_eq!(rejection.provisional_status(), 429, "{path}");
         assert_eq!(rejection.retry_after_seconds(), Some(7));
+        assert_eq!(calls, 1, "{path}");
     }
-    assert_eq!(limited(&[], "/v1/workspaces").provisional_status(), 401);
+    // Missing, unknown and revoked credentials never reach the hook.
+    for header in [&[][..], &["Bearer other"], &["Bearer revoked-token"]] {
+        let (rejection, calls) = limited(header, "/v1/workspaces");
+        assert_eq!(rejection.provisional_status(), 401, "{header:?}");
+        assert_eq!(calls, 0, "{header:?}");
+    }
+}
+
+/// An admin of the bound workspace that also has an owner, `owner-1`.
+fn admin_store() -> (Store, Organization) {
+    let credential = Credential::new(CredentialKind::LoginGrant, WorkspaceId::new(BOUND))
+        .with_scopes([Scope::WorkspaceWrite]);
+    let admin = Principal::new(PrincipalId::new("u-1"), credential);
+    let org = Organization::new().with_workspace(
+        Workspace::new(WorkspaceId::new(BOUND))
+            .with_member(PrincipalId::new("u-1"), Role::Admin)
+            .with_member(PrincipalId::new("owner-1"), Role::Owner),
+    );
+    (Store(BTreeMap::from([(SECRET, admin)])), org)
+}
+
+#[test]
+fn spellings_of_an_owner_id_never_reach_member_changes() {
+    let (store, org) = admin_store();
+    let decide = |method: Method, path: &str| {
+        let guarded = GuardRequest {
+            new_role: Some(Role::Member),
+            ..request(method, path, BEARER)
+        };
+        guard(&guarded, &store, &Unthrottled, &org).map(|admission| admission.access)
+    };
+    for (method, suffix) in [(Method::Delete, ""), (Method::Put, "/role")] {
+        let plain = decide(
+            method,
+            &format!("/v1/workspaces/w-1/members/owner-1{suffix}"),
+        );
+        assert!(
+            matches!(plain, Err(Rejection::Denied(denial)) if denial.check == Check::Ownership),
+            "{plain:?}"
+        );
+        for spelling in [
+            "owner%2D1",
+            "%6Fwner-1",
+            "OWNER-1",
+            "..",
+            ".",
+            "owner-1%2F..",
+        ] {
+            let path = format!("/v1/workspaces/w-1/members/{spelling}{suffix}");
+            assert_eq!(
+                decide(method, &path),
+                Err(Rejection::UnknownRoute),
+                "{path}"
+            );
+        }
+    }
+    for method in ["HEAD", "OPTIONS", "BREW"] {
+        let decision = decide(Method::from_name(method), "/v1/workspaces/w-1");
+        assert_eq!(decision, Err(Rejection::UnknownRoute), "{method}");
+    }
 }
 
 #[test]

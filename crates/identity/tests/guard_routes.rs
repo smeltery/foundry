@@ -1,6 +1,7 @@
-//! The route table against both specifications: every session API operation
-//! and every catalog operation has a route, routes never shadow each other,
-//! and anything unrouted resolves to nothing.
+//! The route table against both specifications: the routed operations are
+//! exactly the API operations of the two coverage indexes, routes never
+//! shadow each other, and anything unrouted or non-canonical resolves to
+//! nothing.
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -27,8 +28,11 @@ fn indexed_operations(document: &str) -> BTreeSet<String> {
         .collect()
 }
 
-fn routed() -> BTreeSet<&'static str> {
-    ROUTES.iter().map(|route| route.operation()).collect()
+fn routed() -> BTreeSet<String> {
+    ROUTES
+        .iter()
+        .map(|route| route.operation().to_owned())
+        .collect()
 }
 
 /// A concrete path for a template, with each parameter replaced by a sample.
@@ -46,17 +50,27 @@ fn sample(template: &str) -> String {
         .join("/")
 }
 
+fn label(method: Method) -> &'static str {
+    method.name().unwrap_or("OTHER")
+}
+
 #[test]
-fn every_session_api_operation_has_a_route() {
-    let operations = indexed_operations("session-api.md");
-    assert!(operations.len() >= 30, "index parse found {operations:?}");
-    let missing: Vec<_> = operations
-        .iter()
-        .filter(|name| name.starts_with("session.") && !routed().contains(name.as_str()))
+fn routed_operations_equal_the_specified_api_operations() {
+    let session = indexed_operations("session-api.md");
+    assert!(session.len() >= 30, "index parse found {session:?}");
+    // The CLI and credential rows of the identity index are not API operations.
+    let specified: BTreeSet<String> = session
+        .into_iter()
+        .chain(indexed_operations("identity.md"))
+        .filter(|name| !name.starts_with("cli.") && !name.starts_with("credential."))
         .collect();
+    let routed = routed();
+    let unrouted: Vec<_> = specified.difference(&routed).collect();
+    let unspecified: Vec<_> = routed.difference(&specified).collect();
+    assert!(unrouted.is_empty(), "specified but unrouted: {unrouted:?}");
     assert!(
-        missing.is_empty(),
-        "unrouted session operations: {missing:?}"
+        unspecified.is_empty(),
+        "routed but unspecified: {unspecified:?}"
     );
 }
 
@@ -69,12 +83,6 @@ fn every_catalog_operation_has_exactly_one_route() {
             .count();
         assert_eq!(count, 1, "{} has {count} routes", operation.name());
     }
-    // The CLI rows of the identity index are not API operations.
-    for name in indexed_operations("identity.md") {
-        if !name.starts_with("cli.") && !name.starts_with("credential.") {
-            assert!(routed().contains(name.as_str()), "unrouted: {name}");
-        }
-    }
 }
 
 #[test]
@@ -86,7 +94,7 @@ fn every_route_resolves_to_itself_and_no_operation_is_routed_twice() {
             matched.route,
             expected,
             "{} {path} is shadowed",
-            expected.method.name()
+            label(expected.method)
         );
         let params = expected.path.matches('{').count();
         assert_eq!(matched.params.len(), params);
@@ -95,21 +103,28 @@ fn every_route_resolves_to_itself_and_no_operation_is_routed_twice() {
 }
 
 #[test]
-fn route_scopes_follow_the_catalog_and_the_session_split() {
+fn only_catalog_routes_enforce_a_scope_and_session_scopes_are_placeholders() {
     for entry in ROUTES {
         match entry.target {
-            Target::Catalog(operation) => assert_eq!(entry.scope(), operation.rule().scope),
-            Target::Session { operation, scope } => {
+            Target::Catalog(operation) => {
+                assert_eq!(entry.enforced_scope(), Some(operation.rule().scope));
+            }
+            // Session placeholders come from no specification and are not
+            // enforced: the decision denies these routes until the catalog
+            // gains them. The test pins only that, not any scope rule.
+            Target::Session {
+                operation,
+                placeholder_scope,
+            } => {
                 assert!(
                     Operation::from_name(operation).is_none(),
-                    "{operation} is in the catalog"
+                    "{operation} is catalogued"
                 );
-                let expected = if entry.method == Method::Get {
-                    Scope::SessionsRead
-                } else {
-                    Scope::SessionsRun
-                };
-                assert_eq!(scope, expected, "{operation}");
+                assert_eq!(entry.enforced_scope(), None, "{operation}");
+                assert!(
+                    matches!(placeholder_scope, Scope::SessionsRead | Scope::SessionsRun),
+                    "{operation}"
+                );
             }
         }
     }
@@ -123,17 +138,49 @@ fn unrouted_requests_resolve_to_nothing() {
         (Method::Get, "/v1/workspaces//members"),
         (Method::Get, "/v1/sessions/s-1/extra/segment"),
         (Method::Patch, "/v1/sessions"),
+        (Method::Other, "/v1/sessions"),
         (Method::Get, "v1/sessions"),
         (Method::Get, ""),
     ] {
         assert!(
             route(method, path).is_none(),
             "{} {path} resolved",
-            method.name()
+            label(method)
         );
     }
     let matched = route(Method::Get, "/v1/sessions/s-1/events?after=4").expect("query ignored");
     assert_eq!(matched.route.operation(), "session.events");
     assert_eq!(matched.param("session"), Some("s-1"));
-    assert_eq!(Method::from_name("get"), None);
+    for name in ["get", "HEAD", "OPTIONS", "TRACE", ""] {
+        assert_eq!(Method::from_name(name), Method::Other, "{name}");
+    }
+    assert_eq!(Method::from_name("DELETE"), Method::Delete);
+}
+
+#[test]
+fn non_canonical_parameters_never_route() {
+    let base = "/v1/workspaces/w-1/members/";
+    for member in [
+        "owner%2D1",
+        "%6Fwner-1",
+        "OWNER-1",
+        "Owner-1",
+        "..",
+        ".",
+        "owner-1%2F..",
+        "owner.1",
+        "owner 1",
+        "owner+1",
+    ] {
+        for (method, suffix) in [(Method::Delete, ""), (Method::Put, "/role")] {
+            let path = format!("{base}{member}{suffix}");
+            assert!(
+                route(method, &path).is_none(),
+                "{} {path} routed",
+                label(method)
+            );
+        }
+    }
+    assert!(route(Method::Get, "/v1/workspaces/W-1").is_none());
+    assert!(route(Method::Delete, "/v1/workspaces/w-1/members/owner_1-2").is_some());
 }

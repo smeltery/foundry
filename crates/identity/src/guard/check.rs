@@ -22,8 +22,11 @@ pub trait CredentialResolver {
     fn resolve(&self, token: &BearerToken) -> Result<Option<Principal>, ResolverUnavailable>;
 }
 
-/// The 429 hook. It runs only for authenticated callers, before any route or
-/// scope check, and returns the delay the caller must wait.
+/// The 429 hook. It is consulted only after the credential authenticates
+/// against committed identity state, so an unknown, revoked or expired
+/// credential never spends a principal's budget. It returns the delay the
+/// caller must wait; a throttled request is refused before any route, binding,
+/// scope or role check reports.
 pub trait Throttle {
     fn retry_after(&self, principal: &Principal, route: Option<&Route>) -> Option<u32>;
 }
@@ -42,8 +45,11 @@ impl Throttle for Unthrottled {
 #[derive(Clone, Copy)]
 pub struct GuardRequest<'a> {
     pub method: Method,
+    /// The path as received, never decoded. Only canonical parameters route.
     pub path: &'a str,
-    /// Every value of the authorization header, in arrival order.
+    /// Every value of every header whose name matches `Authorization`
+    /// case-insensitively, in arrival order. The transport must pass all of
+    /// them, never only the first, so a repeated header is refused.
     pub authorization: &'a [&'a str],
     /// The role a role change assigns, decoded from the body by the caller.
     pub new_role: Option<Role>,
@@ -136,8 +142,14 @@ pub fn guard<'p>(
         Some(matched) => operation_request(matched, request.new_role),
         None => OperationRequest::new(UNROUTED),
     };
-    operation.retry_after_seconds = throttle.retry_after(&principal, route);
-    let decision = authorize(Some(&principal), org, &operation);
+    let mut decision = authorize(Some(&principal), org, &operation);
+    let authenticated = !matches!(decision, Err(denial) if denial.check == Check::Authentication);
+    // Throttling precedes every check after authentication, so a throttled
+    // request is decided again and receives `rate_limited` from the decision.
+    if authenticated && let Some(delay) = throttle.retry_after(&principal, route) {
+        operation.retry_after_seconds = Some(delay);
+        decision = authorize(Some(&principal), org, &operation);
+    }
     match (matched, decision) {
         (Some(matched), Ok(access)) => Ok(Admission {
             matched,
