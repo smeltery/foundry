@@ -10,13 +10,26 @@ use std::{
     time::Duration,
 };
 
+// Ordering is asserted through persistence requests and replies, never elapsed time.
+// These bounds only detect a stuck run, so they sit far above process startup on a
+// loaded workstation and passing tests never wait for them.
+/// Upper bound for one persistence request or the run's final result.
+pub const WAIT: Duration = Duration::from_secs(20);
+const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
+const HELPER_TIMEOUT: Duration = Duration::from_secs(20);
+/// Only the hang helper reaches its deadline. The deadline starts before spawn, so it
+/// must still exceed the helper's spawn, exec and interpreter startup.
+const HANG_HELPER_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct Fixture {
     pub root: PathBuf,
     python: PathBuf,
+    helper: PathBuf,
+    helper_timeout: Duration,
 }
 impl Fixture {
-    pub fn new(helper: &str) -> Self {
-        use std::os::unix::fs::PermissionsExt;
+    pub fn new(mode: &str) -> Self {
         let root = std::env::temp_dir().join(format!("f5y-coordinator-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         let output = Command::new("python3")
@@ -25,15 +38,19 @@ impl Fixture {
             .unwrap();
         assert!(output.status.success());
         let python = PathBuf::from(String::from_utf8(output.stdout).unwrap().trim());
-        let source = format!(
-            "#!{}\nmode={helper:?}\n{}",
-            python.display(),
-            include_str!("helper.py")
-        );
-        std::fs::write(root.join("helper"), source).unwrap();
-        std::fs::set_permissions(root.join("helper"), std::fs::Permissions::from_mode(0o700))
-            .unwrap();
-        Self { root, python }
+        std::fs::write(root.join("helper-mode"), mode).unwrap();
+        let helper = installed_helper(&python);
+        let helper_timeout = if mode == "hang" {
+            HANG_HELPER_TIMEOUT
+        } else {
+            HELPER_TIMEOUT
+        };
+        Self {
+            root,
+            python,
+            helper,
+            helper_timeout,
+        }
     }
     pub fn start(&self, adapter: &str, enabled: bool) -> Harness {
         self.start_with_capacity(adapter, enabled, PERSISTENCE_CAPACITY)
@@ -57,8 +74,8 @@ impl Fixture {
             .into_iter()
             .map(Into::into)
             .collect();
-        spec.run_timeout = Duration::from_secs(4);
-        spec.ready_timeout = Duration::from_secs(2);
+        spec.run_timeout = RUN_TIMEOUT;
+        spec.ready_timeout = READY_TIMEOUT;
         spec.cancel_timeout = Duration::from_millis(100);
         let session = Session {
             id: "session".into(),
@@ -74,7 +91,7 @@ impl Fixture {
         };
         let policy = enabled.then(|| {
             TrustedToolPolicy::new(
-                self.root.join("helper"),
+                self.helper.clone(),
                 Dir::open_ambient_dir(&self.root, cap_std::ambient_authority()).unwrap(),
                 grants,
                 host::HostLimits {
@@ -84,7 +101,7 @@ impl Fixture {
                     output_bytes: host::MAX_REPLY_BYTES,
                     entries: 256,
                 },
-                Duration::from_millis(500),
+                self.helper_timeout,
             )
             .unwrap()
         });
@@ -132,6 +149,29 @@ impl Drop for Fixture {
     }
 }
 
+/// Installs the helper once per content at a stable path and reuses it. macOS endpoint
+/// security scans each newly written executable on first exec, which can delay a fresh
+/// per-test helper past its deadline; a reused file is scanned only once.
+fn installed_helper(python: &std::path::Path) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    use std::os::unix::fs::PermissionsExt;
+    let source = format!("#!{}\n{}", python.display(), include_str!("helper.py"));
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut hasher);
+    let directory = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let path = directory.join(format!("coordinated-helper-{:016x}", hasher.finish()));
+    if path.exists() {
+        return path;
+    }
+    // Concurrent test processes may install the same helper; the rename is atomic, so
+    // no process can execute a partially written file.
+    let staged = directory.join(format!("coordinated-helper-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&staged, source).unwrap();
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::rename(&staged, &path).unwrap();
+    path
+}
+
 pub struct Harness {
     pub identity: Option<ToolPolicyIdentity>,
     pub receive: Receiver<PersistenceRequest>,
@@ -142,7 +182,13 @@ pub struct Harness {
 }
 impl Harness {
     pub fn next(&self) -> PersistenceRequest {
-        self.receive.recv_timeout(Duration::from_secs(3)).unwrap()
+        match self.receive.recv_timeout(WAIT) {
+            Ok(request) => request,
+            Err(error) => panic!(
+                "expected persistence request: {error:?}, run outcome {:?}",
+                self.results.try_recv()
+            ),
+        }
     }
     pub fn event(&self) -> foundry_contracts::AdapterEvent {
         let PersistenceRequest::Event { checkpoint, event } = self.next() else {
@@ -169,7 +215,7 @@ impl Harness {
             .unwrap();
     }
     pub fn finish(mut self) -> Result<RunResult, RuntimeError> {
-        let result = self.results.recv_timeout(Duration::from_secs(5)).unwrap();
+        let result = self.results.recv_timeout(WAIT).unwrap();
         self.worker.take().unwrap().join().unwrap();
         result
     }
