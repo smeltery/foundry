@@ -96,28 +96,34 @@ fn external_reap_loses_reservation_and_cleanup_never_signals() {
 
 #[cfg(unix)]
 #[test]
-fn reaped_group_is_gone_only_after_probe_reports_absence() {
-    // macOS can report a reaped zombie's group with EPERM briefly before ESRCH.
-    let mut probes = [libc::EPERM, libc::EPERM, libc::ESRCH]
-        .into_iter()
-        .map(Some);
-    assert!(child::group_vanishes(
-        || probes.next().unwrap(),
-        Duration::from_secs(5)
-    ));
-    // A group that keeps rejecting probes, gains a signalable member, or reports any
-    // other error is not proven gone.
-    assert!(!child::group_vanishes(
-        || Some(libc::EPERM),
-        Duration::from_millis(30)
-    ));
-    let mut probes = [Some(libc::EPERM), None].into_iter();
-    assert!(!child::group_vanishes(
-        || probes.next().unwrap(),
-        Duration::from_secs(5)
-    ));
-    assert!(!child::group_vanishes(
-        || Some(libc::EINVAL),
-        Duration::from_secs(5)
-    ));
+fn only_cancellation_shortens_the_wait_for_a_lagging_group() {
+    let spec = ToolProcessSpec {
+        helper: std::path::PathBuf::from("/usr/bin/true"),
+        directory: cap_std::fs::Dir::open_ambient_dir(
+            std::env::temp_dir(),
+            cap_std::ambient_authority(),
+        )
+        .unwrap(),
+        timeout: Duration::from_millis(1),
+    };
+    // The group keeps reporting EPERM well past the shortened cancellation bound.
+    let lagging = || {
+        let started = Instant::now();
+        move || {
+            if started.elapsed() < Duration::from_millis(400) {
+                Some(libc::EPERM)
+            } else {
+                Some(libc::ESRCH)
+            }
+        }
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let caller = Arc::new(AtomicBool::new(false));
+    let mut owned = child::OwnedChild::spawn(&spec, &stop, &caller).unwrap();
+    thread::sleep(Duration::from_millis(5));
+    // Past its deadline but not cancelled: a cleanly exited helper keeps the full grace.
+    assert!(owned.reaped_group_vanishes(lagging()));
+    caller.store(true, Ordering::Release);
+    assert!(!owned.reaped_group_vanishes(lagging()));
+    assert!(owned.cleanup().unwrap().success());
 }

@@ -1,5 +1,6 @@
 //! Pairing codes: short, single-use and short-lived, presented as
-//! `<id>-<secret>` where `<id>` is the public prefix. A wrong secret for a
+//! `<id>-<secret>` where `<id>` is the public prefix and `<secret>` is shown
+//! as three hyphen-separated groups of four symbols. A wrong secret for a
 //! known prefix, presented by the issuing user, counts against that pairing's
 //! attempt limit; once the limit is reached the pairing never verifies again.
 //! The first matching claim binds the pairing to one client; only that client
@@ -20,8 +21,12 @@ use super::{CredentialStore, bearer, required};
 use crate::authz::{CredentialKind, CredentialState, PrincipalId, WorkspaceId};
 
 const PREFIX_SYMBOLS: usize = 8;
-/// Eight symbols of five bits each: 40 random bits, typed by hand.
-const SECRET_SYMBOLS: usize = 8;
+/// Twelve symbols of five bits each: 60 random bits, so searching a copied
+/// digest is impractical within [`PAIRING_MAX_LIFETIME`].
+const SECRET_SYMBOLS: usize = 12;
+/// Symbols per displayed secret group; the groups make the code easier to type.
+const SECRET_GROUP: usize = 4;
+const SEPARATOR: char = '-';
 
 /// The longest pairing lifetime. The specification calls the window
 /// short-lived but gives no duration, so this provisional cap keeps it to a
@@ -90,11 +95,49 @@ pub struct IssuedPairing {
     pub code: SecretText,
 }
 
-fn parse(code: &str) -> Option<(&str, &str)> {
-    let (prefix, secret_part) = code.split_once('-')?;
+/// The presentable code: the prefix, then the secret in groups.
+fn display(prefix: &str, secret_part: &str) -> String {
+    let mut code = String::from(prefix);
+    for (index, symbol) in secret_part.chars().enumerate() {
+        if index % SECRET_GROUP == 0 {
+            code.push(SEPARATOR);
+        }
+        code.push(symbol);
+    }
+    code
+}
+
+/// The secret without its group separators. Each boundary between groups may
+/// carry one separator or none; a separator anywhere else is refused.
+fn ungroup(grouped: &str) -> Option<String> {
+    let mut symbols = String::with_capacity(SECRET_SYMBOLS);
+    let mut after_separator = false;
+    for character in grouped.chars() {
+        if character != SEPARATOR {
+            symbols.push(character);
+            after_separator = false;
+            continue;
+        }
+        let at_boundary =
+            (1..SECRET_SYMBOLS / SECRET_GROUP).any(|group| symbols.len() == group * SECRET_GROUP);
+        if after_separator || !at_boundary {
+            return None;
+        }
+        after_separator = true;
+    }
+    Some(symbols)
+}
+
+/// Splits presented text into its prefix and canonical secret, ignoring case.
+/// Anything malformed, including a secret of the wrong length, is refused
+/// here, before the store is touched, so it never counts as an attempt.
+fn parse(code: &str) -> Option<(String, String)> {
+    let code = code.to_ascii_uppercase();
+    let (prefix, grouped) = code.split_once(SEPARATOR)?;
+    let secret_part = ungroup(grouped)?;
     let well_formed = secret::is_symbols(prefix, PREFIX_SYMBOLS)
-        && secret::is_symbols(secret_part, SECRET_SYMBOLS);
-    well_formed.then_some((prefix, secret_part))
+        && secret::is_symbols(&secret_part, SECRET_SYMBOLS);
+    well_formed.then(|| (prefix.to_owned(), secret_part))
 }
 
 /// A pairing row and its digest, `None` once erased.
@@ -192,7 +235,7 @@ impl CredentialStore {
                     ],
                 )
                 .storage()?;
-            let code = SecretText::new(format!("{prefix}-{secret_part}"));
+            let code = SecretText::new(display(&prefix, &secret_part));
             let record = PairingRecord {
                 prefix,
                 principal: principal.clone(),
@@ -224,6 +267,7 @@ impl CredentialStore {
     ) -> Result<PairingRecord, StoreError> {
         required(client, "client")?;
         let (prefix, secret_part) = parse(code).ok_or(StoreError::PairingInvalid)?;
+        let (prefix, secret_part) = (prefix.as_str(), secret_part.as_str());
         self.write(|transaction, now_ms| {
             let login = bearer::verify(transaction, presented_login, now_ms)?;
             if login.state != CredentialState::Active {
@@ -274,15 +318,16 @@ impl CredentialStore {
         })?
     }
 
-    /// The pairing with public `prefix` in `workspace`; one in another
-    /// workspace is `NotFound`.
+    /// The pairing with public `prefix` in `workspace`, ignoring case as
+    /// claims do; one in another workspace is `NotFound`.
     pub fn pairing(
         &self,
         workspace: &WorkspaceId,
         prefix: &str,
     ) -> Result<PairingRecord, StoreError> {
+        let prefix = prefix.to_ascii_uppercase();
         self.read(|transaction, now_ms| {
-            load(transaction, prefix, now_ms)?
+            load(transaction, &prefix, now_ms)?
                 .map(|(record, _)| record)
                 .filter(|record| &record.workspace == workspace)
                 .ok_or(StoreError::NotFound { what: "pairing" })
