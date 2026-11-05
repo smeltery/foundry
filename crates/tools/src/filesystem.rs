@@ -10,7 +10,7 @@ use std::{
 };
 
 impl WorkspaceTools {
-    fn parent(&self, path: &str) -> Result<(Dir, String)> {
+    pub(crate) fn parent(&self, path: &str) -> Result<(Dir, String)> {
         let mut parts = components(path)?;
         let leaf = parts
             .pop()
@@ -154,7 +154,7 @@ fn components(path: &str) -> Result<Vec<String>> {
     }
     Ok(parts)
 }
-fn regular_options() -> OpenOptions {
+pub(crate) fn regular_options() -> OpenOptions {
     let mut options = OpenOptions::new();
     options.follow(FollowSymlinks::No);
     #[cfg(unix)]

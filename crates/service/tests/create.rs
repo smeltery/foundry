@@ -112,3 +112,17 @@ fn decoded_v2_request_replays_across_restart_with_its_associations() {
     ));
     assert_eq!(service.list(10).unwrap().len(), 1);
 }
+
+#[test]
+fn unknown_tool_profile_is_unsupported_and_writes_nothing() {
+    let dir = tempdir().unwrap();
+    let mut service = Service::open(dir.path().join("store.db")).unwrap();
+    let request = decode(r#""idempotency_key":null,"tool_profile":"default/read-write""#);
+    assert!(matches!(
+        service.create_session(request.unwrap()),
+        Err(ServiceError::Store(StoreError::Contract(
+            ContractError::Unsupported(_)
+        )))
+    ));
+    assert!(service.list(10).unwrap().is_empty());
+}

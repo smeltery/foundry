@@ -16,11 +16,24 @@ let result = tools.execute_json("read", br#"{"path":"src/lib.rs"}"#);
 | `list` | `{"path":"."}` | `list` | `{"entries":[{"name":"src","kind":"directory"}]}` |
 | `write` | `{"path":"new.txt","content":"text","mode":"create"}` | `create` | `{"bytes_written":4}` |
 | `write` | `{"path":"existing.txt","content":"text","mode":"overwrite"}` | `overwrite` | `{"bytes_written":4}` |
+| `edit` | `{"path":"existing.txt","old_text":"a","new_text":"b"}` | `overwrite` | `{"replacements":1,"bytes_written":4}` |
 
 `Grants` has independent `read`, `list`, `create` and `overwrite` booleans, all false
 by default. Permissions apply to the entire selected directory capability. Unknown
 tools, unknown input fields and implicit write modes fail. Errors expose a stable
 `code()` and sanitized message, never file contents or ambient filesystem paths.
+
+Edit replaces one literal occurrence of `old_text`, or every occurrence with
+`"replace_all":true`; a missing or ambiguous match fails without writing. It never
+creates a file and shares overwrite's symlink, hard-link, special-file and size
+checks, with the current file bounded by the read limit and the result by the
+write limit. The toolhost IPC does not carry edit yet.
+
+`ToolProfile` maps a session's `tool_profile` reference to grants from a fixed
+table: `default` enables read, list, write and edit; `default/read-only` enables
+read and list. No reference grants nothing, and an unknown name is an error with
+no fallback. Service create rejects an unknown profile as unsupported. Profile and
+tool names are provisional.
 
 Create refuses existing paths. Overwrite requires an existing regular file and
 never creates missing files. Parent directories must exist. File contents must be
