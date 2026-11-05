@@ -1,10 +1,13 @@
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import shutil
 import socket
+import struct
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -96,12 +99,23 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(records[0]["failure"], {"category": "http", "status": 503})
         self.assertNotIn("text", records[0])
 
-    def test_unreachable_endpoint_is_a_connect_failure(self):
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        with self.assertRaises(ENDPOINT.EndpointFailure) as caught:
-            ENDPOINT.LoopbackClient("127.0.0.1", port).complete({"messages": []})
+    def test_reset_connection_is_a_connect_failure(self):
+        # A bound but idle socket is refused on Linux yet left to time out on macOS, so the
+        # listener here accepts and resets instead. It holds its port for the whole test.
+        def reset(listener):
+            connection, _ = listener.accept()
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            connection.close()
+
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            thread = threading.Thread(target=reset, args=(listener,))
+            thread.start()
+            client = ENDPOINT.LoopbackClient("127.0.0.1", listener.getsockname()[1])
+            with self.assertRaises(ENDPOINT.EndpointFailure) as caught:
+                client.complete({"messages": []})
+            thread.join()
         self.assertEqual(caught.exception.category, "connect")
 
     def test_malformed_replies_are_protocol_failures(self):
@@ -120,9 +134,21 @@ class CampaignTests(unittest.TestCase):
     def test_invalid_manifest_fields_are_refused(self):
         for changes in ({"effort": "extreme"}, {"repeats": 0}, {"repeats": True}, {"seeds": []},
                         {"seeds": [1, 1]}, {"provider": "hosted-a"}, {"provider_id": "Bad Label"},
-                        {"tasks": [{"path": "../campaign.json", "sha256": "0"}]}, {"schema": 2}):
+                        {"tasks": [{"path": "../campaign.json", "sha256": "0"}]}, {"schema": 2},
+                        {"grading": "none"}):
             with self.subTest(changes=changes), self.assertRaises(CAMPAIGN.ManifestError):
                 CAMPAIGN.load_manifest(self.manifest_copy(**changes))
+
+    def test_unknown_fixture_keys_are_refused(self):
+        task = json.loads((ROOT / "tests/quality/tasks/read-file-tool.json").read_text())
+        for name, change in (("task", {"score": 1}),
+                             ("tool", {"tools": [dict(task["tools"][0], strict=True)]})):
+            data = json.dumps(dict(task, **change)).encode()
+            path = self.manifest_copy(tasks=[{"path": "tasks/changed.json",
+                                              "sha256": hashlib.sha256(data).hexdigest()}])
+            (self.root / "tasks/changed.json").write_bytes(data)
+            with self.subTest(name), self.assertRaises(CAMPAIGN.ManifestError):
+                CAMPAIGN.load_manifest(path)
 
     def test_verify_reports_identical_digests(self):
         with mock.patch("builtins.print") as printed:

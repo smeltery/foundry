@@ -23,11 +23,17 @@ and the reported token counts. Tool calls are recorded, never run.
 ```sh
 python3 scripts/quality/campaign.py --manifest tests/quality/campaign.json --verify
 python3 scripts/quality/campaign.py --manifest tests/quality/campaign.json --out <dir>
-python3 -m unittest discover -s tests/quality -v
+python3 -m unittest discover -s tests/quality -p 'check_*.py' -v
 ```
 
-`--verify` runs the campaign twice and fails unless both runs wrote identical
-bytes. CI runs it in a non-blocking job.
+`--verify` runs the campaign in two subprocesses, each with a different hash
+seed, time zone and locale, and fails unless both wrote identical bytes.
+
+The harness is advisory and never blocks a merge. Its tests are named
+`check_*.py` so the shared `python` check group, which collects `test_*.py`,
+does not run them. Only the `campaign` CI job runs the tests and `--verify`. That
+job is skipped for documentation-only changes, the required gate ignores it, and
+a failure shows up as a warning annotation.
 
 ## Limitations
 

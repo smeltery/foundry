@@ -10,8 +10,10 @@ establishes model or benchmark equivalence.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -24,6 +26,15 @@ EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 PROVIDERS = ("fake", "local")
 MAX_REPEATS = 16
 MAX_OUTPUT_TOKENS = 4096
+MANIFEST_KEYS = {"schema", "campaign_id", "provider", "provider_id", "model", "effort", "seeds",
+                 "repeats", "tasks"}
+TASK_KEYS = {"id", "system", "prompt", "max_output_tokens", "tools"}
+TOOL_KEYS = {"name", "description", "parameters"}
+OUTPUT_FILES = ("manifest.json", "outcomes.jsonl")
+# Each --verify pass runs in its own interpreter with a different hash seed, time zone and
+# locale, so output that depended on any of them would differ between the passes.
+PASS_ENVIRONMENTS = ({"PYTHONHASHSEED": "1", "TZ": "UTC", "LC_ALL": "C"},
+                     {"PYTHONHASHSEED": "2", "TZ": "Asia/Kolkata", "LC_ALL": "C.UTF-8"})
 
 
 class ManifestError(ValueError):
@@ -35,11 +46,15 @@ def require(condition, message):
         raise ManifestError(message)
 
 
-def read_json(path):
+def parse_json(data, name):
     try:
-        return json.loads(path.read_bytes())
+        return json.loads(data)
     except ValueError as error:
-        raise ManifestError(f"{path.name}: invalid JSON") from error
+        raise ManifestError(f"{name}: invalid JSON") from error
+
+
+def is_count(value, limit):
+    return isinstance(value, int) and not isinstance(value, bool) and 0 < value <= limit
 
 
 def load_task(base, entry):
@@ -51,24 +66,25 @@ def load_task(base, entry):
             "task paths must stay under the manifest directory")
     data = (base / relative).read_bytes()
     require(hashlib.sha256(data).hexdigest() == entry["sha256"], f"{relative}: digest mismatch")
-    task = read_json(base / relative)
-    require(isinstance(task, dict) and LABEL.fullmatch(str(task.get("id", ""))),
-            f"{relative}: id must be a neutral label")
+    task = parse_json(data, relative)
+    require(isinstance(task, dict) and set(task) <= TASK_KEYS, f"{relative}: unknown task keys")
+    require(LABEL.fullmatch(str(task.get("id", ""))), f"{relative}: id must be a neutral label")
     require(isinstance(task.get("prompt"), str) and task["prompt"], f"{relative}: prompt required")
     require(isinstance(task.get("system", ""), str), f"{relative}: system must be text")
-    tokens = task.get("max_output_tokens")
-    require(isinstance(tokens, int) and 0 < tokens <= MAX_OUTPUT_TOKENS,
+    require(is_count(task.get("max_output_tokens"), MAX_OUTPUT_TOKENS),
             f"{relative}: max_output_tokens out of range")
     tools = task.get("tools", [])
     require(isinstance(tools, list) and all(
-        isinstance(tool, dict) and LABEL.fullmatch(str(tool.get("name", ""))) for tool in tools),
-        f"{relative}: tools need neutral names")
+        isinstance(tool, dict) and set(tool) == TOOL_KEYS and LABEL.fullmatch(str(tool["name"]))
+        and isinstance(tool["description"], str) and isinstance(tool["parameters"], dict)
+        for tool in tools), f"{relative}: tools need a neutral name, description and parameters")
     return {"path": relative, "sha256": entry["sha256"], "task": task}
 
 
 def load_manifest(path):
-    manifest = read_json(path)
-    require(isinstance(manifest, dict), "manifest must be an object")
+    manifest = parse_json(path.read_bytes(), path.name)
+    require(isinstance(manifest, dict) and set(manifest) == MANIFEST_KEYS,
+            "manifest must be an object with exactly the known keys")
     require(manifest.get("schema") == SCHEMA, f"manifest schema must be {SCHEMA}")
     for field in ("campaign_id", "provider_id"):
         require(LABEL.fullmatch(str(manifest.get(field, ""))), f"{field} must be a neutral label")
@@ -81,9 +97,7 @@ def load_manifest(path):
     require(isinstance(seeds, list) and seeds and len(set(seeds)) == len(seeds) and all(
         isinstance(seed, int) and not isinstance(seed, bool) and 0 <= seed < 2**32 for seed in seeds),
         "seeds must be unique unsigned 32-bit integers")
-    repeats = manifest.get("repeats")
-    require(isinstance(repeats, int) and not isinstance(repeats, bool) and 0 < repeats <= MAX_REPEATS,
-            f"repeats must be 1 to {MAX_REPEATS}")
+    require(is_count(manifest.get("repeats"), MAX_REPEATS), f"repeats must be 1 to {MAX_REPEATS}")
     require(isinstance(manifest.get("tasks"), list) and manifest["tasks"], "tasks required")
     tasks = [load_task(path.parent, entry) for entry in manifest["tasks"]]
     ids = [entry["task"]["id"] for entry in tasks]
@@ -154,10 +168,18 @@ def run(manifest_path, out, failure_status=None):
 
 
 def verify(manifest_path):
-    """Runs the campaign twice and fails unless both runs wrote identical bytes."""
-    with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
-        runs = [run(manifest_path, Path(directory)) for directory in (first, second)]
-    for name in runs[0]:
+    """Runs the campaign in two subprocesses and fails unless both wrote identical bytes."""
+    runs = []
+    with tempfile.TemporaryDirectory() as directory:
+        for index, overrides in enumerate(PASS_ENVIRONMENTS):
+            out = Path(directory) / str(index)
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "--manifest", str(manifest_path),
+                 "--out", str(out)], env=dict(os.environ, **overrides), capture_output=True, text=True)
+            if result.returncode != 0:
+                raise ValueError(f"pass {index + 1} failed: {result.stderr.strip()}")
+            runs.append({name: (out / name).read_bytes() for name in OUTPUT_FILES})
+    for name in OUTPUT_FILES:
         digests = {hashlib.sha256(files[name]).hexdigest() for files in runs}
         if len(digests) != 1:
             raise ValueError(f"{name} differs between two runs")

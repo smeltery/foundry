@@ -15,6 +15,8 @@ import urllib.request
 
 LOCAL_STATUS = "bellows/verify"
 GATE_JOB = "required"
+# Advisory jobs never block the gate, even on the macOS-outage path.
+ADVISORY_JOBS = {"campaign"}
 
 
 def unassigned_macos(job):
@@ -33,7 +35,7 @@ def decide(plan, check, activation, activation_plan, jobs, local_verified):
     if check == "success" and activation_ok:
         return True, "every planned job succeeded"
     blocking = [job for job in jobs
-                if job.get("name") != GATE_JOB
+                if job.get("name") != GATE_JOB and job.get("name") not in ADVISORY_JOBS
                 and job.get("conclusion") not in ("success", "skipped")]
     excused = [job for job in blocking if unassigned_macos(job)]
     if not blocking or len(excused) != len(blocking):

@@ -18,10 +18,10 @@
     "packages/provider-local/": 1900,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
-    "scripts/ci/": 616,
-    "scripts/quality/": 351,
+    "scripts/ci/": 618,
+    "scripts/quality/": 373,
     "scripts/release/": 1200,
-    "tests/": 5515,
+    "tests/": 5546,
     "vendor/netwatch/": 5695
   },
   "files": {
