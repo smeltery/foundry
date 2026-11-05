@@ -1,3 +1,4 @@
+mod support_lease;
 mod support_schema;
 use foundry_contracts::{CreateSession, Lifecycle, MessageState, Outcome};
 use foundry_store::Store;
@@ -144,17 +145,16 @@ fn version_one_migration_preserves_sessions_and_adds_queue() {
 
 #[test]
 fn uncertain_delivery_survives_recovery_without_requeue() {
-    use std::time::Duration;
     let dir = tempdir().unwrap();
     let path = dir.path().join("state.db");
-    let mut store = Store::open_with_lease(&path, Duration::from_millis(20)).unwrap();
+    let mut store = Store::open(&path).unwrap();
     let session = create(&mut store);
     store.enqueue_message(&session.id, "one", "first").unwrap();
     store.enqueue_message(&session.id, "two", "second").unwrap();
     let fence = store.begin_attempt(&session.id, session.version).unwrap();
     let claimed = store.claim_next_message(&fence).unwrap().unwrap();
-    std::thread::sleep(Duration::from_millis(40));
-    store.recover_expired().unwrap();
+    support_lease::expire_attempt_leases(&path, &session.id);
+    assert_eq!(store.recover_expired().unwrap().len(), 1);
     assert!(store.acknowledge_message(&fence, "one").is_err());
     drop(store);
     let mut store = Store::open(path).unwrap();

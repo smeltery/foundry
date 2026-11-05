@@ -93,3 +93,31 @@ fn external_reap_loses_reservation_and_cleanup_never_signals() {
         assert_eq!(owned.signals_sent, 0);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn reaped_group_is_gone_only_after_probe_reports_absence() {
+    // macOS can report a reaped zombie's group with EPERM briefly before ESRCH.
+    let mut probes = [libc::EPERM, libc::EPERM, libc::ESRCH]
+        .into_iter()
+        .map(Some);
+    assert!(child::group_vanishes(
+        || probes.next().unwrap(),
+        Duration::from_secs(5)
+    ));
+    // A group that keeps rejecting probes, gains a signalable member, or reports any
+    // other error is not proven gone.
+    assert!(!child::group_vanishes(
+        || Some(libc::EPERM),
+        Duration::from_millis(30)
+    ));
+    let mut probes = [Some(libc::EPERM), None].into_iter();
+    assert!(!child::group_vanishes(
+        || probes.next().unwrap(),
+        Duration::from_secs(5)
+    ));
+    assert!(!child::group_vanishes(
+        || Some(libc::EINVAL),
+        Duration::from_secs(5)
+    ));
+}

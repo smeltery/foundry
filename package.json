@@ -7,9 +7,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "adapter:check": "tsc -p packages/adapter/tsconfig.json",
+    "adapter:check": "tsc -p packages/adapter/tsconfig.json && tsc -p packages/provider-local/tsconfig.json",
     "adapter:build": "tsc -p packages/adapter/tsconfig.build.json",
-    "adapter:test": "bun test packages/adapter/test",
+    "adapter:test": "bun test packages/adapter/test packages/provider-local/test",
     "docs:check": "bun scripts/checks/docs.ts",
     "docs:fast": "bun scripts/checks/docs.ts",
     "docs:test": "bun test scripts/checks/docs.test.ts",
