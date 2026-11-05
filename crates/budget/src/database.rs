@@ -64,8 +64,11 @@ fn unavailable(detail: impl Into<String>) -> BudgetError {
 pub(crate) fn open(path: &Path) -> Result<Connection, BudgetError> {
     let connection = Connection::open(path).storage()?;
     connection.busy_timeout(BUSY_TIMEOUT).storage()?;
+    // Identify the file before switching its journal mode, so a foreign or
+    // newer database is refused without being converted to WAL.
+    let connection = prepare(connection)?;
     enable_wal(&connection)?;
-    prepare(connection)
+    Ok(connection)
 }
 
 /// An in-memory database has no journal file, so it skips WAL.
