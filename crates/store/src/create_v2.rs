@@ -30,13 +30,10 @@ pub struct CreateReceipt {
 impl Store {
     /// Validates, then records a queued session with its metadata and
     /// associations, or replays the session an equal keyed request created.
-    /// Only the reference format of a tool profile is checked here; the service
-    /// owns resolving it to a known profile.
+    /// The contract checks a tool profile's format; the service owns resolving
+    /// it to a known profile.
     pub fn create_session(&mut self, request: CreateSession) -> Result<CreateReceipt> {
         request.validate()?;
-        if let Some(profile) = &request.tool_profile {
-            check_reference("tool profile", profile)?;
-        }
         check_available(&request)?;
         let encoded = serde_json::to_string(&request)?;
         let tx = self
@@ -136,25 +133,6 @@ fn check_available(request: &CreateSession) -> Result<()> {
         .is_some_and(|criteria| criteria.profile.is_some())
     {
         return Err(ContractError::Unsupported("completion criteria profile".into()).into());
-    }
-    Ok(())
-}
-
-/// A reference is `/`-separated segments of lowercase ASCII letters, digits,
-/// `-`, `_` and `.`, with no empty, `.` or `..` segment. The contract has
-/// already bounded its length.
-fn check_reference(field: &str, value: &str) -> Result<()> {
-    let segment_ok = |segment: &str| {
-        !matches!(segment, "" | "." | "..")
-            && segment
-                .bytes()
-                .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.'))
-    };
-    if !value.split('/').all(segment_ok) {
-        return Err(ContractError::Invalid(format!(
-            "{field} must be lowercase segments of letters, digits, '-', '_' or '.'"
-        ))
-        .into());
     }
     Ok(())
 }

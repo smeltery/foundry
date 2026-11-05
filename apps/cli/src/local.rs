@@ -34,7 +34,7 @@ impl LocalBackend {
                 "model configuration requires runtime integration",
             ));
         }
-        foundry_service::create::resolve_tool_profile(&request).map_err(contract_error)?;
+        foundry_service::create::check_tool_profile_known(&request).map_err(contract_error)?;
         let session = self.store()?.create(request).map_err(store_error)?;
         Ok(json!({"session":session,"execution":"not_started","target":"local"}))
     }

@@ -332,13 +332,31 @@ fn create_refuses_an_unresolved_tool_profile_before_writing() {
         tool_profile: Some(profile.into()),
         ..create()
     };
-    for profile in ["default/read-write", "Default", "../default"] {
+    for (profile, code) in [
+        ("default/read-write", "unsupported"),
+        ("Default", "invalid"),
+        ("../default", "invalid"),
+    ] {
         let error = backend.create(with_profile(profile)).unwrap_err();
-        assert_eq!(error.code, "unsupported", "{profile}");
+        assert_eq!(error.code, code, "{profile}");
     }
     assert!(Store::open(db.path()).unwrap().list(10).unwrap().is_empty());
     let created = backend.create(with_profile("default")).unwrap();
     let id = created["session"]["id"].as_str().unwrap();
     let associations = Store::open(db.path()).unwrap().associations(id).unwrap();
     assert_eq!(associations.tool_profile.as_deref(), Some("default"));
+}
+
+#[test]
+fn keyed_create_with_a_known_profile_replays_the_stored_session() {
+    let db = Database::new();
+    let mut backend = LocalBackend::new(db.path());
+    let request = CreateSession {
+        tool_profile: Some("default".into()),
+        ..create()
+    };
+    let created = backend.create(request.clone()).unwrap();
+    let replayed = backend.create(request).unwrap();
+    assert_eq!(replayed["session"], created["session"]);
+    assert_eq!(Store::open(db.path()).unwrap().list(10).unwrap().len(), 1);
 }

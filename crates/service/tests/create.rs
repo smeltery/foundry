@@ -128,6 +128,18 @@ fn every_create_path_resolves_the_tool_profile_before_writing() {
         service.create_session(unknown().unwrap()).unwrap_err()
     ));
     assert!(unsupported(service.create(unknown().unwrap()).unwrap_err()));
+    // A malformed name is refused by its format before any lookup.
+    let malformed = || decode(r#""idempotency_key":null,"tool_profile":"Default""#);
+    let invalid = |error| {
+        matches!(
+            error,
+            ServiceError::Store(StoreError::Contract(ContractError::Invalid(_)))
+        )
+    };
+    assert!(invalid(
+        service.create_session(malformed().unwrap()).unwrap_err()
+    ));
+    assert!(invalid(service.create(malformed().unwrap()).unwrap_err()));
     assert!(service.list(10).unwrap().is_empty());
     let known = decode(r#""idempotency_key":null,"tool_profile":"default""#).unwrap();
     let created = service.create_session(known).unwrap();
