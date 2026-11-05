@@ -29,7 +29,7 @@ mod clock;
 pub(crate) mod database;
 mod error;
 mod pairing;
-mod secret;
+pub(crate) mod secret;
 
 use std::collections::BTreeSet;
 use std::path::Path;
