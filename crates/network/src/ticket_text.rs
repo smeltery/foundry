@@ -1,22 +1,5 @@
-//! Display sanitization with explicit invitation prefixes, without decoding secrets.
+//! Invitation redaction with explicit prefixes, without decoding secrets.
 use super::TicketCodec;
-
-/// Render one line with at most 60 characters, including the truncation mark.
-pub fn display_name(name: &str) -> String {
-    let mut characters = name.chars().map(|c| {
-        if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
-            ' '
-        } else {
-            c
-        }
-    });
-    let mut result: String = characters.by_ref().take(60).collect();
-    if characters.next().is_some() {
-        result.pop();
-        result.push('…');
-    }
-    result
-}
 
 impl TicketCodec<'_> {
     /// Replace each whitespace-delimited word containing a secret-bearing ticket

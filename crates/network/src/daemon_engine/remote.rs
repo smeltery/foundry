@@ -250,9 +250,11 @@ impl Engine {
                 cwd: repository.clone().unwrap_or_default(),
                 repo: repository,
                 branch: None,
-                status: entry.status,
+                status: self.shareable(&entry.status)?,
                 since: None,
-                doing: (!entry.doing.is_empty()).then_some(entry.doing),
+                doing: (!entry.doing.is_empty())
+                    .then(|| self.shareable(&entry.doing))
+                    .transpose()?,
                 tier: wire::DeliveryTier::Pull,
                 unread,
                 is_me: false,

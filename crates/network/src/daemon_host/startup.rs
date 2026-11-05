@@ -34,8 +34,12 @@ pub(super) async fn open(
         person: config.person.clone(),
         machine: config.machine.clone(),
     };
+    let tickets = settings.as_ref().map(|network| network.profile.clone());
     let engine = tokio::task::spawn_blocking(move || {
-        let engine = Engine::open(&engine_root, policy, identity)?;
+        let mut engine = Engine::open(&engine_root, policy, identity)?;
+        if let Some(profile) = tickets {
+            engine.redact_tickets(profile)?;
+        }
         Ok::<_, EngineError>(OwnedEngine {
             inner: Mutex::new(engine),
             replies: Arc::new(Semaphore::new(1)),

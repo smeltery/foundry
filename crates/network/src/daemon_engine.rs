@@ -48,6 +48,7 @@ pub struct Engine {
     remote_generations: BTreeMap<iroh::EndpointId, (u64, bool)>,
     changed: Arc<Notify>,
     waits: BTreeMap<String, Arc<WaitState>>,
+    tickets: Option<crate::WireProfile>,
 }
 const MAX_CONNECTIONS: usize = mail::MAX_POLL_SCOPES;
 const MAX_ACTIVE_WAITS: usize = 128;
@@ -98,6 +99,7 @@ impl Engine {
             remote_generations: BTreeMap::new(),
             changed: Arc::new(Notify::new()),
             waits: BTreeMap::new(),
+            tickets: None,
         })
     }
     pub fn handle(&mut self, connection: ConnectionId, envelope: RequestEnvelope) -> Reply {
@@ -144,6 +146,7 @@ impl Engine {
                 doing,
             } => {
                 self.authorize(connection, &auth)?;
+                let (status, doing) = (self.shareable(&status)?, self.shareable(&doing)?);
                 self.registry.transact(|r| {
                     r.set_status(
                         &auth.conversation.native(),
@@ -214,6 +217,21 @@ impl Engine {
                 Ok(Outcome::Shutdown)
             }
         }
+    }
+    /// Redact this profile's invitation fragments from session status and doing
+    /// before storage, directory output and presence share them.
+    pub fn redact_tickets(&mut self, profile: crate::WireProfile) -> Result<(), EngineError> {
+        crate::ticket::TicketCodec::new(&profile, None).map_err(|_| EngineError::InvalidInput)?;
+        self.tickets = Some(profile);
+        Ok(())
+    }
+    fn shareable(&self, text: &str) -> Result<String, EngineError> {
+        let Some(profile) = &self.tickets else {
+            return Ok(text.to_owned());
+        };
+        let codec = crate::ticket::TicketCodec::new(profile, None)
+            .map_err(|_| EngineError::InvalidInput)?;
+        Ok(codec.redact(text))
     }
     fn now(&self) -> Result<i64, EngineError> {
         let now = (self.clock)()?;
