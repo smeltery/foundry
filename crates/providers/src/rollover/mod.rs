@@ -7,8 +7,9 @@
 //! default, never happens while an attempt runs, never crosses a workspace or
 //! provider, and never targets an account that is unavailable or whose
 //! credential needs attention. Every rollover yields a [`RolloverRecord`]; the
-//! session's records are also the input that keeps a chain from revisiting an
-//! account, so a chain makes at most one rollover per connected account.
+//! current chain's records are also the input that keeps it from revisiting an
+//! account, and a chain makes at most one rollover fewer than the accounts it
+//! can use.
 //!
 //! Known limitations:
 //! - Hosted fallback after the last account waits on D46-5, and rollover across

@@ -1,74 +1,7 @@
-use foundry_identity::authz::WorkspaceId;
-use foundry_providers::catalog::{ModelId, ModelRef, ProviderId};
-use foundry_providers::credentials::{AccountKey, CredentialState};
-use foundry_providers::rollover::{
-    AccountCandidate, AttemptFailure, AttemptId, AttemptState, HoldCause, RolloverDecision,
-    RolloverError, RolloverPolicy, RolloverRecord, RolloverRequest, RolloverTrigger, SkipCause,
-    SkippedAccount, decide,
-};
+#[path = "rollover_support.rs"]
+mod support;
 
-const WORKSPACE: &str = "workspace-a";
-const PROVIDER: &str = "hosted-a";
-const OPTED_IN: RolloverPolicy = RolloverPolicy {
-    allow_rollover: true,
-    isolated: false,
-};
-
-fn account(key: &str) -> AccountKey {
-    AccountKey::new(key).unwrap()
-}
-
-fn attempt(id: &str) -> AttemptId {
-    AttemptId::new(id).unwrap()
-}
-
-fn model() -> ModelRef {
-    ModelRef {
-        provider_id: ProviderId::new(PROVIDER).unwrap(),
-        model_id: ModelId::new("hosted-large").unwrap(),
-    }
-}
-
-fn candidate(key: &str) -> AccountCandidate {
-    AccountCandidate {
-        workspace: WorkspaceId::new(WORKSPACE),
-        provider_id: ProviderId::new(PROVIDER).unwrap(),
-        account_key: account(key),
-        state: CredentialState::Configured,
-        available: true,
-    }
-}
-
-fn ended(failure: AttemptFailure) -> AttemptState {
-    AttemptState::Ended {
-        attempt_id: attempt("attempt-1"),
-        failure,
-    }
-}
-
-fn request<'a>(
-    policy: RolloverPolicy,
-    attempt_state: AttemptState,
-    candidates: &'a [AccountCandidate],
-) -> RolloverRequest<'a> {
-    RolloverRequest {
-        policy,
-        workspace: WorkspaceId::new(WORKSPACE),
-        model: model(),
-        account_key: account("account-1"),
-        attempt: attempt_state,
-        next_attempt_id: attempt("attempt-2"),
-        history: &[],
-        candidates,
-    }
-}
-
-fn rolled(decision: Result<RolloverDecision, RolloverError>) -> RolloverRecord {
-    match decision {
-        Ok(RolloverDecision::RollOver(record)) => record,
-        other => panic!("expected a rollover, got {other:?}"),
-    }
-}
+use support::*;
 
 #[test]
 fn rollover_is_off_by_default() {
@@ -100,15 +33,12 @@ fn explicit_rollover_uses_same_model_on_another_account() {
     assert_eq!(
         record,
         RolloverRecord {
-            model: model(),
-            from_account: account("account-1"),
-            to_account: account("account-2"),
-            trigger: RolloverTrigger::QuotaExhausted,
-            from_attempt: attempt("attempt-1"),
-            to_attempt: attempt("attempt-2"),
             skipped: Vec::new(),
+            ..link("account-1", "attempt-1", "account-2", "attempt-2")
         }
     );
+    assert_eq!(record.workspace, WorkspaceId::new(WORKSPACE));
+    assert_eq!(record.policy, OPTED_IN);
     assert_eq!(record.trigger.name(), "quota_exhausted");
 }
 
@@ -232,133 +162,37 @@ fn ineligible_and_foreign_accounts_are_never_chosen() {
 }
 
 #[test]
-fn exhausted_accounts_end_the_chain_in_account_key_order() {
-    // Offered out of order to show the order comes from the account keys.
-    let candidates = [
-        candidate("account-3"),
-        candidate("account-1"),
-        candidate("account-2"),
-    ];
-    let mut history = Vec::new();
-    let mut current = account("account-1");
-    let mut current_attempt = attempt("attempt-1");
-    let mut route = vec![current.clone()];
-    let mut held = None;
-    // One step more than the number of accounts: the chain must stop by then.
-    for step in 2..=candidates.len() + 1 {
-        let decision = decide(&RolloverRequest {
-            policy: OPTED_IN,
-            workspace: WorkspaceId::new(WORKSPACE),
-            model: model(),
-            account_key: current.clone(),
-            attempt: AttemptState::Ended {
-                attempt_id: current_attempt.clone(),
-                failure: AttemptFailure::QuotaExhausted,
-            },
-            next_attempt_id: attempt(&format!("attempt-{step}")),
-            history: &history,
-            candidates: &candidates,
-        })
-        .unwrap();
-        match decision {
-            RolloverDecision::RollOver(record) => {
-                assert_eq!(record.from_attempt, current_attempt);
-                current = record.to_account.clone();
-                current_attempt = record.to_attempt.clone();
-                route.push(current.clone());
-                history.push(record);
-            }
-            RolloverDecision::Hold(cause) => {
-                held = Some(cause);
-                break;
-            }
-        }
-    }
-    assert_eq!(held, Some(HoldCause::NoEligibleAccount));
-    assert_eq!(
-        route,
-        [
-            account("account-1"),
-            account("account-2"),
-            account("account-3")
-        ]
-    );
-    assert_eq!(history.len(), 2);
-    let last = history.last().unwrap();
-    assert_eq!(
-        last.skipped,
-        [SkippedAccount {
-            account_key: account("account-1"),
-            cause: SkipCause::AlreadyTried,
-        }]
-    );
-}
-
-#[test]
-fn same_inputs_give_the_same_decision() {
-    let forward = [
-        candidate("account-1"),
-        candidate("account-2"),
-        candidate("account-3"),
-    ];
-    let reversed = [
-        candidate("account-3"),
-        candidate("account-2"),
-        candidate("account-1"),
-    ];
-    let quota = || ended(AttemptFailure::QuotaExhausted);
-    let first = decide(&request(OPTED_IN, quota(), &forward));
-    assert_eq!(first, decide(&request(OPTED_IN, quota(), &forward)));
-    assert_eq!(first, decide(&request(OPTED_IN, quota(), &reversed)));
-}
-
-#[test]
-fn inconsistent_requests_are_refused() {
+fn gates_hold_before_a_mismatched_history_is_read() {
     let candidates = [candidate("account-2")];
-    let quota = || ended(AttemptFailure::QuotaExhausted);
-
-    let mut reused = request(OPTED_IN, quota(), &candidates);
-    reused.next_attempt_id = attempt("attempt-1");
-    assert_eq!(decide(&reused), Err(RolloverError::AttemptReused));
-
-    let earlier = RolloverRecord {
-        model: model(),
-        from_account: account("account-0"),
-        to_account: account("account-1"),
-        trigger: RolloverTrigger::QuotaExhausted,
-        from_attempt: attempt("attempt-0"),
-        to_attempt: attempt("attempt-1"),
-        skipped: Vec::new(),
+    let mismatched = [link("account-0", "attempt-0", "account-9", "attempt-9")];
+    let running = AttemptState::Running {
+        attempt_id: attempt("attempt-1"),
     };
-    let mut relinked = request(OPTED_IN, quota(), &candidates);
-    let history = [earlier.clone()];
-    relinked.history = &history;
-    relinked.next_attempt_id = attempt("attempt-0");
-    assert_eq!(decide(&relinked), Err(RolloverError::AttemptReused));
-
-    let mut mismatched = request(OPTED_IN, quota(), &candidates);
-    let foreign_history = [RolloverRecord {
-        to_account: account("account-9"),
-        ..earlier
-    }];
-    mismatched.history = &foreign_history;
-    assert_eq!(decide(&mismatched), Err(RolloverError::HistoryMismatch));
-
-    let duplicated = [candidate("account-2"), candidate("account-2")];
-    assert_eq!(
-        decide(&request(OPTED_IN, quota(), &duplicated)),
-        Err(RolloverError::DuplicateCandidate)
-    );
-
-    assert_eq!(AttemptId::new(""), Err(RolloverError::InvalidAttemptId));
-    assert_eq!(
-        AttemptId::new("attempt\0"),
-        Err(RolloverError::InvalidAttemptId)
-    );
-    assert!(AttemptId::new(&"a".repeat(AttemptId::MAX_BYTES)).is_ok());
-    assert_eq!(
-        AttemptId::new(&"a".repeat(AttemptId::MAX_BYTES + 1)),
-        Err(RolloverError::InvalidAttemptId)
-    );
-    assert_eq!(RolloverError::AttemptReused.class(), "invalid_request");
+    let isolated = RolloverPolicy {
+        allow_rollover: true,
+        isolated: true,
+    };
+    let cases = [
+        (
+            RolloverPolicy::default(),
+            ended(AttemptFailure::QuotaExhausted),
+            HoldCause::Disabled,
+        ),
+        (OPTED_IN, running, HoldCause::AttemptRunning),
+        (
+            OPTED_IN,
+            ended(AttemptFailure::Unauthenticated),
+            HoldCause::NotAccountLimit,
+        ),
+        (
+            isolated,
+            ended(AttemptFailure::QuotaExhausted),
+            HoldCause::Isolated,
+        ),
+    ];
+    for (policy, attempt_state, cause) in cases {
+        let mut gated = request(policy, attempt_state, &candidates);
+        gated.history = &mismatched;
+        assert_eq!(decide(&gated), Ok(RolloverDecision::Hold(cause)));
+    }
 }

@@ -8,9 +8,13 @@ pub enum RolloverError {
     /// The proposed new attempt reuses the current attempt or one already
     /// linked by a record, so the link would not name a new attempt.
     AttemptReused,
-    /// The latest record does not end on the session's current account and
-    /// model, so it cannot belong to this session's chain.
+    /// The latest record does not lead to the current attempt and account, or
+    /// a record names another workspace or model, so the records are not this
+    /// attempt's chain.
     HistoryMismatch,
+    /// Consecutive records do not link account to account and attempt to
+    /// attempt, or the chain names an attempt twice.
+    BrokenChain,
     /// The same account of the session's workspace and provider was offered
     /// twice.
     DuplicateCandidate,
