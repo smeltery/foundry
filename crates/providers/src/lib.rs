@@ -4,3 +4,4 @@
 pub mod catalog;
 pub mod credentials;
 pub mod local_endpoint;
+pub mod rollover;
