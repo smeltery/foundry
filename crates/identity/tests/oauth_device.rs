@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use foundry_identity::oauth::{
     AuthorizationServer, ClientAuth, ClientRegistration, Introspection, Lifetimes, OAuthError,
+    USER_CODE_MAX_MISSES, USER_CODE_MISS_WINDOW,
 };
 use foundry_identity::store::ManualClock;
 
@@ -26,6 +27,7 @@ impl Fixture {
                 redirect_uris: Vec::new(),
                 scopes: vec!["read".to_owned(), "write".to_owned()],
                 confidential: id == "resource",
+                introspector: id == "resource",
             };
             server.register_client(registration).unwrap()
         });
@@ -155,4 +157,55 @@ fn denied_expired_and_foreign_device_codes_are_rejected() {
             .unwrap_err(),
         OAuthError::InvalidScope
     );
+}
+
+#[test]
+fn user_codes_are_accepted_in_any_case_and_without_the_separator() {
+    let fixture = Fixture::new();
+    let app = ClientAuth::public("app");
+    for typed in [str::to_ascii_lowercase, |code: &str| code.replace('-', "")] {
+        let started = fixture.server.device_authorization(&app, "read").unwrap();
+        let user_code = typed(started.user_code.expose());
+        fixture.server.approve_device(&user_code, "user-a").unwrap();
+    }
+}
+
+#[test]
+fn repeated_wrong_user_codes_lock_out_decisions_for_the_window() {
+    let fixture = Fixture::new();
+    let app = ClientAuth::public("app");
+    let started = fixture.server.device_authorization(&app, "read").unwrap();
+    let user_code = started.user_code.expose();
+    let wrong = if user_code == "AAAA-AAAA" {
+        "BBBB-BBBB"
+    } else {
+        "AAAA-AAAA"
+    };
+    for _ in 0..USER_CODE_MAX_MISSES {
+        let miss = fixture.server.approve_device(wrong, "user-a");
+        assert_eq!(miss.unwrap_err(), OAuthError::InvalidGrant);
+    }
+    // Locked out: even the right code is refused, for approval and denial.
+    assert_eq!(
+        fixture
+            .server
+            .approve_device(user_code, "user-a")
+            .unwrap_err(),
+        OAuthError::SlowDown
+    );
+    assert_eq!(
+        fixture.server.deny_device(user_code).unwrap_err(),
+        OAuthError::SlowDown
+    );
+    let window_ms = u64::try_from(USER_CODE_MISS_WINDOW.as_millis()).unwrap();
+    fixture.clock.advance(window_ms - 1);
+    assert_eq!(
+        fixture
+            .server
+            .approve_device(user_code, "user-a")
+            .unwrap_err(),
+        OAuthError::SlowDown
+    );
+    fixture.clock.advance(1);
+    fixture.server.approve_device(user_code, "user-a").unwrap();
 }

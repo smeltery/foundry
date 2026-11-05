@@ -166,21 +166,23 @@ impl AuthorizationServer {
         })
     }
 
-    /// Reports whether `token` is active. Only an authenticated confidential
-    /// client may ask.
+    /// Reports whether `token` is active. The caller must authenticate, and
+    /// sees an active token only if it was issued to the caller or the caller
+    /// is registered as an introspector; anyone else gets `Inactive`, so
+    /// introspection never tells one client about another's tokens.
     pub fn introspect(
         &self,
         caller: &ClientAuth<'_>,
         token: &str,
     ) -> Result<Introspection, OAuthError> {
         self.with_state(|state, now_ms| {
-            if state.authenticate(caller)?.secret_digest.is_none() {
-                return Err(OAuthError::InvalidClient);
-            }
+            let caller = state.authenticate(caller)?;
+            let (caller_id, introspector) = (caller.id.clone(), caller.introspector);
             let Some(record) = state.tokens.find_mut(token) else {
                 return Ok(Introspection::Inactive);
             };
-            if !record.active(&state.revoked_families, now_ms) {
+            let visible = introspector || record.client == caller_id;
+            if !visible || !record.active(&state.revoked_families, now_ms) {
                 return Ok(Introspection::Inactive);
             }
             Ok(Introspection::Active(ActiveToken {

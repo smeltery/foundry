@@ -74,6 +74,7 @@ fn client(id: &str, redirect_uris: &[&str], confidential: bool) -> ClientRegistr
         redirect_uris: redirect_uris.iter().map(|uri| (*uri).to_owned()).collect(),
         scopes: vec!["read".to_owned(), "write".to_owned()],
         confidential,
+        introspector: confidential,
     }
 }
 
@@ -195,13 +196,14 @@ fn expired_code_is_rejected() {
 }
 
 #[test]
-fn redirect_uri_must_match_a_registered_one_exactly() {
+fn redirect_uri_must_match_host_path_and_query_exactly() {
     let fixture = Fixture::new();
     let challenge = challenge(VERIFIER);
     let near_misses = [
         "http://127.0.0.1:53682/callback/",
-        "http://127.0.0.1:53683/callback",
         "http://127.0.0.1:53682/Callback",
+        "http://127.0.0.1:53682/callbac",
+        "https://127.0.0.1:53682/callback",
         "http://127.0.0.1:53682/callback?extra=1",
         "http://localhost:53682/callback",
         "http://[::1]:53682/callback",
@@ -229,6 +231,46 @@ fn redirect_uri_must_match_a_registered_one_exactly() {
         .server
         .exchange_code(&ClientAuth::public("app"), &exchange);
     assert_eq!(refused.unwrap_err(), OAuthError::InvalidGrant);
+}
+
+#[test]
+fn loopback_redirects_may_use_any_port_but_the_exchange_repeats_it() {
+    let fixture = Fixture::new();
+    let challenge = challenge(VERIFIER);
+    for redirect_uri in [
+        "http://127.0.0.1:61000/callback",
+        "http://127.0.0.1/callback",
+    ] {
+        let moved = AuthorizationRequest {
+            redirect_uri,
+            ..request(&challenge)
+        };
+        let issued = fixture.server.authorize(&moved, "user-a").unwrap();
+        assert_eq!(issued.redirect_uri.as_str(), redirect_uri);
+        // The registered port is not a substitute for the one requested.
+        let registered = CodeExchange {
+            code: issued.code.expose(),
+            redirect_uri: REDIRECT,
+            code_verifier: VERIFIER,
+        };
+        let refused = fixture
+            .server
+            .exchange_code(&ClientAuth::public("app"), &registered);
+        assert_eq!(refused.unwrap_err(), OAuthError::InvalidGrant);
+
+        let issued = fixture.server.authorize(&moved, "user-a").unwrap();
+        let repeated = CodeExchange {
+            code: issued.code.expose(),
+            redirect_uri,
+            code_verifier: VERIFIER,
+        };
+        assert!(
+            fixture
+                .server
+                .exchange_code(&ClientAuth::public("app"), &repeated)
+                .is_ok()
+        );
+    }
 }
 
 #[test]
@@ -278,7 +320,7 @@ fn only_loopback_redirect_and_issuer_uris_are_accepted() {
 }
 
 #[test]
-fn another_or_unknown_client_cannot_exchange_the_code() {
+fn another_or_unknown_client_cannot_exchange_or_use_up_the_code() {
     let fixture = Fixture::new();
     let code = fixture.code(VERIFIER);
     assert_eq!(
@@ -289,6 +331,16 @@ fn another_or_unknown_client_cannot_exchange_the_code() {
         fixture.exchange("other", &code, VERIFIER).unwrap_err(),
         OAuthError::InvalidGrant
     );
+    let tokens = fixture.exchange("app", &code, VERIFIER).unwrap();
+    // Another client presenting a used code is not a replay by its holder.
+    assert_eq!(
+        fixture.exchange("other", &code, VERIFIER).unwrap_err(),
+        OAuthError::InvalidGrant
+    );
+    assert!(matches!(
+        fixture.introspect(tokens.access_token.expose()),
+        Introspection::Active(_)
+    ));
     let challenge = challenge(VERIFIER);
     let unknown = AuthorizationRequest {
         client_id: "nobody",

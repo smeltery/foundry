@@ -37,6 +37,7 @@ impl Fixture {
                 redirect_uris: vec![REDIRECT.to_owned()],
                 scopes: vec!["read".to_owned()],
                 confidential: false,
+                introspector: false,
             };
             server.register_client(registration).unwrap();
         }
@@ -46,6 +47,7 @@ impl Fixture {
                 redirect_uris: Vec::new(),
                 scopes: Vec::new(),
                 confidential: true,
+                introspector: true,
             })
             .unwrap()
             .unwrap();
@@ -170,14 +172,53 @@ fn refresh_by_another_client_or_after_expiry_is_rejected() {
 }
 
 #[test]
-fn introspection_needs_a_confidential_client_and_hides_inactive_tokens() {
+fn introspection_shows_tokens_only_to_their_client_or_an_introspector() {
     let fixture = Fixture::new();
     let tokens = fixture.tokens();
     let access = tokens.access_token.expose();
+    let own = fixture.server.introspect(&APP, access).unwrap();
+    assert!(matches!(own, Introspection::Active(_)));
+    let other = ClientAuth::public("other");
     assert_eq!(
-        fixture.server.introspect(&APP, access).unwrap_err(),
-        OAuthError::InvalidClient
+        fixture.server.introspect(&other, access).unwrap(),
+        Introspection::Inactive
     );
+    let bystander = ClientRegistration {
+        id: "bystander".to_owned(),
+        redirect_uris: Vec::new(),
+        scopes: Vec::new(),
+        confidential: true,
+        introspector: false,
+    };
+    let secret = fixture.server.register_client(bystander).unwrap().unwrap();
+    let bystander = ClientAuth::confidential("bystander", secret.expose());
+    assert_eq!(
+        fixture.server.introspect(&bystander, access).unwrap(),
+        Introspection::Inactive
+    );
+    let public_introspector = ClientRegistration {
+        id: "public-introspector".to_owned(),
+        redirect_uris: Vec::new(),
+        scopes: Vec::new(),
+        confidential: false,
+        introspector: true,
+    };
+    assert_eq!(
+        fixture
+            .server
+            .register_client(public_introspector)
+            .unwrap_err(),
+        OAuthError::InvalidRequest {
+            field: "introspector"
+        }
+    );
+}
+
+#[test]
+fn introspection_authenticates_the_caller_and_hides_inactive_tokens() {
+    let fixture = Fixture::new();
+    let tokens = fixture.tokens();
+    let access = tokens.access_token.expose();
     let wrong = ClientAuth::confidential("resource", "WRONG");
     assert_eq!(
         fixture.server.introspect(&wrong, access).unwrap_err(),

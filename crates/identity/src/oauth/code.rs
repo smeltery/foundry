@@ -1,7 +1,9 @@
-//! The authorization code grant with mandatory `S256` PKCE. A code is consumed
-//! by the first presentation that carries its secret, whatever the outcome,
-//! so a failed verifier guess cannot be retried. Presenting a consumed code
-//! again is a replay: it fails and revokes the tokens that code issued.
+//! The authorization code grant with mandatory `S256` PKCE. A code presented
+//! by a client other than the one it was issued to is refused and left
+//! untouched, as for refresh tokens. Otherwise the first presentation that
+//! carries its secret consumes it, whatever the outcome, so a failed verifier
+//! guess cannot be retried. Presenting a consumed code again is a replay: it
+//! fails and revokes the tokens that code issued.
 use std::collections::BTreeSet;
 
 use super::error::OAuthError;
@@ -14,6 +16,8 @@ const CHALLENGE_LABEL: &str = "pkce.s256";
 
 pub(super) struct CodeGrant {
     client: String,
+    /// The redirect URI exactly as the authorization request sent it; the
+    /// token request must repeat it byte for byte.
     redirect_uri: LoopbackUri,
     subject: String,
     scopes: BTreeSet<String>,
@@ -56,7 +60,8 @@ pub struct CodeExchange<'a> {
 
 impl AuthorizationServer {
     /// Issues a code for `subject`, who approved `request`. The redirect URI
-    /// must equal one registered for the client byte for byte.
+    /// must match one registered for the client in host, path and query; its
+    /// port may differ (see [`LoopbackUri::admits`]).
     pub fn authorize(
         &self,
         request: &AuthorizationRequest<'_>,
@@ -71,11 +76,11 @@ impl AuthorizationServer {
                 .clients
                 .get(request.client_id)
                 .ok_or(OAuthError::InvalidClient)?;
-            let redirect_uri = client
-                .redirect_uris
-                .iter()
-                .find(|uri| uri.as_str() == request.redirect_uri)
-                .cloned()
+            let redirect_uri = LoopbackUri::parse(request.redirect_uri)
+                .filter(|presented| {
+                    let registered = &client.redirect_uris;
+                    registered.iter().any(|uri| uri.admits(presented))
+                })
                 .ok_or(OAuthError::InvalidRequest {
                     field: "redirect_uri",
                 })?;
@@ -115,6 +120,11 @@ impl AuthorizationServer {
                 .codes
                 .find_mut(exchange.code)
                 .ok_or(OAuthError::InvalidGrant)?;
+            // That client cannot have used the code, so nothing is consumed
+            // or revoked on its behalf.
+            if code.client != client_id {
+                return Err(OAuthError::InvalidGrant);
+            }
             if code.consumed {
                 if let Some(family) = code.family {
                     state.revoke_family(family);
@@ -126,7 +136,6 @@ impl AuthorizationServer {
                 secret::verifies(&code.challenge_digest, CHALLENGE_LABEL, &challenge)
             });
             let valid = now_ms < code.expires_ms
-                && code.client == client_id
                 && code.redirect_uri.as_str() == exchange.redirect_uri
                 && verified;
             if !valid {

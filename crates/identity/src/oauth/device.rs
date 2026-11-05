@@ -4,6 +4,12 @@
 //! user code is live only until the user decides or the grant expires; the
 //! device code is consumed by the exchange that issues tokens, and presenting
 //! it again revokes them.
+//!
+//! User codes carry only 40 bits, so guessing is bounded: after
+//! [`USER_CODE_MAX_MISSES`] wrong user codes within [`USER_CODE_MISS_WINDOW`]
+//! of the first one, every approval and denial is `SlowDown` until that
+//! window ends. The fixture has no notion of who is typing, so the limit is
+//! server-wide; a guesser also delays honest approvals for the window.
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -19,6 +25,18 @@ const USER_CODE_LABEL: &str = "device.user_code";
 const SLOW_DOWN_STEP: Duration = Duration::from_secs(5);
 /// Provisional path of the verification page under the issuer.
 const VERIFICATION_PATH: &str = "/device";
+
+/// Wrong user codes accepted per window; provisional.
+pub const USER_CODE_MAX_MISSES: u32 = 5;
+/// How long a run of wrong user codes counts, from its first miss.
+pub const USER_CODE_MISS_WINDOW: Duration = Duration::from_secs(60);
+
+/// Wrong user codes in the current window.
+#[derive(Default)]
+pub(super) struct UserCodeMisses {
+    first_ms: u64,
+    count: u32,
+}
 
 enum Decision {
     Pending,
@@ -48,8 +66,13 @@ pub struct DeviceAuthorization {
     pub interval: Duration,
 }
 
+/// User codes are typed by hand, so case and the group separator are ignored.
 fn user_code_key(user_code: &str) -> Option<[u8; 32]> {
-    let symbols: String = user_code.chars().filter(|symbol| *symbol != '-').collect();
+    let symbols: String = user_code
+        .chars()
+        .filter(|symbol| *symbol != '-')
+        .map(|symbol| symbol.to_ascii_uppercase())
+        .collect();
     secret::is_symbols(&symbols, USER_CODE_SYMBOLS)
         .then(|| secret::digest(USER_CODE_LABEL, &symbols))
 }
@@ -63,6 +86,35 @@ impl State {
             .by_prefix_mut(&prefix)
             .filter(|grant| matches!(grant.decision, Decision::Pending))
             .filter(|grant| now_ms < grant.expires_ms)
+    }
+
+    /// Records the user's `decision` on the grant `user_code` names, unless
+    /// the miss limit is reached. A wrong, expired or already decided user
+    /// code counts as a miss.
+    fn decide(
+        &mut self,
+        user_code: &str,
+        now_ms: u64,
+        decision: Decision,
+    ) -> Result<(), OAuthError> {
+        let window_ms = u64::try_from(USER_CODE_MISS_WINDOW.as_millis()).unwrap_or(u64::MAX);
+        let misses = &mut self.user_code_misses;
+        if misses.count > 0 && now_ms.saturating_sub(misses.first_ms) >= window_ms {
+            misses.count = 0;
+        }
+        if misses.count >= USER_CODE_MAX_MISSES {
+            return Err(OAuthError::SlowDown);
+        }
+        if let Some(grant) = self.take_pending(user_code, now_ms) {
+            grant.decision = decision;
+            return Ok(());
+        }
+        let misses = &mut self.user_code_misses;
+        if misses.count == 0 {
+            misses.first_ms = now_ms;
+        }
+        misses.count += 1;
+        Err(OAuthError::InvalidGrant)
     }
 }
 
@@ -114,31 +166,22 @@ impl AuthorizationServer {
     }
 
     /// The user `subject` approves the grant `user_code` names. An unknown,
-    /// expired or already decided user code is `InvalidGrant`.
+    /// expired or already decided user code is `InvalidGrant`, and `SlowDown`
+    /// once the miss limit is reached.
     pub fn approve_device(&self, user_code: &str, subject: &str) -> Result<(), OAuthError> {
         if subject.is_empty() {
             return Err(OAuthError::InvalidRequest { field: "subject" });
         }
-        self.with_state(|state, now_ms| {
-            let grant = state
-                .take_pending(user_code, now_ms)
-                .ok_or(OAuthError::InvalidGrant)?;
-            grant.decision = Decision::Approved {
-                subject: subject.to_owned(),
-            };
-            Ok(())
-        })
+        let decision = Decision::Approved {
+            subject: subject.to_owned(),
+        };
+        self.with_state(|state, now_ms| state.decide(user_code, now_ms, decision))
     }
 
-    /// The user denies the grant `user_code` names.
+    /// The user denies the grant `user_code` names, with the same refusals
+    /// as [`approve_device`](Self::approve_device).
     pub fn deny_device(&self, user_code: &str) -> Result<(), OAuthError> {
-        self.with_state(|state, now_ms| {
-            let grant = state
-                .take_pending(user_code, now_ms)
-                .ok_or(OAuthError::InvalidGrant)?;
-            grant.decision = Decision::Denied;
-            Ok(())
-        })
+        self.with_state(|state, now_ms| state.decide(user_code, now_ms, Decision::Denied))
     }
 
     /// Polls with a device code. Returns tokens once the user approved.

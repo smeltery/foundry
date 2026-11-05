@@ -18,7 +18,7 @@
 //! Known limitations:
 //! - State is in memory only; nothing outlives the server.
 //! - The user's approval is a direct call with a subject; there is no login
-//!   or consent page, and no attempt limit on user codes.
+//!   or consent page. The user-code miss limit is server-wide.
 //! - Errors are returned to the caller. Redirecting an error to the client's
 //!   redirect URI is left to a transport.
 //! - Lifetimes are provisional defaults; the specification gives none.
@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub use code::{AuthorizationCode, AuthorizationRequest, CodeExchange};
-pub use device::DeviceAuthorization;
+pub use device::{DeviceAuthorization, USER_CODE_MAX_MISSES, USER_CODE_MISS_WINDOW};
 pub use error::OAuthError;
 pub use pkce::S256;
 pub use redirect::LoopbackUri;
@@ -74,16 +74,20 @@ impl Default for Lifetimes {
     }
 }
 
-/// A client to register. A confidential client receives a secret and may
-/// introspect; a public client authenticates by identifier alone.
+/// A client to register. A confidential client receives a secret; a public
+/// client authenticates by identifier alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientRegistration {
     pub id: String,
-    /// Exact loopback redirect URIs; may be empty for a device-only client.
+    /// Loopback redirect URIs, matched on any port; may be empty for a
+    /// device-only client.
     pub redirect_uris: Vec<String>,
     /// The scopes the client may request.
     pub scopes: Vec<String>,
     pub confidential: bool,
+    /// A resource server that may introspect every client's tokens. Only a
+    /// confidential client may be one.
+    pub introspector: bool,
 }
 
 /// Client authentication as presented with a request. It has no `Debug`, so
@@ -113,6 +117,7 @@ struct Client {
     secret_digest: Option<[u8; 32]>,
     redirect_uris: Vec<LoopbackUri>,
     scopes: BTreeSet<String>,
+    introspector: bool,
 }
 
 impl Client {
@@ -145,6 +150,7 @@ struct State {
     devices: Ledger<device::DeviceGrant>,
     /// Digest of each live user code, mapped to its device grant's prefix.
     user_codes: HashMap<[u8; 32], String>,
+    user_code_misses: device::UserCodeMisses,
     tokens: Ledger<token::TokenRecord>,
     revoked_families: HashSet<u64>,
     /// The last token family started; each code or device grant starts one.
@@ -217,6 +223,11 @@ impl AuthorizationServer {
         if registration.id.is_empty() {
             return Err(OAuthError::InvalidRequest { field: "client_id" });
         }
+        if registration.introspector && !registration.confidential {
+            return Err(OAuthError::InvalidRequest {
+                field: "introspector",
+            });
+        }
         let redirect_uris = registration
             .redirect_uris
             .iter()
@@ -252,6 +263,7 @@ impl AuthorizationServer {
                     secret_digest,
                     redirect_uris,
                     scopes,
+                    introspector: registration.introspector,
                 },
             );
             Ok(issued)
