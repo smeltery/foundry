@@ -11,7 +11,7 @@
     "crates/network/": 47802,
     "crates/connectors/": 3000,
     "crates/tools/": 3000,
-    "crates/identity/": 3000,
+    "crates/identity/": 5449,
     "crates/providers/": 4371,
     "crates/budget/": 3100,
     "packages/adapter/": 4000,
