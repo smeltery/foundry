@@ -3,4 +3,5 @@
 pub mod authz;
 pub mod guard;
 pub mod network_policy;
+pub mod oauth;
 pub mod store;
