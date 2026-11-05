@@ -15,6 +15,7 @@
     "crates/providers/": 3448,
     "crates/budget/": 3100,
     "packages/adapter/": 4000,
+    "packages/provider-local/": 1600,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
     "scripts/ci/": 616,
