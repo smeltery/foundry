@@ -907,6 +907,10 @@ dependencies = [
 [[package]]
 name = "foundry-budget"
 version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "tempfile",
+]
 
 [[package]]
 name = "foundry-connectors"

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
-use foundry_budget::{Amount, BudgetStore, CostUnit, Currency, ManualClock};
+use foundry_budget::{
+    Amount, BudgetError, BudgetId, BudgetStore, CostUnit, Currency, ExhaustedCause, ManualClock,
+};
 use std::sync::Arc;
 
 /// The ISO 4217 code reserved for testing; no real currency is ever used.
@@ -17,7 +19,14 @@ pub fn tokens(count: u64) -> Amount {
 
 pub fn manual_store() -> (BudgetStore, Arc<ManualClock>) {
     let clock = Arc::new(ManualClock::default());
-    (BudgetStore::new(clock.clone()), clock)
+    (BudgetStore::open_in_memory(clock.clone()).unwrap(), clock)
+}
+
+pub fn exhausted(error: BudgetError) -> (BudgetId, ExhaustedCause) {
+    match error {
+        BudgetError::BudgetExhausted { budget, cause } => (budget, cause),
+        other => panic!("expected budget_exhausted, got {other}"),
+    }
 }
 
 /// SplitMix64: a small deterministic generator, so every property case can be
@@ -42,3 +51,5 @@ impl Rng {
         self.next() % bound
     }
 }
+
+pub mod concurrent;

@@ -44,8 +44,11 @@ pub enum BudgetError {
     Conflict {
         what: &'static str,
     },
-    /// The store is unusable because an earlier operation panicked mid-update.
-    Unavailable,
+    /// The budget database could not be read or written, or holds data this
+    /// version does not understand.
+    Unavailable {
+        detail: String,
+    },
 }
 
 impl BudgetError {
@@ -60,7 +63,7 @@ impl BudgetError {
             Self::BudgetExhausted { .. } => "budget_exhausted",
             Self::NotFound { .. } => "not_found",
             Self::Conflict { .. } => "conflict",
-            Self::Unavailable => "unavailable",
+            Self::Unavailable { .. } => "unavailable",
         }
     }
 }
@@ -77,7 +80,9 @@ impl fmt::Display for BudgetError {
             ),
             Self::NotFound { what } => write!(formatter, "not_found: {what}"),
             Self::Conflict { what } => write!(formatter, "conflict: {what}"),
-            Self::Unavailable => write!(formatter, "unavailable: budget store"),
+            Self::Unavailable { detail } => {
+                write!(formatter, "unavailable: budget store: {detail}")
+            }
         }
     }
 }

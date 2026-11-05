@@ -16,8 +16,8 @@ struct ModelBudget {
     committed: u128,
     reserved: u128,
     overrun: bool,
-    /// Some settlement in this budget's subtree committed more than it reserved.
-    overrun_below: bool,
+    /// How far settlements in this budget's subtree exceeded their reservations.
+    excess: u128,
 }
 
 struct Model {
@@ -68,11 +68,9 @@ impl Model {
             let budget = &mut self.budgets[member];
             budget.reserved -= reserved;
             budget.committed += actual;
-            let over_ceiling = budget
-                .ceiling
-                .is_some_and(|ceiling| budget.committed > ceiling);
-            budget.overrun |= over_ceiling || (member == index && actual > reserved);
-            budget.overrun_below |= actual > reserved;
+            // An overrun stops the whole chain the settlement belongs to.
+            budget.overrun |= actual > reserved;
+            budget.excess += actual.saturating_sub(reserved);
         }
     }
 }
@@ -92,7 +90,7 @@ fn run_case(seed: u64) {
     let root_ceiling = (rng.below(4) != 0).then(|| u128::from(100 + rng.below(2_000)));
     ids.push(
         store
-            .open(xts(), root_ceiling.map(atoms), WallClock::NONE)
+            .create(xts(), root_ceiling.map(atoms), WallClock::NONE)
             .unwrap(),
     );
     model.budgets.push(ModelBudget {
@@ -101,7 +99,7 @@ fn run_case(seed: u64) {
         committed: 0,
         reserved: 0,
         overrun: false,
-        overrun_below: false,
+        excess: 0,
     });
     for _ in 0..rng.below(6) {
         let parent = rng.below(ids.len() as u64) as usize;
@@ -127,7 +125,7 @@ fn run_case(seed: u64) {
             committed: 0,
             reserved: 0,
             overrun: false,
-            overrun_below: false,
+            excess: 0,
         });
     }
 
@@ -155,8 +153,9 @@ fn run_case(seed: u64) {
                 let (index, mut reservation) =
                     open.swap_remove(rng.below(open.len() as u64) as usize);
                 let reserved = reservation.amount().atoms();
-                // One commit in ten exceeds its reservation to exercise overruns.
-                let actual = if rng.below(10) == 0 {
+                // An occasional commit exceeds its reservation. Overruns stop the
+                // whole chain, so they stay rare to keep later steps meaningful.
+                let actual = if rng.below(40) == 0 {
                     reserved + 1 + u128::from(rng.below(50))
                 } else {
                     u128::from(rng.below(reserved as u64 + 1))
@@ -170,8 +169,9 @@ fn run_case(seed: u64) {
             4 if !open.is_empty() => {
                 let (index, reservation) = open.swap_remove(rng.below(open.len() as u64) as usize);
                 let reserved = reservation.amount().atoms();
+                // An abandoned reservation is charged in full.
                 drop(reservation);
-                model.settle(index, reserved, 0);
+                model.settle(index, reserved, reserved);
             }
             _ => {}
         }
@@ -206,15 +206,12 @@ fn check(store: &foundry_budget::BudgetStore, ids: &[BudgetId], model: &Model) {
             snapshot.remaining.map(|amount| amount.atoms()),
             model.remaining(index)
         );
-        // Unless a call in its subtree overran its reservation, committed spend
-        // plus open reservations stays within the budget's ceiling.
-        if let Some(ceiling) = expected.ceiling
-            && !expected.overrun_below
-        {
-            assert!(
-                expected.committed + expected.reserved <= ceiling,
-                "budget {index}"
-            );
+        // Committed spend plus open reservations never exceeds the ceiling by
+        // more than the subtree's overruns exceeded their reservations. Checked
+        // against the store's own figures, not only the model's.
+        if let Some(ceiling) = expected.ceiling {
+            let used = snapshot.committed.atoms() + snapshot.reserved.atoms();
+            assert!(used <= ceiling + expected.excess, "budget {index}");
         }
     }
 }
@@ -236,7 +233,7 @@ fn a_child_never_spends_past_any_ancestor_without_overrun() {
         let (store, _) = manual_store();
         let ceiling = 500 + u128::from(rng.below(1_000));
         let parent = store
-            .open(xts(), Some(atoms(ceiling)), WallClock::NONE)
+            .create(xts(), Some(atoms(ceiling)), WallClock::NONE)
             .unwrap();
         let children: Vec<BudgetId> = (0..1 + rng.below(4))
             .map(|_| {

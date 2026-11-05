@@ -1,17 +1,25 @@
-//! The crate's own store: an in-memory ledger behind one mutex. It is not part of
-//! the main SQLite migration chain and does not persist; open reservations and
-//! committed spend last only as long as the process.
+//! The budget store: ledgers persisted in the crate's own SQLite file (see
+//! [`crate::database`]), or in an in-memory SQLite database through the same
+//! code path.
 //!
-//! Every reservation and settlement walks the budget's delegation chain (the
-//! budget, its parent, and so on to the root) under a single lock, so concurrent
-//! reservers are serialized and a child can never spend past any ancestor.
+//! Reserve, settle and delegate each run in one `BEGIN IMMEDIATE` transaction
+//! that reads the clock, loads the delegation chain, checks it and writes it
+//! back. Concurrent reservers are therefore serialized across threads,
+//! connections and processes, and a child never spends past any ancestor.
+//!
+//! Committed spend, open reservations, overruns and deadlines survive a restart.
+//! A reservation left open by a crash stays counted against its ceilings, which
+//! refuses spend rather than allowing it.
 use crate::amount::{Amount, CostUnit};
 use crate::clock::{Clock, WallClock};
-use crate::error::{BudgetError, ExhaustedCause};
+use crate::database::{self, Storage};
+use crate::error::BudgetError;
+use crate::ledger::{self, Ledger};
 use crate::reservation::{Reservation, Settlement};
 use crate::termination::Termination;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use rusqlite::{Connection, Transaction, TransactionBehavior};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BudgetId(u64);
@@ -20,10 +28,29 @@ impl BudgetId {
     pub fn get(&self) -> u64 {
         self.0
     }
+
+    // SQLite assigns positive row IDs, so the conversions are lossless.
+    pub(crate) fn from_sql(row_id: i64) -> Self {
+        Self(row_id as u64)
+    }
+
+    pub(crate) fn get_sql(self) -> i64 {
+        self.0 as i64
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ReservationId(u64);
+
+impl ReservationId {
+    pub(crate) fn from_sql(row_id: i64) -> Self {
+        Self(row_id as u64)
+    }
+
+    pub(crate) fn get_sql(self) -> i64 {
+        self.0 as i64
+    }
+}
 
 /// Whether a budget's effective deadline (the earliest in its chain) has passed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,126 +80,13 @@ pub struct BudgetSnapshot {
     pub deadline: DeadlineState,
 }
 
-struct Ledger {
-    unit: CostUnit,
-    ceiling: Option<u128>,
-    committed: u128,
-    reserved: u128,
-    overrun: bool,
-    parent: Option<BudgetId>,
-    deadline_at_ms: Option<u64>,
-}
-
-impl Ledger {
-    fn remaining(&self) -> Option<u128> {
-        self.ceiling
-            .map(|ceiling| ceiling.saturating_sub(self.committed.saturating_add(self.reserved)))
-    }
-}
-
-struct OpenReservation {
-    budget: BudgetId,
-    atoms: u128,
-}
-
-#[derive(Default)]
-struct State {
-    last_id: u64,
-    budgets: HashMap<BudgetId, Ledger>,
-    reservations: HashMap<ReservationId, OpenReservation>,
-}
-
-impl State {
-    fn next_id(&mut self) -> u64 {
-        self.last_id += 1;
-        self.last_id
-    }
-
-    fn ledger(&self, id: BudgetId) -> Result<&Ledger, BudgetError> {
-        self.budgets
-            .get(&id)
-            .ok_or(BudgetError::NotFound { what: "budget" })
-    }
-
-    /// Chain members are only ever looked up after `chain` proved they exist,
-    /// and budgets are never removed.
-    fn ledger_mut(&mut self, id: BudgetId) -> &mut Ledger {
-        self.budgets.get_mut(&id).expect("chain members exist")
-    }
-
-    /// The budget followed by each ancestor up to the root.
-    fn chain(&self, id: BudgetId) -> Result<Vec<BudgetId>, BudgetError> {
-        let mut chain = Vec::new();
-        let mut next = Some(id);
-        while let Some(current) = next {
-            next = self.ledger(current)?.parent;
-            chain.push(current);
-        }
-        Ok(chain)
-    }
-
-    fn remaining(&self, chain: &[BudgetId]) -> Option<u128> {
-        chain
-            .iter()
-            .filter_map(|id| self.budgets.get(id).and_then(Ledger::remaining))
-            .min()
-    }
-
-    fn deadline(&self, chain: &[BudgetId], now_ms: u64) -> DeadlineState {
-        let earliest = chain
-            .iter()
-            .filter_map(|id| {
-                self.budgets
-                    .get(id)
-                    .and_then(|ledger| ledger.deadline_at_ms)
-            })
-            .min();
-        match earliest {
-            None => DeadlineState::Unbounded,
-            Some(at) if now_ms >= at => DeadlineState::Exceeded,
-            Some(at) => DeadlineState::Remaining { ms: at - now_ms },
-        }
-    }
-
-    fn dispatch_allowed(&self, chain: &[BudgetId], now_ms: u64) -> bool {
-        chain
-            .iter()
-            .all(|id| self.budgets.get(id).is_some_and(|ledger| !ledger.overrun))
-            && self.deadline(chain, now_ms) != DeadlineState::Exceeded
-    }
-
-    /// Checks every chain member in order, nearest first, and returns the first
-    /// refusal: deadline, then overrun, then ceiling.
-    fn admit(&self, chain: &[BudgetId], amount: Amount, now_ms: u64) -> Result<(), BudgetError> {
-        for &budget in chain {
-            let ledger = self.ledger(budget)?;
-            let refuse = |cause| Err(BudgetError::BudgetExhausted { budget, cause });
-            if ledger.deadline_at_ms.is_some_and(|at| now_ms >= at) {
-                return refuse(ExhaustedCause::DeadlineExceeded);
-            }
-            if ledger.overrun {
-                return refuse(ExhaustedCause::Overrun);
-            }
-            let total = ledger
-                .committed
-                .checked_add(ledger.reserved)
-                .and_then(|open| open.checked_add(amount.atoms()))
-                .ok_or(BudgetError::invalid("amount"))?;
-            Amount::from_atoms(amount.unit(), total)?;
-            if ledger.ceiling.is_some_and(|ceiling| total > ceiling) {
-                return refuse(ExhaustedCause::Ceiling);
-            }
-        }
-        Ok(())
-    }
-}
-
 struct Shared {
     clock: Arc<dyn Clock>,
-    state: Mutex<State>,
+    connection: Mutex<Connection>,
 }
 
-/// Cloning shares the same ledger.
+/// Cloning shares one connection. Separate `open` calls on the same file use
+/// separate connections and still serialize through SQLite.
 #[derive(Clone)]
 pub struct BudgetStore {
     shared: Arc<Shared>,
@@ -187,176 +101,179 @@ impl std::fmt::Debug for BudgetStore {
 }
 
 impl BudgetStore {
-    pub fn new(clock: Arc<dyn Clock>) -> Self {
+    /// Opens or creates the budget database at `path`.
+    pub fn open(path: impl AsRef<Path>, clock: Arc<dyn Clock>) -> Result<Self, BudgetError> {
+        Ok(Self::with_connection(database::open(path.as_ref())?, clock))
+    }
+
+    /// A private in-memory database; nothing outlives the store.
+    pub fn open_in_memory(clock: Arc<dyn Clock>) -> Result<Self, BudgetError> {
+        Ok(Self::with_connection(database::open_in_memory()?, clock))
+    }
+
+    fn with_connection(connection: Connection, clock: Arc<dyn Clock>) -> Self {
         Self {
             shared: Arc::new(Shared {
                 clock,
-                state: Mutex::new(State::default()),
+                connection: Mutex::new(connection),
             }),
         }
     }
 
-    /// Opens a root budget at execution admission. A `None` ceiling sets no local
-    /// limit and keeps the account's own limits.
-    pub fn open(
+    /// Creates a root budget at execution admission. A `None` ceiling sets no
+    /// local limit and keeps the account's own limits.
+    pub fn create(
         &self,
         unit: CostUnit,
         ceiling: Option<Amount>,
         wall_clock: WallClock,
     ) -> Result<BudgetId, BudgetError> {
-        let now_ms = self.shared.clock.now_ms();
-        let mut state = self.lock()?;
-        Self::insert(
-            &mut state,
-            unit,
-            ceiling,
-            None,
-            wall_clock.deadline_from(now_ms),
-        )
+        self.write(|transaction, now_ms| {
+            insert(transaction, unit, ceiling, None, wall_clock, now_ms)
+        })
     }
 
-    /// Opens a child budget for a delegated session or automatic continuation.
+    /// Creates a child budget for a delegated session or automatic continuation.
     /// The child shares the parent's spend: every child reservation also counts
     /// against each ancestor. A child ceiling may narrow but never widen the
-    /// chain, so it must fit within the parent chain's current remainder.
+    /// chain, so it must fit within the parent chain's current remainder. The
+    /// child's own deadline is checked alongside every ancestor's, so the
+    /// effective deadline is the earliest in the chain.
     pub fn delegate(
         &self,
         parent: BudgetId,
         ceiling: Option<Amount>,
         wall_clock: WallClock,
     ) -> Result<BudgetId, BudgetError> {
-        let now_ms = self.shared.clock.now_ms();
-        let mut state = self.lock()?;
-        let chain = state.chain(parent)?;
-        let unit = state.ledger(parent)?.unit;
-        if let (Some(ceiling), Some(remaining)) = (ceiling, state.remaining(&chain))
-            && ceiling.atoms() > remaining
-        {
-            return Err(BudgetError::invalid("child_ceiling"));
-        }
-        // The child's own deadline is checked alongside every ancestor's, so the
-        // effective deadline is the earliest in the chain.
-        let deadline_at_ms = wall_clock.deadline_from(now_ms);
-        Self::insert(&mut state, unit, ceiling, Some(parent), deadline_at_ms)
+        self.write(|transaction, now_ms| {
+            let chain = database::chain(transaction, parent)?;
+            if let (Some(ceiling), Some(remaining)) = (ceiling, ledger::remaining(&chain))
+                && ceiling.atoms() > remaining
+            {
+                return Err(BudgetError::invalid("child_ceiling"));
+            }
+            insert(
+                transaction,
+                chain[0].unit,
+                ceiling,
+                Some(parent),
+                wall_clock,
+                now_ms,
+            )
+        })
     }
 
     /// Atomically reserves a call's maximum cost before dispatch. It succeeds only
     /// when committed spend plus open reservations plus `amount` stays within the
-    /// ceiling of the budget and of every ancestor.
+    /// ceiling of the budget and of every ancestor, no member has overrun and no
+    /// deadline in the chain has passed.
     pub fn reserve(&self, budget: BudgetId, amount: Amount) -> Result<Reservation, BudgetError> {
-        let now_ms = self.shared.clock.now_ms();
-        let mut state = self.lock()?;
-        if state.ledger(budget)?.unit != amount.unit() {
-            return Err(BudgetError::invalid("unit"));
-        }
-        let chain = state.chain(budget)?;
-        state.admit(&chain, amount, now_ms)?;
-        for &member in &chain {
-            state.ledger_mut(member).reserved += amount.atoms();
-        }
-        let id = ReservationId(state.next_id());
-        let open = OpenReservation {
-            budget,
-            atoms: amount.atoms(),
-        };
-        state.reservations.insert(id, open);
+        let id = self.write(|transaction, now_ms| {
+            let mut chain = database::chain(transaction, budget)?;
+            if chain[0].unit != amount.unit() {
+                return Err(BudgetError::invalid("unit"));
+            }
+            ledger::reserve(&mut chain, amount, now_ms)?;
+            database::save(transaction, &chain)?;
+            database::insert_reservation(transaction, budget, amount.atoms())
+        })?;
         Ok(Reservation::new(self.clone(), id, budget, amount))
     }
 
     pub fn snapshot(&self, budget: BudgetId) -> Result<BudgetSnapshot, BudgetError> {
-        let now_ms = self.shared.clock.now_ms();
-        let state = self.lock()?;
-        let chain = state.chain(budget)?;
-        let ledger = state.ledger(budget)?;
-        let amount = |atoms| Amount::from_atoms(ledger.unit, atoms);
-        Ok(BudgetSnapshot {
-            parent: ledger.parent,
-            ceiling: ledger.ceiling.map(amount).transpose()?,
-            committed: amount(ledger.committed)?,
-            reserved: amount(ledger.reserved)?,
-            remaining: state.remaining(&chain).map(amount).transpose()?,
-            overrun: ledger.overrun,
-            deadline: state.deadline(&chain, now_ms),
+        self.transaction(TransactionBehavior::Deferred, |transaction, now_ms| {
+            let chain = database::chain(transaction, budget)?;
+            let own = &chain[0];
+            let amount = |atoms| Amount::from_atoms(own.unit, atoms);
+            Ok(BudgetSnapshot {
+                parent: own.parent,
+                ceiling: own.ceiling.map(amount).transpose()?,
+                committed: amount(own.committed)?,
+                reserved: amount(own.reserved)?,
+                remaining: ledger::remaining(&chain).map(amount).transpose()?,
+                overrun: own.overrun,
+                deadline: ledger::deadline(&chain, now_ms),
+            })
         })
     }
 
-    /// Commits `actual` and releases the rest of the reservation along the chain.
-    /// An actual cost above the reservation is still committed in full, marks the
-    /// budget overrun and refuses further dispatch; an ancestor pushed past its
-    /// ceiling is marked overrun too.
+    /// Commits `actual` for the reservation and releases the rest along the chain.
     pub(crate) fn settle(
         &self,
         id: ReservationId,
         actual: Amount,
     ) -> Result<Settlement, BudgetError> {
-        let now_ms = self.shared.clock.now_ms();
-        let mut state = self.lock()?;
-        let open = state.reservations.get(&id).ok_or(BudgetError::NotFound {
-            what: "reservation",
-        })?;
-        let (budget, reserved_atoms) = (open.budget, open.atoms);
-        if state.ledger(budget)?.unit != actual.unit() {
-            return Err(BudgetError::invalid("unit"));
-        }
-        let chain = state.chain(budget)?;
-        for &member in &chain {
-            let committed = state.ledger(member)?.committed;
-            let total = committed
-                .checked_add(actual.atoms())
-                .ok_or(BudgetError::invalid("amount"))?;
-            Amount::from_atoms(actual.unit(), total)?;
-        }
-        state.reservations.remove(&id);
-        let overrun = actual.atoms() > reserved_atoms;
-        for &member in &chain {
-            let ledger = state.ledger_mut(member);
-            ledger.reserved -= reserved_atoms;
-            ledger.committed += actual.atoms();
-            let over_ceiling = ledger
-                .ceiling
-                .is_some_and(|ceiling| ledger.committed > ceiling);
-            ledger.overrun |= over_ceiling || (overrun && member == budget);
-        }
-        let unit = actual.unit();
-        Ok(Settlement {
-            charged: actual,
-            released: Amount::from_atoms(unit, reserved_atoms.saturating_sub(actual.atoms()))?,
-            committed: Amount::from_atoms(unit, state.ledger(budget)?.committed)?,
-            overrun,
-            dispatch_allowed: state.dispatch_allowed(&chain, now_ms),
+        self.write(|transaction, now_ms| {
+            let (budget, reserved_atoms) = database::take_reservation(transaction, id)?;
+            let mut chain = database::chain(transaction, budget)?;
+            if chain[0].unit != actual.unit() {
+                return Err(BudgetError::invalid("unit"));
+            }
+            let overrun = ledger::settle(&mut chain, reserved_atoms, actual)?;
+            database::save(transaction, &chain)?;
+            let unit = actual.unit();
+            Ok(Settlement {
+                charged: actual,
+                released: Amount::from_atoms(unit, reserved_atoms.saturating_sub(actual.atoms()))?,
+                committed: Amount::from_atoms(unit, chain[0].committed)?,
+                overrun,
+                dispatch_allowed: ledger::dispatch_allowed(&chain, now_ms),
+            })
         })
     }
 
-    fn insert(
-        state: &mut State,
-        unit: CostUnit,
-        ceiling: Option<Amount>,
-        parent: Option<BudgetId>,
-        deadline_at_ms: Option<u64>,
-    ) -> Result<BudgetId, BudgetError> {
-        if ceiling.is_some_and(|ceiling| ceiling.unit() != unit) {
-            return Err(BudgetError::invalid("unit"));
-        }
-        let id = BudgetId(state.next_id());
-        let ledger = Ledger {
-            unit,
-            ceiling: ceiling.map(|ceiling| ceiling.atoms()),
-            committed: 0,
-            reserved: 0,
-            overrun: false,
-            parent,
-            deadline_at_ms,
-        };
-        state.budgets.insert(id, ledger);
-        Ok(id)
+    fn write<T>(
+        &self,
+        operation: impl FnOnce(&Transaction<'_>, u64) -> Result<T, BudgetError>,
+    ) -> Result<T, BudgetError> {
+        self.transaction(TransactionBehavior::Immediate, operation)
     }
 
-    /// Ledger updates are validated before they are applied, so a panic cannot
-    /// leave one half-applied. A poisoned lock is still reported, not ignored.
-    fn lock(&self) -> Result<MutexGuard<'_, State>, BudgetError> {
-        self.shared
-            .state
-            .lock()
-            .map_err(|_| BudgetError::Unavailable)
+    /// Runs `operation` in one transaction and commits it only on success. The
+    /// clock is read after the transaction starts, so the time an operation
+    /// checks is never older than the state it sees.
+    fn transaction<T>(
+        &self,
+        behavior: TransactionBehavior,
+        operation: impl FnOnce(&Transaction<'_>, u64) -> Result<T, BudgetError>,
+    ) -> Result<T, BudgetError> {
+        let mut connection =
+            self.shared
+                .connection
+                .lock()
+                .map_err(|_| BudgetError::Unavailable {
+                    detail: "connection lock poisoned".into(),
+                })?;
+        let transaction = connection.transaction_with_behavior(behavior).storage()?;
+        let now_ms = self.shared.clock.now_ms();
+        let value = operation(&transaction, now_ms)?;
+        transaction.commit().storage()?;
+        Ok(value)
     }
+}
+
+fn insert(
+    connection: &Connection,
+    unit: CostUnit,
+    ceiling: Option<Amount>,
+    parent: Option<BudgetId>,
+    wall_clock: WallClock,
+    now_ms: u64,
+) -> Result<BudgetId, BudgetError> {
+    if ceiling.is_some_and(|ceiling| ceiling.unit() != unit) {
+        return Err(BudgetError::invalid("unit"));
+    }
+    let ledger = Ledger {
+        // SQLite assigns the real ID on insert.
+        id: BudgetId(0),
+        parent,
+        unit,
+        ceiling: ceiling.map(|ceiling| ceiling.atoms()),
+        committed: 0,
+        reserved: 0,
+        overrun: false,
+        admitted_at_ms: now_ms,
+        wall_clock_ms: wall_clock.ms(),
+    };
+    database::insert_budget(connection, &ledger)
 }

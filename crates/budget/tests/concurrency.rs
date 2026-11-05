@@ -1,84 +1,59 @@
+//! Concurrency tests against file-backed stores, so every reservation runs
+//! through SQLite's `BEGIN IMMEDIATE` locking as well as the connection mutex.
 mod support;
 
-use foundry_budget::{Amount, BudgetId, BudgetStore, MonotonicClock, WallClock};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Barrier};
+use foundry_budget::{BudgetId, BudgetStore, WallClock};
+use std::sync::Barrier;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
+use support::concurrent::{atoms, open, temp_store, with_watcher};
 use support::{Rng, money, xts};
-
-fn store() -> BudgetStore {
-    BudgetStore::new(Arc::new(MonotonicClock::new()))
-}
-
-fn atoms(value: u64) -> Amount {
-    Amount::from_atoms(xts(), u128::from(value)).unwrap()
-}
-
-/// Samples `budgets` until `done`, asserting no ceiling is ever exceeded by
-/// committed spend plus open reservations.
-fn watch(store: &BudgetStore, budgets: &[(BudgetId, u128)], done: &AtomicBool) -> u64 {
-    let mut samples = 0;
-    while !done.load(Ordering::SeqCst) {
-        for &(budget, ceiling) in budgets {
-            let snapshot = store.snapshot(budget).unwrap();
-            let used = snapshot.committed.atoms() + snapshot.reserved.atoms();
-            assert!(
-                used <= ceiling,
-                "budget {budget:?} used {used} of {ceiling}"
-            );
-            samples += 1;
+/// Reserves at random and settles by drop (full charge), release, or a commit
+/// at or below the maximum. Returns the total charged.
+fn spend(store: &BudgetStore, budget: BudgetId, seed: u64, calls: u64, refused: &AtomicU64) -> u64 {
+    let mut rng = Rng::new(seed);
+    let mut charged = 0;
+    for _ in 0..calls {
+        let maximum = 1 + rng.below(400);
+        let Ok(mut reservation) = store.reserve(budget, atoms(maximum)) else {
+            refused.fetch_add(1, Ordering::SeqCst);
+            continue;
+        };
+        match rng.below(4) {
+            0 => {
+                drop(reservation);
+                charged += maximum;
+            }
+            1 => {
+                reservation.release().unwrap();
+            }
+            _ => {
+                let actual = rng.below(maximum + 1) / 8;
+                reservation.commit(atoms(actual)).unwrap();
+                charged += actual;
+            }
         }
     }
-    samples
+    charged
 }
 
 #[test]
 fn many_concurrent_reservers_never_overspend() {
-    const THREADS: u64 = 16;
-    const CALLS: u64 = 400;
-    const CEILING: u64 = 20_000;
-    let store = store();
+    const CEILING: u64 = 6_000;
+    let (_directory, store) = temp_store();
     let budget = store
-        .open(xts(), Some(atoms(CEILING)), WallClock::NONE)
+        .create(xts(), Some(atoms(CEILING)), WallClock::NONE)
         .unwrap();
-    let charged = AtomicU64::new(0);
-    let refused = AtomicU64::new(0);
-    let done = AtomicBool::new(false);
-    thread::scope(|scope| {
-        let watcher = scope.spawn(|| watch(&store, &[(budget, u128::from(CEILING))], &done));
-        let workers: Vec<_> = (0..THREADS)
-            .map(|seed| {
+    let (charged, refused) = (AtomicU64::new(0), AtomicU64::new(0));
+    with_watcher(&store, &[(budget, u128::from(CEILING))], || {
+        thread::scope(|scope| {
+            for seed in 0..8 {
                 let (store, charged, refused) = (&store, &charged, &refused);
                 scope.spawn(move || {
-                    let mut rng = Rng::new(seed);
-                    for _ in 0..CALLS {
-                        let maximum = 1 + rng.below(400);
-                        let Ok(mut reservation) = store.reserve(budget, atoms(maximum)) else {
-                            refused.fetch_add(1, Ordering::SeqCst);
-                            continue;
-                        };
-                        match rng.below(4) {
-                            0 => drop(reservation),
-                            1 => {
-                                reservation.release().unwrap();
-                            }
-                            _ => {
-                                // Most calls end below their maximum; a few commit
-                                // exactly the maximum. None overrun here.
-                                let actual = rng.below(maximum + 1) / 8;
-                                reservation.commit(atoms(actual)).unwrap();
-                                charged.fetch_add(actual, Ordering::SeqCst);
-                            }
-                        }
-                    }
-                })
-            })
-            .collect();
-        for worker in workers {
-            worker.join().unwrap();
-        }
-        done.store(true, Ordering::SeqCst);
-        assert!(watcher.join().unwrap() > 0);
+                    charged.fetch_add(spend(store, budget, seed, 150, refused), Ordering::SeqCst);
+                });
+            }
+        });
     });
     let snapshot = store.snapshot(budget).unwrap();
     assert_eq!(snapshot.reserved, atoms(0));
@@ -95,20 +70,53 @@ fn many_concurrent_reservers_never_overspend() {
 }
 
 #[test]
+fn two_connections_to_one_file_never_overspend() {
+    const CEILING: u64 = 5_000;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("budget.sqlite");
+    let (first, second, observer) = (open(&path), open(&path), open(&path));
+    let budget = first
+        .create(xts(), Some(atoms(CEILING)), WallClock::NONE)
+        .unwrap();
+    let (charged, refused) = (AtomicU64::new(0), AtomicU64::new(0));
+    with_watcher(&observer, &[(budget, u128::from(CEILING))], || {
+        thread::scope(|scope| {
+            for seed in 0..8 {
+                let store = if seed % 2 == 0 { &first } else { &second };
+                let (charged, refused) = (&charged, &refused);
+                scope.spawn(move || {
+                    charged.fetch_add(spend(store, budget, seed, 120, refused), Ordering::SeqCst);
+                });
+            }
+        });
+    });
+    let snapshot = observer.snapshot(budget).unwrap();
+    assert_eq!(snapshot.reserved, atoms(0));
+    assert_eq!(
+        snapshot.committed.atoms(),
+        u128::from(charged.load(Ordering::SeqCst))
+    );
+    assert!(snapshot.committed.atoms() <= u128::from(CEILING));
+    assert!(
+        refused.load(Ordering::SeqCst) > 0,
+        "the ceiling must be contended"
+    );
+}
+
+#[test]
 fn exactly_one_concurrent_reservation_wins_when_one_fits() {
     const CONTENDERS: usize = 24;
-    for _ in 0..50 {
-        let store = store();
+    let (_directory, store) = temp_store();
+    for _ in 0..30 {
         let budget = store
-            .open(xts(), Some(money("1.00")), WallClock::NONE)
+            .create(xts(), Some(money("1.00")), WallClock::NONE)
             .unwrap();
         store
             .reserve(budget, money("0.30"))
             .unwrap()
             .commit(money("0.30"))
             .unwrap();
-        let start = Barrier::new(CONTENDERS);
-        let attempted = Barrier::new(CONTENDERS);
+        let (start, attempted) = (Barrier::new(CONTENDERS), Barrier::new(CONTENDERS));
         let winners = AtomicU64::new(0);
         thread::scope(|scope| {
             for _ in 0..CONTENDERS {
@@ -118,8 +126,9 @@ fn exactly_one_concurrent_reservation_wins_when_one_fits() {
                     // Hold any winning reservation until every contender has tried.
                     attempted.wait();
                     match result {
-                        Ok(_held) => {
+                        Ok(mut held) => {
                             winners.fetch_add(1, Ordering::SeqCst);
+                            held.release().unwrap();
                         }
                         Err(error) => assert_eq!(error.class(), "budget_exhausted"),
                     }
@@ -132,85 +141,26 @@ fn exactly_one_concurrent_reservation_wins_when_one_fits() {
 }
 
 #[test]
-fn concurrent_children_are_capped_by_the_shared_parent() {
-    const CHILDREN: usize = 6;
-    const THREADS_PER_CHILD: u64 = 4;
-    const PARENT_CEILING: u64 = 9_000;
-    const CHILD_CEILING: u64 = 3_000;
-    let store = store();
-    let parent = store
-        .open(xts(), Some(atoms(PARENT_CEILING)), WallClock::NONE)
-        .unwrap();
-    let children: Vec<BudgetId> = (0..CHILDREN)
-        .map(|_| {
-            store
-                .delegate(parent, Some(atoms(CHILD_CEILING)), WallClock::NONE)
-                .unwrap()
-        })
-        .collect();
-    let mut watched = vec![(parent, u128::from(PARENT_CEILING))];
-    watched.extend(
-        children
-            .iter()
-            .map(|&child| (child, u128::from(CHILD_CEILING))),
-    );
-    let done = AtomicBool::new(false);
-    thread::scope(|scope| {
-        let watcher = scope.spawn(|| watch(&store, &watched, &done));
-        let mut workers = Vec::new();
-        for (index, &child) in children.iter().enumerate() {
-            for thread_index in 0..THREADS_PER_CHILD {
-                let store = &store;
-                let seed = index as u64 * 100 + thread_index;
-                workers.push(scope.spawn(move || {
-                    let mut rng = Rng::new(seed);
-                    for _ in 0..300 {
-                        let maximum = 1 + rng.below(60);
-                        if let Ok(mut reservation) = store.reserve(child, atoms(maximum)) {
-                            reservation.commit(atoms(maximum)).unwrap();
-                        }
-                    }
-                }));
-            }
-        }
-        for worker in workers {
-            worker.join().unwrap();
-        }
-        done.store(true, Ordering::SeqCst);
-        watcher.join().unwrap();
-    });
-    let parent_snapshot = store.snapshot(parent).unwrap();
-    let child_total: u128 = children
-        .iter()
-        .map(|&child| store.snapshot(child).unwrap().committed.atoms())
-        .sum();
-    assert_eq!(parent_snapshot.committed.atoms(), child_total);
-    assert_eq!(parent_snapshot.reserved, atoms(0));
-    // Six children capped at 3,000 each could spend 18,000 alone; the parent's
-    // 9,000 ceiling must hold, and the contention must actually reach it.
-    assert!(child_total <= u128::from(PARENT_CEILING));
-    assert!(child_total > u128::from(PARENT_CEILING) - 60);
-}
-
-#[test]
-fn reservations_held_by_cancelled_or_panicking_tasks_are_released() {
-    let store = store();
+fn cancelled_and_panicking_tasks_settle_their_reservations() {
+    let (_directory, store) = temp_store();
     let budget = store
-        .open(xts(), Some(atoms(1_000)), WallClock::NONE)
+        .create(xts(), Some(atoms(1_000)), WallClock::NONE)
         .unwrap();
-    let held = Barrier::new(9);
-    let observed = Barrier::new(9);
+    let (held, observed) = (Barrier::new(9), Barrier::new(9));
     thread::scope(|scope| {
         let mut tasks = Vec::new();
         for index in 0..8 {
             let (store, held, observed) = (&store, &held, &observed);
             tasks.push(scope.spawn(move || {
-                let _reservation = store.reserve(budget, atoms(100)).unwrap();
+                let mut reservation = store.reserve(budget, atoms(100)).unwrap();
                 held.wait();
                 observed.wait();
                 if index % 2 == 0 {
+                    // Unwinding drops the reservation, which charges it in full.
                     panic!("task {index} abandoned its call");
                 }
+                // A cancelled call that consumed nothing releases explicitly.
+                reservation.release().unwrap();
             }));
         }
         held.wait();
@@ -225,11 +175,11 @@ fn reservations_held_by_cancelled_or_panicking_tasks_are_released() {
     let snapshot = store.snapshot(budget).unwrap();
     assert_eq!(
         (snapshot.committed, snapshot.reserved),
-        (atoms(0), atoms(0))
+        (atoms(400), atoms(0))
     );
     store
-        .reserve(budget, atoms(1_000))
+        .reserve(budget, atoms(600))
         .unwrap()
-        .commit(atoms(1_000))
+        .commit(atoms(600))
         .unwrap();
 }

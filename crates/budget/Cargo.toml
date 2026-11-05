@@ -5,3 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license-file = "../../LICENSE"
 repository.workspace = true
+
+[dependencies]
+rusqlite = { version = "=0.37.0", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"

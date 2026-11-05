@@ -19,9 +19,12 @@ pub struct Settlement {
 }
 
 /// An open reservation. A cancelled or failed call settles what it consumed with
-/// [`Reservation::commit`]. Dropping an unsettled handle, for example when the
-/// task holding it is cancelled, releases the whole reservation.
-#[must_use = "an unsettled reservation is released when dropped"]
+/// [`Reservation::commit`], or [`Reservation::release`] when it consumed nothing.
+///
+/// Dropping an unsettled handle, for example when the task holding it is
+/// cancelled or panics, charges the full reservation: the call may have run, and
+/// its cost is unknown, so the conservative choice is the maximum it was allowed.
+#[must_use = "an unsettled reservation charges its full amount when dropped"]
 #[derive(Debug)]
 pub struct Reservation {
     store: BudgetStore,
@@ -82,8 +85,9 @@ impl Drop for Reservation {
     fn drop(&mut self) {
         if self.open {
             // Drop cannot report an error. If the store is unavailable the
-            // reservation stays counted, which refuses spend rather than allowing it.
-            let _ = self.store.settle(self.id, Amount::zero(self.amount.unit()));
+            // reservation stays open and counted, which refuses spend rather
+            // than allowing it.
+            let _ = self.store.settle(self.id, self.amount);
         }
     }
 }
