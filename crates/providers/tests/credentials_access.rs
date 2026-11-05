@@ -3,8 +3,10 @@
 #[path = "credentials_support.rs"]
 mod support;
 
-use foundry_identity::authz::{Role, WorkspaceId};
-use foundry_providers::credentials::{CredentialError, CredentialEvent, CredentialState};
+use foundry_identity::authz::Role;
+use foundry_providers::credentials::{
+    CredentialError, CredentialEvent, CredentialState, FixtureValidator,
+};
 use support::*;
 
 #[test]
@@ -46,6 +48,16 @@ fn members_manage_only_slots_they_connected() {
         stored_value(&store, &member_b, "hosted-a", "account-1"),
         CANARY
     );
+    let refused = CredentialEvent::ProviderRefused;
+    let event = store.record(&member_c, &id("hosted-a"), &account("account-1"), refused);
+    assert_eq!(event, Err(forbidden));
+    // A viewer is refused before any read, for present and absent slots alike.
+    let online = FixtureValidator { reachable: true };
+    for key in ["account-1", "account-9"] {
+        let check =
+            store.check_account(&viewer, &catalog(), &online, &id("hosted-a"), &account(key));
+        assert_eq!(check, Err(forbidden));
+    }
     let viewed = store.list(&viewer).unwrap();
     assert!(!viewed.readiness.configure && !viewed.readiness.delete);
     assert_eq!(viewed.items.len(), 1);
@@ -121,9 +133,10 @@ fn workspaces_never_see_or_change_each_others_slots() {
     let impostor = caller("workspace-b", "owner-a", Role::Member);
     let refused = store.delete(&impostor, &id("hosted-a"), None);
     assert_eq!(refused.unwrap_err(), CredentialError::Forbidden);
-    let ws_a = WorkspaceId::new("workspace-a");
     let event = CredentialEvent::ProviderRefused;
-    let recorded = store.record(&ws_a, &id("hosted-a"), &account("account-1"), event);
+    let foreign = store.record(&other, &id("fixture"), &account("account-9"), event);
+    assert_eq!(foreign.unwrap_err().class(), "not_found");
+    let recorded = store.record(&owner(), &id("hosted-a"), &account("account-1"), event);
     assert_eq!(recorded, Ok(CredentialState::AuthFailed));
     assert_eq!(
         store.list(&other).unwrap().items[1].state,
@@ -137,10 +150,8 @@ fn workspaces_never_see_or_change_each_others_slots() {
         OTHER_CANARY
     );
     let fixture = id("fixture");
-    let in_a = store.availability(&ws_a).unwrap();
+    let in_a = store.availability(&owner()).unwrap();
     assert!(!catalog().provider_available(&fixture, &in_a).unwrap());
-    let in_b = store
-        .availability(&WorkspaceId::new("workspace-b"))
-        .unwrap();
+    let in_b = store.availability(&other).unwrap();
     assert!(catalog().provider_available(&fixture, &in_b).unwrap());
 }

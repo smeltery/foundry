@@ -24,7 +24,7 @@ mod store;
 
 pub use check::{
     AccountCheck, AuthenticationStatus, CapacityStatus, CheckCause, CredentialValidator, Evidence,
-    EvidenceBasis, FixtureValidator, ProviderEvidence, ValidationOutcome,
+    EvidenceBasis, FixtureValidator, ProviderEvidence, ValidationOutcome, validate,
 };
 pub use error::CredentialError;
 #[cfg(unix)]
@@ -33,5 +33,5 @@ pub use secret::{MAX_SECRET_BYTES, Secret, read_token, read_token_stdin};
 pub use slot::{AccountKey, Caller, CredentialEvent, CredentialSlot, CredentialState, Failure};
 pub use store::{
     Clock, ConfigureRequest, Configured, CredentialHandoff, CredentialList, CredentialStore,
-    Deleted, MAX_CONFIG_VALUE_BYTES, Readiness, validate,
+    Deleted, MAX_CONFIG_VALUE_BYTES, Readiness,
 };

@@ -64,8 +64,13 @@ impl Eq for Secret {}
 /// Reads one token line. Only the line ending (LF or CRLF) is removed. Empty,
 /// oversize or non-UTF-8 input is `invalid_request`, and reading stops one
 /// line ending past the limit, so an endless stream is never buffered.
+///
+/// The line buffer is zeroed, and sized up front so it never reallocates and
+/// leaves copies behind. The reader's own buffer (such as the one inside
+/// `BufReader` or `Stdin`) is outside this function's control and keeps the
+/// bytes until they are overwritten.
 pub fn read_token(input: &mut impl BufRead) -> Result<Secret, CredentialError> {
-    let mut line = Zeroizing::new(Vec::new());
+    let mut line = Zeroizing::new(Vec::with_capacity(MAX_SECRET_BYTES + 2));
     let limit = (MAX_SECRET_BYTES + 2) as u64;
     Read::take(&mut *input, limit)
         .read_until(b'\n', &mut line)

@@ -231,6 +231,10 @@ impl CredentialStore {
         provider_id: &ProviderId,
         account_key: &AccountKey,
     ) -> Result<AccountCheck, CredentialError> {
+        // Refused before any read, so a viewer cannot probe for a slot.
+        if !caller.may_write() {
+            return Err(CredentialError::Forbidden);
+        }
         let provider = catalog
             .provider(provider_id)
             .ok_or(CredentialError::NotFound { what: "provider" })?;
@@ -256,21 +260,26 @@ impl CredentialStore {
         })
     }
 
-    /// Applies a provider-side event from the state table. Events outside the
-    /// table are `conflict` and change nothing.
+    /// Applies a provider-side event from the state table on behalf of a
+    /// caller who may use the slot, such as the session whose provider call
+    /// was refused. Events outside the table are `conflict` and change nothing.
     pub fn record(
         &self,
-        workspace: &WorkspaceId,
+        caller: &Caller,
         provider_id: &ProviderId,
         account_key: &AccountKey,
         event: CredentialEvent,
     ) -> Result<CredentialState, CredentialError> {
         let now = to_sql((self.clock)())?;
+        let workspace = &caller.workspace;
         self.write(|transaction| {
             let slot = slots(transaction, workspace, Some(provider_id))?
                 .into_iter()
                 .find(|slot| slot.account_key == *account_key)
                 .ok_or(CredentialError::NotFound { what: "credential" })?;
+            if !caller.may_manage(&slot.connected_by) {
+                return Err(CredentialError::Forbidden);
+            }
             let next = slot.state.after(event).ok_or(CredentialError::Conflict {
                 what: "credential state",
             })?;
@@ -317,13 +326,11 @@ impl CredentialStore {
         })
     }
 
-    /// The provider and kind pairs with a configured credential in one
-    /// workspace, for catalog availability.
-    pub fn availability(
-        &self,
-        workspace: &WorkspaceId,
-    ) -> Result<ConfiguredCredentials, CredentialError> {
-        let items = self.read(|connection| slots(connection, workspace, None))?;
+    /// The provider and kind pairs with a configured credential in the
+    /// caller's workspace, for catalog availability. Like `list`, any role may
+    /// read it.
+    pub fn availability(&self, caller: &Caller) -> Result<ConfiguredCredentials, CredentialError> {
+        let items = self.read(|connection| slots(connection, &caller.workspace, None))?;
         Ok(ConfiguredCredentials::new(
             items
                 .into_iter()
@@ -373,22 +380,6 @@ impl CredentialStore {
             .lock()
             .map_err(|_| CredentialError::unavailable("credential store poisoned"))
     }
-}
-
-/// Validates a key against the provider without saving it.
-pub fn validate(
-    catalog: &ProviderCatalog,
-    validator: &impl CredentialValidator,
-    provider_id: &ProviderId,
-    secret: &Secret,
-) -> Result<super::ValidationOutcome, CredentialError> {
-    let provider = catalog
-        .provider(provider_id)
-        .ok_or(CredentialError::NotFound { what: "provider" })?;
-    if !provider.accepts(AuthKind::ApiKey) {
-        return Err(CredentialError::UnsupportedProvider);
-    }
-    Ok(validator.validate(provider, secret))
 }
 
 fn wall_clock_ms() -> u64 {

@@ -162,3 +162,28 @@ fn concurrent_openers_of_a_fresh_file_all_succeed() {
     }
     assert_eq!(journal_mode(&file), "wal");
 }
+
+#[test]
+fn shared_or_linked_sidecar_files_are_refused() {
+    let not_private = CredentialError::Unavailable {
+        detail: "credential file is not private",
+    };
+    for suffix in ["-wal", "-shm"] {
+        let directory = tempfile::tempdir().unwrap();
+        let file = path(directory.path());
+        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", file.display()));
+        std::fs::write(&sidecar, b"").unwrap();
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(refused(&file), not_private, "{suffix}");
+
+        std::fs::remove_file(&sidecar).unwrap();
+        let elsewhere = directory.path().join("elsewhere");
+        std::fs::write(&elsewhere, b"").unwrap();
+        std::fs::set_permissions(&elsewhere, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &sidecar).unwrap();
+        assert_eq!(refused(&file), not_private, "{suffix}");
+
+        std::fs::remove_file(&sidecar).unwrap();
+        assert!(CredentialStore::open(&file).is_ok(), "{suffix}");
+    }
+}

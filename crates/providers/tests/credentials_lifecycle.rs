@@ -3,7 +3,6 @@
 #[path = "credentials_support.rs"]
 mod support;
 
-use foundry_identity::authz::WorkspaceId;
 use foundry_providers::catalog::{AuthKind, ProviderId};
 use foundry_providers::credentials::{
     AccountKey, CredentialError, CredentialEvent, CredentialState, Failure, MAX_SECRET_BYTES,
@@ -171,7 +170,7 @@ fn malformed_requests_are_refused_by_class() {
 fn provider_events_follow_the_state_table() {
     let directory = tempfile::tempdir().unwrap();
     let store = open(directory.path());
-    let workspace = WorkspaceId::new("workspace-a");
+    let workspace = owner();
     let (provider_id, key) = (id("hosted-a"), account("account-1"));
     let conflict = CredentialError::Conflict {
         what: "credential state",

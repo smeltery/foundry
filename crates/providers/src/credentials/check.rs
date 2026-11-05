@@ -1,7 +1,7 @@
 //! Key validation and account checks. Both ask a [`CredentialValidator`];
 //! the only implementation here is the deterministic, offline fixture.
-use super::Secret;
-use crate::catalog::ProviderDescriptor;
+use super::{CredentialError, Secret};
+use crate::catalog::{AuthKind, ProviderCatalog, ProviderDescriptor, ProviderId};
 
 /// `Verified` alone means the key works; `Unverified` never means invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,4 +173,20 @@ impl CredentialValidator for FixtureValidator {
             ValidationOutcome::Unverified(cause) => ProviderEvidence::unverified(metadata, cause),
         }
     }
+}
+
+/// Validates a key against the provider without saving it.
+pub fn validate(
+    catalog: &ProviderCatalog,
+    validator: &impl CredentialValidator,
+    provider_id: &ProviderId,
+    secret: &Secret,
+) -> Result<ValidationOutcome, CredentialError> {
+    let provider = catalog
+        .provider(provider_id)
+        .ok_or(CredentialError::NotFound { what: "provider" })?;
+    if !provider.accepts(AuthKind::ApiKey) {
+        return Err(CredentialError::UnsupportedProvider);
+    }
+    Ok(validator.validate(provider, secret))
 }

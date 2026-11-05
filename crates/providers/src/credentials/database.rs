@@ -5,9 +5,13 @@
 //!
 //! The file is created owner-only (0600) without following links; an existing
 //! file that is a link, not a regular file, not owned by this user or readable
-//! by anyone else is refused. SQLite gives the `-wal` and `-shm` files the main
-//! file's permissions. `secure_delete` zeroes freed content, and each write
-//! that drops secret material ends with a truncating WAL checkpoint.
+//! by anyone else is refused, and so is an existing `-wal` or `-shm` file that
+//! fails the same test. SQLite gives new sidecars the main file's permissions.
+//! `secure_delete` zeroes freed content, and opening the file and each write
+//! that drops secret material end with a truncating WAL checkpoint.
+//!
+//! Secrets are stored in plaintext inside that file; there is no keychain or
+//! at-rest encryption.
 use super::CredentialError;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::fs::OpenOptions;
@@ -23,6 +27,10 @@ const APPLICATION_ID: i64 = 0x4643_5244;
 
 /// How long a writer waits for another connection's transaction to finish.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a purge checkpoint waits for other connections before leaving the
+/// WAL to a later checkpoint.
+const PURGE_TIMEOUT: Duration = Duration::from_millis(100);
 
 const SCHEMA: &str = "
 CREATE TABLE credential_schema_version (version INTEGER NOT NULL);
@@ -87,12 +95,19 @@ pub(crate) fn open(path: &Path) -> Result<Connection, CredentialError> {
     // Read-only inspection first, so a foreign or newer file stays untouched.
     inspect(&connection)?;
     enable_wal(&connection)?;
-    prepare(connection)
+    let connection = prepare(connection)?;
+    // Clears WAL pages a crash may have left, including removed secrets. A
+    // concurrent reader only delays that to a later write's checkpoint.
+    purge_wal(&connection)?;
+    Ok(connection)
 }
 
+/// Creates the main file owner-only, or checks an existing one, then checks
+/// any `-wal` and `-shm` file already present the same way: SQLite reuses
+/// those as they are, so a planted or shared sidecar would expose its pages.
 #[cfg(unix)]
 fn ensure_private_file(path: &Path) -> Result<(), CredentialError> {
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::unix::fs::OpenOptionsExt;
     let created = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -100,14 +115,30 @@ fn ensure_private_file(path: &Path) -> Result<(), CredentialError> {
         .custom_flags(libc::O_NOFOLLOW)
         .open(path);
     match created {
-        Ok(_) => return Ok(()),
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+        Ok(_) => {}
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => check_private(path)?,
         Err(_) => {
             return Err(CredentialError::unavailable(
                 "cannot create credential file",
             ));
         }
     }
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = path.as_os_str().to_owned();
+        sidecar.push(suffix);
+        match std::fs::symlink_metadata(&sidecar) {
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            _ => check_private(Path::new(&sidecar))?,
+        }
+    }
+    Ok(())
+}
+
+/// A regular file, not a link, owned by this user, with no group or other
+/// permission bits.
+#[cfg(unix)]
+fn check_private(path: &Path) -> Result<(), CredentialError> {
+    use std::os::unix::fs::MetadataExt;
     let metadata = std::fs::symlink_metadata(path)
         .map_err(|_| CredentialError::unavailable("cannot inspect credential file"))?;
     // SAFETY: geteuid has no preconditions and cannot fail.
@@ -216,12 +247,20 @@ fn prepare(mut connection: Connection) -> Result<Connection, CredentialError> {
 
 /// Copies committed WAL frames into the file and truncates the WAL, so no old
 /// page holding removed secret material survives there. Returns `false` when a
-/// concurrent reader kept the checkpoint from completing.
+/// concurrent reader kept the checkpoint from completing. The checkpoint waits
+/// at most [`PURGE_TIMEOUT`] for other connections, so a long reader cannot
+/// stall the store; the normal busy timeout is restored afterwards.
 pub(crate) fn purge_wal(connection: &Connection) -> Result<bool, CredentialError> {
-    let busy: i64 = connection
-        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
-        .storage()?;
-    Ok(busy == 0)
+    connection.busy_timeout(PURGE_TIMEOUT).storage()?;
+    let busy = connection.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    connection.busy_timeout(BUSY_TIMEOUT).storage()?;
+    match busy {
+        Ok(busy) => Ok(busy == 0),
+        Err(error) if is_busy(&error) => Ok(false),
+        Err(_) => Err(CredentialError::unavailable("credential database error")),
+    }
 }
 
 pub(crate) fn to_sql(value: u64) -> Result<i64, CredentialError> {

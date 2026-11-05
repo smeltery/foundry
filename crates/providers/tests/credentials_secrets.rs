@@ -251,3 +251,30 @@ fn handoff_feeds_the_adapter_private_inputs() {
         AdapterCredential::None => panic!("expected an API key"),
     }
 }
+
+#[test]
+fn a_blocked_purge_is_brief_and_the_next_open_finishes_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    store
+        .configure(&owner(), &catalog(), request("hosted-a", None, CANARY, &[]))
+        .unwrap();
+    // A long reader keeps the checkpoint from copying the zeroed pages back.
+    let reader = rusqlite::Connection::open(path(directory.path())).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM credential_slots;")
+        .unwrap();
+    let started = std::time::Instant::now();
+    let deleted = store.delete(&owner(), &id("hosted-a"), None).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert!(!deleted.secret_purged);
+    assert!(on_disk(directory.path(), CANARY));
+
+    // Leave the file as a crash would: no connection closes and checkpoints.
+    reader.execute_batch("COMMIT;").unwrap();
+    std::mem::forget(reader);
+    std::mem::forget(store);
+    let reopened = open(directory.path());
+    assert!(!on_disk(directory.path(), CANARY));
+    assert!(reopened.list(&owner()).unwrap().items.is_empty());
+}
