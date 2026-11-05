@@ -1,14 +1,18 @@
 //! Default-deny workspace tools. This library is not a process or OS sandbox.
+mod edit;
 mod filesystem;
 pub mod host;
+mod profile;
 pub mod workspace_snapshot;
+
+pub use profile::ToolProfile;
 
 use cap_std::fs::Dir;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{fmt, io, path::Path};
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Grants {
     pub read: bool,
     pub list: bool,
@@ -131,12 +135,13 @@ impl WorkspaceTools {
 
     /// Input is bounded before JSON parsing; results fit the configured encoded byte cap.
     pub fn execute_json(&self, name: &str, input: &[u8]) -> Result<Value> {
-        if !matches!(name, "read" | "write" | "list") {
+        if !matches!(name, "read" | "write" | "edit" | "list") {
             return Err(ToolError::UnknownTool);
         }
         let allowed = match name {
             "read" => self.grants.read,
             "list" => self.grants.list,
+            "edit" => self.grants.read && self.grants.overwrite,
             _ => self.grants.create || self.grants.overwrite,
         };
         if !allowed {
@@ -154,6 +159,7 @@ impl WorkspaceTools {
                 let args: PathInput = parse(input)?;
                 self.list(&args.path)?
             }
+            "edit" => self.edit(parse(input)?)?,
             _ => {
                 let args: WriteInput = parse(input)?;
                 self.write(args)?

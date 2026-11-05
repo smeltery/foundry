@@ -123,8 +123,9 @@ impl Service {
         self.snapshots = Some(settings);
         self
     }
+    /// Same checks as `create_session`, including the tool profile.
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
-        Ok(self.store.create(request)?)
+        Ok(self.create_session(request)?.session)
     }
     pub fn get(&self, id: &str) -> Result<Session> {
         Ok(self.store.get(id)?)

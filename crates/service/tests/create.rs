@@ -112,3 +112,27 @@ fn decoded_v2_request_replays_across_restart_with_its_associations() {
     ));
     assert_eq!(service.list(10).unwrap().len(), 1);
 }
+
+#[test]
+fn every_create_path_resolves_the_tool_profile_before_writing() {
+    let dir = tempdir().unwrap();
+    let mut service = Service::open(dir.path().join("store.db")).unwrap();
+    let unknown = || decode(r#""idempotency_key":null,"tool_profile":"default/read-write""#);
+    let unsupported = |error| {
+        matches!(
+            error,
+            ServiceError::Store(StoreError::Contract(ContractError::Unsupported(_)))
+        )
+    };
+    assert!(unsupported(
+        service.create_session(unknown().unwrap()).unwrap_err()
+    ));
+    assert!(unsupported(service.create(unknown().unwrap()).unwrap_err()));
+    assert!(service.list(10).unwrap().is_empty());
+    let known = decode(r#""idempotency_key":null,"tool_profile":"default""#).unwrap();
+    let created = service.create_session(known).unwrap();
+    assert_eq!(
+        created.associations.tool_profile.as_deref(),
+        Some("default")
+    );
+}
