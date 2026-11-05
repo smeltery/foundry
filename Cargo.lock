@@ -978,6 +978,15 @@ dependencies = [
 [[package]]
 name = "foundry-providers"
 version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "reqwest",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde_json",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "foundry-runtime"

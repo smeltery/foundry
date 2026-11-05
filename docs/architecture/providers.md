@@ -81,19 +81,19 @@ purposes, never as success.
 | Class | Provisional HTTP | Meaning | Foundry today |
 | --- | --- | --- | --- |
 | `invalid_request` | 400 | Malformed body, unknown field, out-of-range value, effort the model does not offer | `SelectionError`, CLI parse errors |
-| `insecure_transport` | 400 | A public endpoint without HTTPS | `ConnectorError::InsecureTransport` (connector client) |
+| `insecure_transport` | 400 | A public endpoint without HTTPS | `ConnectorError::InsecureTransport` (connector client), `EndpointError::InsecureTransport` (local endpoint client) |
 | `unauthenticated` | 401 | Missing, invalid or expired caller credential | No authentication |
 | `budget_exhausted` | 402 | A local budget ceiling or deadline refuses the work; carries the budget ID and cause | Not implemented |
 | `quota_exhausted` | 402 | A provider account, hosted plan or billing refuses the work; carries a cause code | Not implemented; hosted billing Held D46-5 |
 | `forbidden` | 403 | Caller lacks scope, role or ownership of the account or login | Not implemented |
-| `endpoint_not_permitted` | 403 | A loopback, LAN or tailnet endpoint without its explicit opt-in | `ConnectorError::UnsafeHost` (connector client) |
+| `endpoint_not_permitted` | 403 | A loopback, LAN or tailnet endpoint without its explicit opt-in | `ConnectorError::UnsafeHost` (connector client), `EndpointError::NotPermitted` (local endpoint client) |
 | `not_found` | 404 | Provider, account, login or model is absent or not visible | Not implemented |
 | `conflict` | 409 | Key reused with a different intent; stale prompt; login not pending | Not implemented |
 | `model_unavailable` | 409 | The named model exists but cannot run now | Not implemented |
 | `gone` | 410 | A keyed login's receipt survives but its result was purged | Not implemented |
 | `unsupported_provider` | 422 | The provider or credential kind cannot serve this operation | Not implemented |
 | `rate_limited` | 429 | Caller must wait; carries a retry delay in seconds | Not implemented |
-| `endpoint_failure` | 502 | An endpoint call failed; carries one category from the table in [local and custom endpoints](#local-and-custom-endpoints) | Not implemented |
+| `endpoint_failure` | 502 | An endpoint call failed; carries one category from the table in [local and custom endpoints](#local-and-custom-endpoints) | `EndpointError::Failure` (local endpoint client) |
 | `unavailable` | 503 | Credential or login storage temporarily unavailable | Not implemented |
 | `unsupported` | none yet | Operation or capability not built in this binary | CLI `unsupported`, exit status 2 |
 
@@ -575,13 +575,34 @@ reports also wait on D46-5.
 Audit rows (external `capabilities.json`, group GAP-013): CLI-032.
 Vectors: `tests/providers/vectors/endpoints.json`.
 
-**Foundry today.** The connector client admits one explicit loopback HTTP origin
-and nothing else: another port, another loopback address, a LAN address, a host
-name, a path or HTTPS on loopback is refused. Without that opt-in, public
-endpoints need HTTPS, and peers that resolve to loopback, private, link-local or
-mapped addresses are refused. Mixed DNS answers fail before any connection, and
-proxy environment variables are ignored. These rules guard connectors today, not
-model endpoints. Evidence:
+**Foundry today.** The `foundry-providers` local endpoint client applies the
+network classes below to model endpoints. It takes the wire format from the
+catalog descriptor and serves only explicitly listed model IDs. Each call
+resolves once, admits every answer and connects only to those addresses, so a
+rebound name or mixed answers never connect. Redirects are reported as `http`
+failures and never followed, and proxy variables are ignored. One bounded
+timeout (at most 300 seconds) covers lookup, connection and reply. The client
+is not yet wired into the runtime, and only non-streaming text completions are
+built. Tests use a loopback stub and a fixture resolver, never a real service.
+Evidence:
+[`local_endpoint.rs`](../../crates/providers/tests/local_endpoint.rs)
+(`private_classes_need_their_own_opt_in`,
+`link_local_and_reserved_addresses_are_always_refused`,
+`alternate_ipv4_spellings_are_classified_as_loopback`,
+`mixed_dns_answers_are_refused`),
+[`local_endpoint_client.rs`](../../crates/providers/tests/local_endpoint_client.rs)
+(`every_format_round_trips_through_the_stub`,
+`resolution_is_pinned_and_rebinding_is_refused`,
+`redirects_are_never_followed`,
+`connect_dns_and_tls_failures_are_categorized`),
+[`local_endpoint_tls.rs`](../../crates/providers/tests/local_endpoint_tls.rs)
+(`self_signed_certificate_is_rejected_by_the_verifier`) and
+[`local_endpoint_proxy.rs`](../../crates/providers/tests/local_endpoint_proxy.rs)
+(`proxy_environment_is_ignored`).
+
+The connector client keeps its own narrower rule: it admits one explicit
+loopback HTTP origin and nothing else, and otherwise refuses private, link-local
+and mapped peers. Evidence:
 [`http_policy.rs`](../../crates/connectors/tests/http_policy.rs)
 (`explicit_loopback_policy_cannot_authorize_other_ports_or_hosts`,
 `proxy_environment_is_ignored`),
@@ -604,8 +625,13 @@ model endpoints. Evidence:
 | loopback | 127.0.0.0/8, ::1 | Explicit opt-in `loopback`; HTTP allowed |
 | lan | 10/8, 172.16/12, 192.168/16, fc00::/7 | Explicit opt-in `lan`; HTTP allowed |
 | tailnet | 100.64.0.0/10 | Explicit opt-in `tailnet`; HTTP allowed |
-| link_local | 169.254/16, fe80::/10 | Always refused, including metadata addresses |
+| link_local | 169.254/16, fe80::/10, and known cloud metadata addresses in other ranges | Always refused |
+| reserved | unspecified, multicast, 240/4, 6to4, NAT64 and IPv4-compatible IPv6 | Always refused |
 | public | any other address | HTTPS only; no opt-in needed |
+
+An IPv4-mapped IPv6 address takes the class of its IPv4 address. The cloud
+metadata addresses outside 169.254/16 are 100.100.100.200 and fd00:ec2::254; no
+opt-in admits them.
 
 - The class is decided from every resolved address before connecting. Answers
   that span classes, or a class the endpoint did not opt into, are
@@ -613,8 +639,10 @@ model endpoints. Evidence:
   User information in the URL, a fragment, or control characters are
   `invalid_request`.
 - Failures are `endpoint_failure` with one category: `dns`, `connect`,
-  `timeout`, `tls` or `http` (with the status number). Error text contains the
-  category and the endpoint's provider ID, never the URL, a key or a body.
+  `timeout`, `tls`, `http` (with the status number, including an unfollowed
+  redirect) or `protocol` (a 200 reply that is oversized, encoded, not JSON or
+  missing the format's text). Error text contains the category and the
+  endpoint's provider ID, never the URL, a key or a body.
 - Proxy variables are ignored unless a proxy is configured explicitly.
 
 **Held.** Downloading and running local model weights, locally or in CI, waits on
