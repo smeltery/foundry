@@ -578,11 +578,13 @@ Vectors: `tests/providers/vectors/budgets.json`.
   following the [completion policy](completion-policy.md). Follow-up messages run
   single passes. Unsupported targets are `invalid_request`.
 - Rollover: off by default and enabled only by an explicit request field. When
-  the session's account is exhausted or refused, a later call may continue with
-  the same model on another connected account of the same provider. Each
-  rollover is recorded with the source and target account. Without rollover the
-  call fails and the attempt records the cause. Isolated benchmark sessions
-  never roll over.
+  the session's account is exhausted (`quota_exhausted`, a plan or billing quota
+  refusal) or rate limited (`rate_limited`), a later call may continue with
+  the same model on another connected account of the same provider. An
+  authentication refusal (`unauthenticated`, `forbidden` or an `auth_failed`
+  account) never triggers rollover. Each rollover is recorded with the source
+  and target account. Without rollover the call fails and the attempt records
+  the cause. Isolated benchmark sessions never roll over.
 - Tests and audits never trigger automatic charges.
 
 **Held.** Hosted fallback after the last account and credit-denominated ceilings
