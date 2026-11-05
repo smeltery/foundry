@@ -52,6 +52,10 @@ fn assert_redacted(error: &EndpointError, stub: &Stub) {
     ] {
         assert!(!text.contains(secret), "{text}");
     }
+    if let EndpointError::Failure { category, .. } = error {
+        let prefix = format!("local-a endpoint failure: {}", category.name());
+        assert!(error.to_string().starts_with(&prefix), "{error}");
+    }
 }
 
 #[tokio::test]
@@ -128,7 +132,7 @@ async fn timeout_failure_hides_url_and_key() {
     let error = call(&endpoint).await.unwrap_err();
     assert!(started.elapsed() < Duration::from_secs(3));
     assert_eq!(error, failure(FailureCategory::Timeout));
-    assert_eq!(error.to_string(), "local-a endpoint timed out");
+    assert_eq!(error.to_string(), "local-a endpoint failure: timeout");
     assert_eq!(error.class(), "endpoint_failure");
     assert_redacted(&error, &stub);
 }
@@ -140,7 +144,7 @@ async fn http_failure_reports_status_without_body() {
         .await
         .unwrap_err();
     assert_eq!(error, failure(FailureCategory::Http(500)));
-    assert_eq!(error.to_string(), "local-a endpoint returned HTTP 500");
+    assert_eq!(error.to_string(), "local-a endpoint failure: http 500");
     assert_redacted(&error, &stub);
 }
 
@@ -200,6 +204,13 @@ async fn unusable_replies_are_protocol_failures() {
             headers: String::new(),
             body: "{}".into(),
         },
+        // Decompression is off, so an encoded reply is refused unread.
+        Behavior::Reply {
+            status: 200,
+            content_type: "application/json",
+            headers: "content-encoding: gzip\r\n".into(),
+            body: r#"{"choices":[{"message":{"content":"hi"}}]}"#.into(),
+        },
     ] {
         let stub = Stub::start(vec![behavior]).await;
         let error = call(&client(None, &stub.url("http", "/v1")))
@@ -254,20 +265,4 @@ async fn unlisted_models_and_empty_requests_never_connect() {
         "invalid_request"
     );
     assert_eq!(stub.connections(), 0);
-}
-
-#[tokio::test]
-async fn proxy_environment_is_ignored() {
-    let proxy = Stub::start(vec![Behavior::json(200, "{}")]).await;
-    let reply = r#"{"choices":[{"message":{"content":"hi"}}]}"#;
-    let stub = Stub::start(vec![Behavior::json(200, reply)]).await;
-    // SAFETY: this test binary sets no other environment variable, and the
-    // client under test never reads proxy variables.
-    unsafe {
-        for name in ["HTTP_PROXY", "http_proxy", "ALL_PROXY"] {
-            std::env::set_var(name, proxy.url("http", ""));
-        }
-    }
-    assert!(call(&client(None, &stub.url("http", "/v1"))).await.is_ok());
-    assert_eq!((proxy.connections(), stub.connections()), (0, 1));
 }

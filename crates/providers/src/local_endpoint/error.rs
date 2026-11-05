@@ -24,7 +24,7 @@ pub enum FailureCategory {
     /// A status other than 200, including a redirect, which is never followed.
     Http(u16),
     /// A 200 reply that is oversized, encoded, not JSON or lacks the format's
-    /// text. Not yet in the specified category list; provisional.
+    /// text.
     Protocol,
 }
 
@@ -82,18 +82,13 @@ impl fmt::Display for EndpointError {
             Self::Failure {
                 provider_id,
                 category,
-            } => match category {
-                FailureCategory::Dns => write!(f, "{provider_id} endpoint name lookup failed"),
-                FailureCategory::Connect => write!(f, "{provider_id} endpoint connection failed"),
-                FailureCategory::Timeout => write!(f, "{provider_id} endpoint timed out"),
-                FailureCategory::Tls => write!(f, "{provider_id} endpoint TLS handshake failed"),
-                FailureCategory::Http(status) => {
-                    write!(f, "{provider_id} endpoint returned HTTP {status}")
+            } => {
+                write!(f, "{provider_id} endpoint failure: {}", category.name())?;
+                match category {
+                    FailureCategory::Http(status) => write!(f, " {status}"),
+                    _ => Ok(()),
                 }
-                FailureCategory::Protocol => {
-                    write!(f, "{provider_id} endpoint returned an unusable reply")
-                }
-            },
+            }
         }
     }
 }

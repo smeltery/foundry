@@ -974,6 +974,7 @@ dependencies = [
 name = "foundry-providers"
 version = "0.1.0"
 dependencies = [
+ "rcgen",
  "reqwest",
  "rustls",
  "rustls-platform-verifier",

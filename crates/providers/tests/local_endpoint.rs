@@ -78,6 +78,11 @@ async fn link_local_and_reserved_addresses_are_always_refused() {
         "https://[2002:7f00:1::1]/v1",
         "https://[64:ff9b::7f00:1]/v1",
         "https://224.0.0.1/v1",
+        // Cloud metadata addresses inside the tailnet and LAN ranges.
+        "http://100.100.100.200/v1",
+        "http://[fd00:ec2::254]/v1",
+        "http://[::ffff:100.100.100.200]/v1",
+        "http://0xa9fea9fe/v1",
     ] {
         assert_eq!(
             endpoint(url, &every).unwrap_err(),
@@ -85,8 +90,30 @@ async fn link_local_and_reserved_addresses_are_always_refused() {
             "{url}"
         );
     }
-    let named = admitted("http://metadata.example/v1", &every, &["169.254.169.254"]).await;
-    assert_eq!(named, Err(EndpointError::NotPermitted));
+    for metadata in ["169.254.169.254", "100.100.100.200", "fd00:ec2::254"] {
+        let named = admitted("http://metadata.example/v1", &every, &[metadata]).await;
+        assert_eq!(named, Err(EndpointError::NotPermitted), "{metadata}");
+    }
+}
+
+#[tokio::test]
+async fn alternate_ipv4_spellings_are_classified_as_loopback() {
+    for url in [
+        "http://2130706433:8080/v1",
+        "http://0x7f000001:8080/v1",
+        "http://0177.0.0.1:8080/v1",
+        "http://127.1:8080/v1",
+        "http://１２７.０.０.１:8080/v1",
+        "http://127.0.0.1.:8080/v1",
+    ] {
+        assert_eq!(
+            endpoint(url, &[]).unwrap_err(),
+            EndpointError::NotPermitted,
+            "{url}"
+        );
+        let class = admitted(url, &[OptIn::Loopback], &[]).await;
+        assert_eq!(class, Ok(NetworkClass::Loopback), "{url}");
+    }
 }
 
 #[test]

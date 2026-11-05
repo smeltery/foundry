@@ -40,8 +40,26 @@ impl OptIn {
     }
 }
 
+/// Cloud metadata addresses that sit outside 169.254/16 and fe80::/10, inside
+/// the tailnet and LAN ranges. They are classed as link-local, so no opt-in
+/// admits them.
+const METADATA_V4: [Ipv4Addr; 1] = [Ipv4Addr::new(100, 100, 100, 200)];
+const METADATA_V6: [Ipv6Addr; 1] = [Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)];
+
 /// Classifies one address. An IPv4-mapped IPv6 address takes its IPv4 class.
 pub fn classify(ip: IpAddr) -> NetworkClass {
+    let is_metadata = match ip {
+        IpAddr::V4(ip) => METADATA_V4.contains(&ip),
+        IpAddr::V6(ip) => {
+            METADATA_V6.contains(&ip)
+                || ip
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| METADATA_V4.contains(&v4))
+        }
+    };
+    if is_metadata {
+        return NetworkClass::LinkLocal;
+    }
     match ip {
         IpAddr::V4(ip) => classify_v4(ip),
         IpAddr::V6(ip) => match ip.to_ipv4_mapped() {

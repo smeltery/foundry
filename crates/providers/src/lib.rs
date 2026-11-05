@@ -1,4 +1,5 @@
-//! Provider descriptors and model capabilities. No credential storage or network calls.
+//! Provider descriptors, model capabilities and a guarded client for local and
+//! custom model endpoints. No credential storage.
 
 pub mod catalog;
 pub mod local_endpoint;

@@ -12,14 +12,14 @@
       "given": {"explicit_origin": "http://127.0.0.1:43210"},
       "request": {"base_url": "http://10.0.0.1:43210/", "opt_in": []},
       "expect": {"result": "error", "error": "endpoint_not_permitted"},
-      "note": "Connector client policy today; not yet applied to model endpoints."
+      "note": "Connector client policy; model endpoints use the per-class opt-in instead."
     },
     {
       "name": "public_cleartext_endpoint_is_insecure",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
       "implemented": true,
-      "evidence": ["crates/connectors/tests/auth.rs::cleartext_and_private_resolved_peers_are_not_accepted"],
+      "evidence": ["crates/providers/tests/local_endpoint.rs::public_cleartext_is_insecure_and_private_answers_are_refused", "crates/connectors/tests/auth.rs::cleartext_and_private_resolved_peers_are_not_accepted"],
       "given": {"resolved": ["203.0.113.10"]},
       "request": {"base_url": "http://models.example/v1", "opt_in": []},
       "expect": {"result": "error", "error": "insecure_transport"}
@@ -29,7 +29,7 @@
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
       "implemented": true,
-      "evidence": ["crates/connectors/tests/auth.rs::cleartext_and_private_resolved_peers_are_not_accepted"],
+      "evidence": ["crates/providers/tests/local_endpoint.rs::public_cleartext_is_insecure_and_private_answers_are_refused", "crates/connectors/tests/auth.rs::cleartext_and_private_resolved_peers_are_not_accepted"],
       "given": {"resolved": ["10.1.2.3"]},
       "request": {"base_url": "https://models.example/v1", "opt_in": []},
       "expect": {"result": "error", "error": "endpoint_not_permitted"}
@@ -39,7 +39,7 @@
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
       "implemented": true,
-      "evidence": ["crates/connectors/src/network.rs::mixed_dns_answers_fail_before_any_transport_is_built"],
+      "evidence": ["crates/providers/tests/local_endpoint.rs::mixed_dns_answers_are_refused", "crates/connectors/src/network.rs::mixed_dns_answers_fail_before_any_transport_is_built"],
       "given": {"resolved": ["203.0.113.10", "127.0.0.1"]},
       "request": {"base_url": "https://models.example/v1", "opt_in": ["loopback"]},
       "expect": {"result": "error", "error": "endpoint_not_permitted", "connections": 0}
@@ -48,7 +48,8 @@
       "name": "public_https_endpoint_needs_no_opt_in",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::public_https_endpoint_needs_no_opt_in"],
       "given": {"resolved": ["198.51.100.7"]},
       "request": {"base_url": "https://models.example/v1", "opt_in": [], "format": "chat", "models": ["custom-small"]},
       "expect": {"result": "ok", "network_class": "public", "format": "chat"}
@@ -57,7 +58,8 @@
       "name": "loopback_http_with_opt_in_is_admitted",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::private_classes_need_their_own_opt_in"],
       "request": {"base_url": "http://127.0.0.1:8080/v1", "opt_in": ["loopback"], "models": ["local-small"]},
       "expect": {"result": "ok", "network_class": "loopback", "format": "chat"}
     },
@@ -65,7 +67,8 @@
       "name": "loopback_without_opt_in_is_refused",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::private_classes_need_their_own_opt_in"],
       "request": {"base_url": "http://[::1]:8080/v1", "opt_in": [], "models": ["local-small"]},
       "expect": {"result": "error", "error": "endpoint_not_permitted"}
     },
@@ -73,7 +76,8 @@
       "name": "lan_http_needs_its_own_opt_in",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::private_classes_need_their_own_opt_in"],
       "request": {"base_url": "http://192.168.1.20:8000/v1", "opt_in": ["loopback"], "models": ["local-small"]},
       "expect": {"result": "error", "error": "endpoint_not_permitted"}
     },
@@ -81,7 +85,8 @@
       "name": "lan_http_with_opt_in_is_admitted",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::private_classes_need_their_own_opt_in"],
       "request": {"base_url": "http://192.168.1.20:8000/v1", "opt_in": ["lan"], "models": ["local-small"]},
       "expect": {"result": "ok", "network_class": "lan"}
     },
@@ -89,7 +94,8 @@
       "name": "tailnet_with_opt_in_is_admitted",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::private_classes_need_their_own_opt_in"],
       "given": {"resolved": ["100.100.10.5"]},
       "request": {"base_url": "http://gpu-box.example:8000/v1", "opt_in": ["tailnet"], "models": ["local-small"]},
       "expect": {"result": "ok", "network_class": "tailnet"}
@@ -98,7 +104,8 @@
       "name": "link_local_metadata_address_is_always_refused",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::link_local_and_reserved_addresses_are_always_refused"],
       "request": {"base_url": "http://169.254.169.254/v1", "opt_in": ["loopback", "lan", "tailnet"]},
       "expect": {"result": "error", "error": "endpoint_not_permitted"}
     },
@@ -106,7 +113,8 @@
       "name": "user_information_in_url_is_invalid",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::malformed_base_urls_are_invalid"],
       "request": {"base_url": "https://user@models.example/v1", "opt_in": []},
       "expect": {"result": "error", "error": "invalid_request"}
     },
@@ -114,7 +122,8 @@
       "name": "endpoint_without_explicit_models_is_invalid",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::models_timeout_and_descriptor_are_explicit"],
       "given": {"resolved": ["198.51.100.7"]},
       "request": {"base_url": "https://models.example/v1", "opt_in": [], "models": []},
       "expect": {"result": "error", "error": "invalid_request", "models_discovered": 0}
@@ -123,7 +132,8 @@
       "name": "unsupported_scheme_is_invalid",
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint.rs::malformed_base_urls_are_invalid"],
       "request": {"base_url": "ftp://models.example/v1", "opt_in": []},
       "expect": {"result": "error", "error": "invalid_request"}
     },
@@ -131,15 +141,17 @@
       "name": "timeout_failure_hides_url_and_key",
       "operation": "endpoint.failure",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint_client.rs::timeout_failure_hides_url_and_key"],
       "request": {"provider_id": "local-a", "base_url": "http://127.0.0.1:8080/v1", "key": "fixture-key-canary"},
-      "expect": {"result": "error", "error": "endpoint_failure", "category": "timeout", "message": "local-a endpoint timed out"}
+      "expect": {"result": "error", "error": "endpoint_failure", "category": "timeout", "message": "local-a endpoint failure: timeout"}
     },
     {
       "name": "http_failure_reports_status_without_body",
       "operation": "endpoint.failure",
       "rows": ["CLI-032"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/providers/tests/local_endpoint_client.rs::http_failure_reports_status_without_body"],
       "given": {"response_body": "fixture-body-canary"},
       "request": {"provider_id": "local-a", "base_url": "https://models.example/v1"},
       "expect": {"result": "error", "error": "endpoint_failure", "category": "http", "status": 500, "body_included": false}
@@ -149,7 +161,7 @@
       "operation": "endpoint.admit",
       "rows": ["CLI-032"],
       "implemented": true,
-      "evidence": ["crates/connectors/tests/http_policy.rs::proxy_environment_is_ignored"],
+      "evidence": ["crates/providers/tests/local_endpoint_proxy.rs::proxy_environment_is_ignored", "crates/connectors/tests/http_policy.rs::proxy_environment_is_ignored"],
       "given": {"environment_proxy": "http://127.0.0.1:3128"},
       "request": {"base_url": "http://127.0.0.1:8080/v1", "opt_in": ["loopback"]},
       "expect": {"result": "ok", "network_class": "loopback", "proxy_used": false}
