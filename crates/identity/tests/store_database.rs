@@ -110,7 +110,7 @@ fn file_uses_wal_with_its_own_application_id_and_version() {
         .unwrap();
     assert_eq!(
         (mode.as_str(), application_id, version),
-        ("wal", 0x4649_444E, 1)
+        ("wal", 0x4649_444E, 2)
     );
 }
 
@@ -211,7 +211,7 @@ fn another_application_id_is_refused() {
 #[test]
 fn a_newer_or_missing_schema_version_is_refused() {
     for statement in [
-        "UPDATE identity_schema_version SET version = 2",
+        "UPDATE identity_schema_version SET version = 3",
         "DELETE FROM identity_schema_version",
     ] {
         let (_directory, path) = database();

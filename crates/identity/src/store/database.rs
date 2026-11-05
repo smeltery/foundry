@@ -1,6 +1,7 @@
 //! The identity store's own SQLite file. It is separate from the main store and
 //! its migration chain, and carries its own schema version table and
-//! `application_id`, so it never adopts another program's database.
+//! `application_id`, so it never adopts another program's database. Version 1
+//! holds credentials and pairings; version 2 adds the organization tables.
 //!
 //! On Unix a new file is created owner-only (0600); SQLite gives its journal
 //! files the same mode. Elsewhere the platform default applies.
@@ -12,7 +13,7 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior};
 
 use super::error::{Storage, StoreError};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// Marks a file as an identity database in the SQLite header ("FIDN").
 const APPLICATION_ID: i64 = 0x4649_444E;
@@ -51,6 +52,65 @@ CREATE TABLE pairings (
     client TEXT,
     claimed_ms INTEGER
 );
+";
+
+/// Version 2: workspaces (a single-use workspace names its paying parent),
+/// memberships, invitations, settings namespaces and the audit log. Triggers
+/// refuse every update or delete of an audit row.
+const ORGANIZATION_STEP: &str = "
+CREATE TABLE org_workspaces (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_ms INTEGER NOT NULL,
+    parent TEXT,
+    trial_key TEXT,
+    lifetime_minutes INTEGER,
+    expires_ms INTEGER,
+    retired_ms INTEGER,
+    retire_cause TEXT,
+    UNIQUE (parent, trial_key)
+);
+CREATE TABLE org_members (
+    workspace TEXT NOT NULL,
+    principal TEXT NOT NULL,
+    role TEXT NOT NULL,
+    email TEXT,
+    joined_ms INTEGER NOT NULL,
+    PRIMARY KEY (workspace, principal)
+);
+CREATE TABLE org_invitations (
+    sequence INTEGER PRIMARY KEY,
+    workspace TEXT NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_ms INTEGER NOT NULL
+);
+CREATE TABLE org_settings (
+    workspace TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (workspace, namespace)
+);
+CREATE TABLE org_audit (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT,
+    actor_email TEXT,
+    target_kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    label TEXT,
+    details TEXT NOT NULL,
+    personal_to TEXT,
+    created_ms INTEGER NOT NULL
+);
+CREATE INDEX org_audit_by_workspace ON org_audit (workspace, sequence);
+CREATE TRIGGER org_audit_no_update BEFORE UPDATE ON org_audit
+BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+CREATE TRIGGER org_audit_no_delete BEFORE DELETE ON org_audit
+BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 ";
 
 pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
@@ -143,6 +203,7 @@ fn prepare(mut connection: Connection) -> Result<Connection, StoreError> {
     match (application_id, objects) {
         (0, 0) => {
             transaction.execute_batch(SCHEMA).storage()?;
+            transaction.execute_batch(ORGANIZATION_STEP).storage()?;
             transaction
                 .execute(
                     "INSERT INTO identity_schema_version (version) VALUES (?1)",
@@ -160,11 +221,24 @@ fn prepare(mut connection: Connection) -> Result<Connection, StoreError> {
                 })
                 .optional()
                 .storage()?;
-            if version != Some(SCHEMA_VERSION) {
-                let found = version.map_or("none".to_owned(), |version| version.to_string());
-                return Err(StoreError::unavailable(format!(
-                    "unsupported schema version {found}"
-                )));
+            match version {
+                Some(SCHEMA_VERSION) => {}
+                // The step and the version bump commit together or not at all.
+                Some(1) => {
+                    transaction.execute_batch(ORGANIZATION_STEP).storage()?;
+                    transaction
+                        .execute(
+                            "UPDATE identity_schema_version SET version = ?1",
+                            [SCHEMA_VERSION],
+                        )
+                        .storage()?;
+                }
+                _ => {
+                    let found = version.map_or("none".to_owned(), |version| version.to_string());
+                    return Err(StoreError::unavailable(format!(
+                        "unsupported schema version {found}"
+                    )));
+                }
             }
         }
         _ => return Err(StoreError::unavailable("not an identity database")),
