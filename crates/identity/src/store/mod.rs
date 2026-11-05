@@ -25,7 +25,7 @@
 //! [`authz::authorize`]: crate::authz::authorize
 mod bearer;
 mod clock;
-mod database;
+pub(crate) mod database;
 mod error;
 mod pairing;
 pub(crate) mod secret;

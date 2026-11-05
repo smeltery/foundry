@@ -1,7 +1,7 @@
+mod support_lease;
 mod support_schema;
 use foundry_contracts::{CancelMode, CreateSession, Lifecycle, Outcome};
 use foundry_store::{Store, ToolOutcome};
-use std::time::Duration;
 use support_schema::UNDO_V12;
 use tempfile::tempdir;
 
@@ -81,11 +81,13 @@ fn cancellation_prevents_dispatch_and_success_receipts() {
 
 #[test]
 fn crashed_claim_survives_recovery_and_blocks_new_attempt_dispatch() {
-    let mut store = Store::open_with_lease(":memory:", Duration::from_millis(50)).unwrap();
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("db");
+    let mut store = Store::open(&path).unwrap();
     let session = create(&mut store);
     let old = store.begin_attempt(&session.id, 0).unwrap();
     store.claim_tool(&old, "call", "write", [1; 32]).unwrap();
-    std::thread::sleep(Duration::from_millis(80));
+    support_lease::expire_attempt_leases(&path, &session.id);
     assert!(
         store
             .finish_tool(&old, "call", ToolOutcome::Success, Some([3; 32]))
