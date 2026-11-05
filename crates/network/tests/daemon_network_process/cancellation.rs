@@ -1,7 +1,17 @@
-use super::{child::Node, client::Client, config::Root, database::WriteLock, flow::*};
-use foundry_network::full_team_store::FULL_TEAM_DATABASE;
+#[allow(dead_code)]
+#[path = "../handshake_hold/mod.rs"]
+mod handshake_hold;
+
+use super::{child::Node, client::Client, config::Root, flow::*};
+use foundry_network::full_team_store::FULL_TEAM_LOCK;
+use handshake_hold::HandshakeHold;
 use serde_json::json;
-use std::time::Duration;
+use std::{
+    fs::File,
+    time::{Duration, Instant},
+};
+
+const SETTLE: Duration = Duration::from_millis(500);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn half_closed_join_control_cannot_commit_after_remote_admission_and_local_write_block() {
@@ -14,10 +24,21 @@ async fn half_closed_join_control_cannot_commit_after_remote_admission_and_local
     let (mut cb, ab) = b.client().await;
     let endpoint: iroh::EndpointAddr =
         serde_json::from_value(cb.status(&ab).await["endpoint"].clone()).unwrap();
-    let blocked = WriteLock::new(&b.config.state.join(FULL_TEAM_DATABASE));
+    // Every team-store operation takes this lock file before SQLite. Never lock
+    // the WAL store itself: another process must not open it while it is live.
+    let store_lock = File::open(b.config.state.join(FULL_TEAM_LOCK)).unwrap();
+    // JOIN reads the unjoined store before dialing. A handshake held mid-flight
+    // proves that read finished, so the lock blocks only the local commit.
+    let hold = HandshakeHold::start(&invitation.endpoint).await;
     cb.send(json!({"op":"network","auth":ab,"command":{"kind":"join",
-        "ticket":invitation.ticket,"address":invitation.endpoint}}))
+        "ticket":invitation.ticket,"address":hold.address(&invitation.endpoint)}}))
         .await;
+    tokio::time::timeout(super::DEADLINE, hold.stalled())
+        .await
+        .expect("JOIN handshake reached the inviter");
+    store_lock.lock().unwrap();
+    let blocked = Instant::now();
+    hold.release();
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let peers = ca.status(&aa).await["peers"].clone();
@@ -34,6 +55,9 @@ async fn half_closed_join_control_cannot_commit_after_remote_admission_and_local
     })
     .await
     .expect("remote admission before pending local commit");
+    // Unblocked, the joiner commits within milliseconds of admission. Waiting
+    // here turns a commit that the lock failed to hold into a visible failure.
+    tokio::time::sleep(SETTLE).await;
     cb.shutdown_write().await;
     tokio::time::timeout(Duration::from_secs(2), async {
         while let Some(reply) = cb.receive().await {
@@ -44,11 +68,11 @@ async fn half_closed_join_control_cannot_commit_after_remote_admission_and_local
         }
     })
     .await
-    .expect("IPC cancellation must close before SQLite busy failure");
-    // FullTeamStore uses the runtime's10s open/busy deadline. Do not let its
+    .expect("IPC cancellation must close before store busy failure");
+    // FullTeamStore uses the runtime's 10s lock/busy deadline. Do not let its
     // timeout substitute for evidence that EOF fenced the pending commit.
     assert!(blocked.elapsed() < Duration::from_secs(5));
-    drop(blocked);
+    drop(store_lock);
     let mut inspect = Client::connect(&b.config).await;
     inspect.attach(&ab).await;
     assert!(

@@ -905,6 +905,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "foundry-budget"
+version = "0.1.0"
+
+[[package]]
 name = "foundry-connectors"
 version = "0.1.0"
 dependencies = [
@@ -928,6 +932,10 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "foundry-identity"
+version = "0.1.0"
 
 [[package]]
 name = "foundry-mcp"
@@ -954,6 +962,10 @@ dependencies = [
  "serde_json",
  "tokio",
 ]
+
+[[package]]
+name = "foundry-providers"
+version = "0.1.0"
 
 [[package]]
 name = "foundry-runtime"
