@@ -4,10 +4,13 @@ use std::path::{Component, Path, PathBuf};
 /// Directory rules. The deepest matching rule wins; default is allow.
 /// Re-evaluated on every visibility, association and delivery operation.
 ///
-/// A session is judged twice: by its path as given (made absolute and with `.`
-/// and `..` folded lexically, links not followed) and by its resolved path. It
-/// is excluded if either judgement excludes it, so a link inside an excluded
-/// folder cannot carry a session out and a link into one cannot carry it in.
+/// A session is judged by its path as given (made absolute and with `.` and
+/// `..` folded lexically, links not followed), by its resolved path, and by each
+/// spelling that resolves one ancestor of the given path and keeps the rest. It
+/// is excluded if any judgement excludes it, so a link inside an excluded folder
+/// cannot carry a session out, even when the rule and the session reach that
+/// folder through differently linked ancestors, and a link into one cannot
+/// carry it in.
 /// A rule matches a path under either its written or its resolved form. Paths
 /// that do not exist are rejected as invalid before any rule is applied.
 #[derive(Debug, Default)]
@@ -48,7 +51,17 @@ impl FolderPolicy {
         if current != path {
             return false;
         }
-        self.allows(given) && self.allows(&current)
+        if self.rules.is_empty() {
+            return true;
+        }
+        // The root ancestor yields the given spelling; the full path yields `current`.
+        given.ancestors().all(|ancestor| {
+            let (Ok(resolved), Ok(rest)) = (ancestor.canonicalize(), given.strip_prefix(ancestor))
+            else {
+                return false;
+            };
+            self.allows(&resolved.join(rest))
+        })
     }
     fn allows(&self, path: &Path) -> bool {
         self.rules

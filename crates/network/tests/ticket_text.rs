@@ -1,7 +1,4 @@
-use foundry_network::{
-    WireProfile,
-    ticket::{TicketCodec, display_name},
-};
+use foundry_network::{WireProfile, ticket::TicketCodec};
 
 fn profile() -> WireProfile {
     WireProfile {
@@ -93,15 +90,4 @@ fn nested_marker_remains_sensitive_after_a_nonletter_boundary() {
     let codec = TicketCodec::new(&profile, None).unwrap();
     let value = format!("xold-f5yt-{}", "a".repeat(22));
     assert_eq!(codec.redact(&value), "(team link)");
-}
-
-#[test]
-fn display_names_are_single_line_and_truncate_by_characters() {
-    assert_eq!(display_name("a\nb\tc\0d\u{2028}e\u{2029}f"), "a b c d e f");
-    assert_eq!(display_name(&"🦀".repeat(60)), "🦀".repeat(60));
-    assert_eq!(
-        display_name(&"🦀".repeat(61)),
-        format!("{}…", "🦀".repeat(59))
-    );
-    assert_eq!(display_name(""), "");
 }

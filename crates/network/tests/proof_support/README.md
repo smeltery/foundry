@@ -6,7 +6,9 @@ endpoint seed material were generated transiently and deleted after fixture
 creation; no private keys are stored here.
 
 Claims use a fixed synthetic clock. Cases deliberately include malformed headers,
-invalid claims and an untrusted signer's signature. The whitespace vector signs
+invalid claims and an untrusted signer's signature. The `hs256` header vector
+is an HMAC-SHA256 keyed with the PEM encoding of the trusted public key, the
+classic algorithm-confusion forgery. The whitespace vector signs
 its exact formatted JSON bytes to catch accidental JSON reserialization.
 
 The second key identifier intentionally references the same public key to test
