@@ -1,0 +1,221 @@
+//! The protected-route table: each provisional method and path template, the
+//! operation it invokes and so the scope it requires. Paths, methods and
+//! segment names are provisional pending NIC-34 D1/D6 and NIC-36 C2.
+
+use crate::authz::{Operation, Operation as Op, Scope};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Method {
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+}
+
+impl Method {
+    pub const ALL: [Method; 5] = [
+        Method::Get,
+        Method::Post,
+        Method::Put,
+        Method::Patch,
+        Method::Delete,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Put => "PUT",
+            Method::Patch => "PATCH",
+            Method::Delete => "DELETE",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|method| method.name() == name)
+    }
+}
+
+/// What a route invokes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// An operation of the authorization catalog, which owns its scope.
+    Catalog(Operation),
+    /// A session API operation. The catalog does not cover session operations
+    /// yet, so the decision denies them by default; `scope` records the scope
+    /// the route will require once it does.
+    Session {
+        operation: &'static str,
+        scope: Scope,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Route {
+    pub method: Method,
+    /// Segments are literals or `{name}` parameters. The parameters
+    /// `workspace`, `member`, `machine` and `single_use` feed the decision.
+    pub path: &'static str,
+    pub target: Target,
+}
+
+impl Route {
+    pub fn operation(&self) -> &'static str {
+        match self.target {
+            Target::Catalog(operation) => operation.name(),
+            Target::Session { operation, .. } => operation,
+        }
+    }
+
+    /// The scope the route requires; `None` admits any valid credential.
+    pub fn scope(&self) -> Option<Scope> {
+        match self.target {
+            Target::Catalog(operation) => operation.rule().scope,
+            Target::Session { scope, .. } => Some(scope),
+        }
+    }
+
+    /// Matches a concrete path and returns its parameters in template order.
+    fn matches<'p>(&self, path: &'p str) -> Option<Vec<(&'static str, &'p str)>> {
+        let mut template = self.path.split('/');
+        let mut concrete = path.split('/');
+        let mut params = Vec::new();
+        loop {
+            match (template.next(), concrete.next()) {
+                (None, None) => return Some(params),
+                (Some(expected), Some(actual)) => {
+                    match expected.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+                        Some(name) if !actual.is_empty() => params.push((name, actual)),
+                        None if expected == actual => {}
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
+/// A matched route and its path parameters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteMatch<'p> {
+    pub route: &'static Route,
+    pub params: Vec<(&'static str, &'p str)>,
+}
+
+impl RouteMatch<'_> {
+    pub fn param(&self, name: &str) -> Option<&str> {
+        self.params
+            .iter()
+            .find_map(|(key, value)| (*key == name).then_some(*value))
+    }
+}
+
+/// Resolves a request line. The query string is ignored; anything else that
+/// matches no route resolves to nothing and is denied by default.
+pub fn route(method: Method, path: &str) -> Option<RouteMatch<'_>> {
+    let path = path.split_once('?').map_or(path, |(path, _query)| path);
+    ROUTES
+        .iter()
+        .filter(|route| route.method == method)
+        .find_map(|route| {
+            let params = route.matches(path)?;
+            Some(RouteMatch { route, params })
+        })
+}
+
+macro_rules! routes {
+    ($($method:ident $path:literal => $target:expr;)+) => {
+        /// Every protected route. No two routes match the same request.
+        pub const ROUTES: &[Route] = &[$(Route {
+            method: Method::$method,
+            path: $path,
+            target: $target,
+        },)+];
+    };
+}
+
+const fn read(operation: &'static str) -> Target {
+    Target::Session {
+        operation,
+        scope: Scope::SessionsRead,
+    }
+}
+
+const fn run(operation: &'static str) -> Target {
+    Target::Session {
+        operation,
+        scope: Scope::SessionsRun,
+    }
+}
+
+const fn op(operation: Operation) -> Target {
+    Target::Catalog(operation)
+}
+
+routes! {
+    Get "/v1/identity" => op(Op::IdentitySelf);
+    Get "/v1/deployment" => op(Op::ServiceDeployment);
+    Get "/v1/api-description" => op(Op::ServiceApiDescription);
+    Post "/v1/feedback" => op(Op::FeedbackSubmit);
+    Get "/v1/workspaces" => op(Op::WorkspaceList);
+    Post "/v1/workspaces" => op(Op::WorkspaceCreate);
+    Get "/v1/workspaces/{workspace}" => op(Op::WorkspaceGet);
+    Patch "/v1/workspaces/{workspace}" => op(Op::WorkspaceRename);
+    Delete "/v1/workspaces/{workspace}" => op(Op::WorkspaceDelete);
+    Get "/v1/workspaces/{workspace}/audit" => op(Op::AuditList);
+    Post "/v1/workspaces/{workspace}/single-use" => op(Op::SingleUseCreate);
+    Delete "/v1/workspaces/{workspace}/single-use/{single_use}" => op(Op::SingleUseRetire);
+    Get "/v1/workspaces/{workspace}/members" => op(Op::MemberList);
+    Post "/v1/workspaces/{workspace}/members" => op(Op::MemberInvite);
+    Get "/v1/workspaces/{workspace}/members/{member}" => op(Op::MemberGet);
+    Delete "/v1/workspaces/{workspace}/members/{member}" => op(Op::MemberRemove);
+    Put "/v1/workspaces/{workspace}/members/{member}/role" => op(Op::MemberSetRole);
+    Get "/v1/workspaces/{workspace}/network-policy" => op(Op::NetworkPolicyGet);
+    Put "/v1/workspaces/{workspace}/network-policy" => op(Op::NetworkPolicyReplace);
+    Post "/v1/workspaces/{workspace}/secret-import/handoff" => op(Op::SecretImportHandoff);
+    Post "/v1/workspaces/{workspace}/secret-import/decision" => op(Op::SecretImportDecision);
+    Post "/v1/workspaces/{workspace}/secret-import/complete" => op(Op::SecretImportComplete);
+    Post "/v1/workspaces/{workspace}/pairing/claim" => op(Op::PairingClaim);
+    Post "/v1/workspaces/{workspace}/pairing/fail" => op(Op::PairingFail);
+    Get "/v1/workspaces/{workspace}/tiers" => op(Op::TierList);
+    Put "/v1/workspaces/{workspace}/tier" => op(Op::TierSet);
+    Get "/v1/workspaces/{workspace}/tier" => op(Op::TierGet);
+    Get "/v1/workspaces/{workspace}/role" => op(Op::RoleOwn);
+    Get "/v1/workspaces/{workspace}/settings" => op(Op::SettingsList);
+    Get "/v1/workspaces/{workspace}/settings/{setting}" => op(Op::SettingsGet);
+    Put "/v1/workspaces/{workspace}/settings/{setting}" => op(Op::SettingsReplace);
+    Post "/v1/sessions" => run("session.create");
+    Post "/v1/prestarts" => run("session.prestart");
+    Get "/v1/sessions" => read("session.list");
+    Get "/v1/sessions/{session}" => read("session.get");
+    Delete "/v1/sessions/{session}" => run("session.delete");
+    Get "/v1/sessions/{session}/events" => read("session.events");
+    Get "/v1/sessions/{session}/messages" => read("session.messages");
+    Post "/v1/sessions/{session}/messages" => run("session.send");
+    Delete "/v1/sessions/{session}/messages/{message}" => run("session.withdraw");
+    Post "/v1/sessions/{session}/messages/{message}/steer" => run("session.steer");
+    Get "/v1/sessions/{session}/conversation" => read("session.conversation");
+    Post "/v1/sessions/{session}/cancel" => run("session.cancel");
+    Post "/v1/sessions/{session}/retry" => run("session.retry");
+    Post "/v1/sessions/{session}/fork" => run("session.fork");
+    Post "/v1/sessions/{session}/rewind" => run("session.rewind");
+    Post "/v1/sessions/{session}/compact" => run("session.compact");
+    Post "/v1/sessions/{session}/archive" => run("session.archive");
+    Post "/v1/sessions/{session}/unarchive" => run("session.unarchive");
+    Put "/v1/sessions/{session}/title" => run("session.rename");
+    Get "/v1/sessions/{session}/tags" => read("session.tags.list");
+    Post "/v1/sessions/{session}/tags" => run("session.tags.append");
+    Put "/v1/sessions/{session}/tags" => run("session.tags.replace");
+    Put "/v1/sessions/{session}/project" => run("session.move_project");
+    Get "/v1/sessions/{session}/attachments" => read("session.attachments.list");
+    Get "/v1/sessions/{session}/attachments/{attachment}" => read("session.attachments.get");
+    Get "/v1/sessions/{session}/links" => read("session.links.list");
+    Post "/v1/sessions/{session}/links" => run("session.links.create");
+    Delete "/v1/sessions/{session}/links/{link}" => run("session.links.revoke");
+    Get "/v1/insights" => read("session.list_insights");
+    Get "/v1/sessions/{session}/insight" => read("session.insight.get");
+    Post "/v1/sessions/{session}/insight" => run("session.insight.generate");
+    Get "/v1/sessions/{session}/trajectory" => read("session.trajectory");
+}
