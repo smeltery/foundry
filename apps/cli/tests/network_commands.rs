@@ -117,6 +117,29 @@ fn empty_held_selection_is_a_semantic_error_before_backend_dispatch() {
 }
 
 #[test]
+fn binaries_refuse_empty_held_selection_but_dispatch_ids_or_all() {
+    let directory = tempfile::tempdir().unwrap();
+    let dispatched = "error: Foundry backend does not implement 'network' yet\n";
+    for name in ["approve", "reject"] {
+        for (selection, stderr) in [
+            (&[][..], "error: Select message IDs or --all\n"),
+            (&["--all"][..], dispatched),
+            (&["01ID"][..], dispatched),
+        ] {
+            let output = std::process::Command::new(env!("CARGO_BIN_EXE_f5y-network"))
+                .current_dir(directory.path())
+                .arg(name)
+                .args(selection)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2), "{name} {selection:?}");
+            assert!(output.stdout.is_empty(), "{name} {selection:?}");
+            assert_eq!(String::from_utf8(output.stderr).unwrap(), stderr);
+        }
+    }
+}
+
+#[test]
 fn composed_json_aliases_only_forward_to_commands_with_json_support() {
     for name in ["who", "init", "join", "link", "team"] {
         let (_, mut command) = cases::defaults()
