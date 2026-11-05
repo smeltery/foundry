@@ -10,8 +10,8 @@ mod egress;
 mod host;
 
 pub use document::{
-    MAX_HOSTS, NetworkPolicy, PolicyError, PolicyErrorClass, PolicyIssue, ReplaceRequest, Revision,
-    Writes,
+    MAX_HOSTS, NetworkPolicy, PolicyError, PolicyErrorClass, PolicyIssue, ReplaceRequest,
+    Replacement, Revision, Writes,
 };
 pub use egress::{Denied, EgressDecision, EgressPolicy, Granted};
 pub use host::{Host, HostError};

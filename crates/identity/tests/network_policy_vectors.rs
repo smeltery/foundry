@@ -56,11 +56,10 @@ fn given(case: &Value) -> (NetworkPolicy, Writes) {
         Some(list) => {
             let request = ReplaceRequest {
                 hosts: hosts(list),
-                expected_revision: None,
+                expected_revision: Some(Revision::INITIAL),
             };
-            empty
-                .replace(&request, Writes::Enabled)
-                .expect("given hosts")
+            let saved = empty.replace(&request, Writes::Enabled);
+            saved.expect("given hosts").policy
         }
         None => empty,
     };
@@ -72,7 +71,8 @@ fn given(case: &Value) -> (NetworkPolicy, Writes) {
     (saved, writes)
 }
 
-/// The request hosts; a limit case without a list asks for that many hosts.
+/// The request hosts and revision; a limit case without a list asks for that
+/// many hosts.
 fn request(case: &Value) -> ReplaceRequest {
     let limit = case.get("limit").map(|limit| {
         assert_eq!(limit["name"], "policy_hosts");
@@ -89,9 +89,12 @@ fn request(case: &Value) -> ReplaceRequest {
             .collect(),
         (None, None) => panic!("replace case without hosts"),
     };
+    let revision = case["request"]
+        .get("revision")
+        .map(|revision| Revision(revision.as_u64().expect("revision")));
     ReplaceRequest {
         hosts,
-        expected_revision: None,
+        expected_revision: revision,
     }
 }
 
@@ -102,7 +105,9 @@ fn replay(case: &Value) -> Vec<String> {
     let mut checked = vec!["result".to_owned()];
     let stored = match case["operation"].as_str().expect("operation") {
         "network_policy.get" => Ok(saved.clone()),
-        "network_policy.replace" => saved.replace(&request(case), writes),
+        "network_policy.replace" => saved
+            .replace(&request(case), writes)
+            .map(|replacement| replacement.policy),
         other => panic!("unexpected operation {other}"),
     };
     let stored = match (expect["result"].as_str(), stored) {

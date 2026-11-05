@@ -50,6 +50,10 @@ impl EgressPolicy {
 
     /// Decides one destination host, as a bare name without scheme or port.
     /// Anything that does not parse, or is not listed, is denied.
+    ///
+    /// Only the host is restricted. An allowed host is allowed on every port
+    /// and scheme, and the name is not resolved: enforcement must apply its
+    /// own port and scheme rules and check the addresses the name resolves to.
     pub fn evaluate(&self, destination: &str) -> EgressDecision {
         let host = match Host::parse(destination) {
             Ok(host) => host,

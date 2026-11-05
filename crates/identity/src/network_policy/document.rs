@@ -1,7 +1,12 @@
 //! The policy document and its two operations. Get is a plain read. Replace
-//! swaps the whole host list; a caller may pass the revision it last read, and
-//! a stale one is `conflict` so concurrent editors cannot silently overwrite
-//! each other.
+//! swaps the whole host list and requires the revision the caller last read;
+//! a revision that differs from this document's is `conflict`.
+//!
+//! This layer checks the revision against the document it is given, which
+//! alone cannot stop a lost update: two replaces computed from the same
+//! document both succeed here. The store must commit a `Replacement` only if
+//! its stored revision still equals `based_on`, atomically, and answer
+//! `conflict` otherwise.
 
 use std::collections::BTreeSet;
 
@@ -39,8 +44,27 @@ pub struct NetworkPolicy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplaceRequest {
     pub hosts: Vec<String>,
-    /// The revision the caller last read. `None` replaces unconditionally.
+    /// The revision the caller last read. Required; `None` models a body that
+    /// omits it, which is `invalid_request`.
     pub expected_revision: Option<Revision>,
+}
+
+/// A validated replace, for the store to commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Replacement {
+    /// The revision of the document this was computed from: the store's
+    /// compare-and-swap condition.
+    pub based_on: Revision,
+    /// The document to store and return.
+    pub policy: NetworkPolicy,
+}
+
+impl Replacement {
+    /// False when the request repeats a replace that already took effect:
+    /// there is nothing to write, and the stored document is the response.
+    pub fn changed(&self) -> bool {
+        self.policy.revision != self.based_on
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +89,7 @@ impl PolicyErrorClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyIssue {
     WritesDisabled,
+    MissingRevision,
     TooManyHosts {
         count: usize,
     },
@@ -113,18 +138,25 @@ impl NetworkPolicy {
         &self.hosts
     }
 
-    /// Validates `request` against this document and returns the document to
-    /// store. Rules apply in order: writes enabled, host count, each host,
-    /// duplicates, then the revision. Repeating a replace that already took
-    /// effect returns the stored document unchanged even with the old
-    /// revision, which keeps the write naturally repeatable as specified.
-    pub fn replace(&self, request: &ReplaceRequest, writes: Writes) -> Result<Self, PolicyError> {
+    /// Validates `request` against this document. Rules apply in order:
+    /// writes enabled, revision present, host count, each host, duplicates,
+    /// then the revision value. Hosts equal to the stored list give an
+    /// unchanged `Replacement` even with an older revision. That keeps the
+    /// write naturally repeatable, as the spec requires, and loses nothing.
+    pub fn replace(
+        &self,
+        request: &ReplaceRequest,
+        writes: Writes,
+    ) -> Result<Replacement, PolicyError> {
         if writes == Writes::Disabled {
             return Err(PolicyError::new(
                 PolicyErrorClass::Unavailable,
                 PolicyIssue::WritesDisabled,
             ));
         }
+        let expected = request
+            .expected_revision
+            .ok_or(PolicyError::invalid(PolicyIssue::MissingRevision))?;
         let count = request.hosts.len();
         if count > MAX_HOSTS {
             return Err(PolicyError::invalid(PolicyIssue::TooManyHosts { count }));
@@ -139,28 +171,26 @@ impl NetworkPolicy {
             }
             hosts.push(host);
         }
-        if hosts == self.hosts {
-            return Ok(self.clone());
+        let mut policy = self.clone();
+        if hosts != self.hosts {
+            if expected != self.revision {
+                return Err(PolicyError::new(
+                    PolicyErrorClass::Conflict,
+                    PolicyIssue::StaleRevision {
+                        current: self.revision,
+                    },
+                ));
+            }
+            let next = self.revision.0.checked_add(1).ok_or(PolicyError::new(
+                PolicyErrorClass::Unavailable,
+                PolicyIssue::RevisionExhausted,
+            ))?;
+            policy.revision = Revision(next);
+            policy.hosts = hosts;
         }
-        if request
-            .expected_revision
-            .is_some_and(|expected| expected != self.revision)
-        {
-            return Err(PolicyError::new(
-                PolicyErrorClass::Conflict,
-                PolicyIssue::StaleRevision {
-                    current: self.revision,
-                },
-            ));
-        }
-        let next = self.revision.0.checked_add(1).ok_or(PolicyError::new(
-            PolicyErrorClass::Unavailable,
-            PolicyIssue::RevisionExhausted,
-        ))?;
-        Ok(Self {
-            workspace: self.workspace.clone(),
-            revision: Revision(next),
-            hosts,
+        Ok(Replacement {
+            based_on: self.revision,
+            policy,
         })
     }
 }

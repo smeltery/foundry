@@ -2,6 +2,10 @@
 //! fully qualified DNS names are accepted: the spec does not define wildcards,
 //! ports, IP literals or single-label names, so each is rejected rather than
 //! guessed at. Matching is exact; a listed host does not admit its subdomains.
+//!
+//! A name that passes is still only a name: it may resolve to a loopback,
+//! link-local or private address. Enforcement must check the resolved
+//! addresses as well; this grammar only keeps IP literals out of the list.
 
 use std::fmt;
 
@@ -22,7 +26,9 @@ pub enum HostError {
     /// An empty label (including a trailing dot), a label over 63 characters,
     /// or one that starts or ends with `-`.
     Label,
-    /// One label only, or an all-numeric last label such as an IPv4 literal.
+    /// One label only, or a last label that URL parsers and `inet_aton` read
+    /// as a number, which makes the whole name an IPv4 literal: all digits
+    /// (decimal or octal) or `0x` with hex digits, as in `127.0.0.0x1`.
     NotQualified,
 }
 
@@ -49,9 +55,7 @@ impl Host {
         if labels.iter().any(malformed) {
             return Err(HostError::Label);
         }
-        let numeric_tail = labels
-            .last()
-            .is_some_and(|label| label.bytes().all(|byte| byte.is_ascii_digit()));
+        let numeric_tail = labels.last().is_some_and(|label| is_number(label));
         if labels.len() < 2 || numeric_tail {
             return Err(HostError::NotQualified);
         }
@@ -60,6 +64,15 @@ impl Host {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+/// Whether the WHATWG host parser treats `label` as an IPv4 number. `0x`
+/// alone counts: it reads as zero.
+fn is_number(label: &str) -> bool {
+    match label.strip_prefix("0x") {
+        Some(hex) => hex.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        None => label.bytes().all(|byte| byte.is_ascii_digit()),
     }
 }
 
