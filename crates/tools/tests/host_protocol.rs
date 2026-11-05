@@ -161,3 +161,21 @@ fn correlation_envelope_is_included_in_reply_bound() {
     assert_eq!(reply["result"]["effect"], "none");
     assert!(bytes.len() <= host::MAX_REPLY_BYTES + 4);
 }
+
+#[test]
+fn edit_is_refused_until_the_wire_carries_it() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("file"), "unchanged").unwrap();
+    let root = Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+    let mut value = request();
+    value["tool"] = json!("edit");
+    value["grants"] = json!(["read", "write.overwrite"]);
+    value["input"] = json!({"path":"file","content":"changed","mode":"overwrite"});
+    let mut bytes = Vec::new();
+    host::serve(root, &mut Cursor::new(framed(&value)), &mut bytes).unwrap();
+    let reply: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+    assert_eq!(reply["result"]["code"], "unknown_tool");
+    assert_eq!(reply["result"]["effect"], "none");
+    let content = std::fs::read_to_string(temp.path().join("file")).unwrap();
+    assert_eq!(content, "unchanged");
+}
