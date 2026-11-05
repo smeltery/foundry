@@ -101,7 +101,7 @@ impl SessionFilter {
     }
 
     fn where_clause(&self, after_rowid: Option<i64>) -> (String, Vec<Value>) {
-        let mut clauses = Vec::new();
+        let mut clauses = vec!["deleted_ms IS NULL".to_owned()];
         let mut values = Vec::new();
         match self.archive {
             ArchiveFilter::Active => clauses.push("archived=0".to_owned()),
@@ -130,11 +130,7 @@ impl SessionFilter {
             values.push(Value::Integer(rowid));
             clauses.push(format!("rowid<?{}", values.len()));
         }
-        let clause = if clauses.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", clauses.join(" AND "))
-        };
+        let clause = format!(" WHERE {}", clauses.join(" AND "));
         (clause, values)
     }
 }

@@ -75,14 +75,14 @@ fn v11_fixture_migrates_with_rows_sessions_and_cut_hashes_unchanged() {
     assert_eq!(bodies.len(), 3);
 
     let store = Store::open(&path).unwrap();
-    assert_eq!(version(&db), 12);
+    assert_eq!(version(&db), 13);
     for (table, names, rows_before) in &before {
         let after = columns(&db, table);
         assert_eq!(&after[..names.len()], &names[..], "{table} column order");
         assert_eq!(&rows(&db, table, names), rows_before, "{table} rows");
     }
     assert_eq!(
-        columns(&db, "sessions")[4..],
+        columns(&db, "sessions")[4..12],
         [
             "archived",
             "title",
@@ -94,11 +94,14 @@ fn v11_fixture_migrates_with_rows_sessions_and_cut_hashes_unchanged() {
             "forked_from_session_id"
         ]
     );
+    // v13 (tombstone delete) appends one nullable column after the v12 ones.
+    assert_eq!(columns(&db, "sessions")[12..], ["deleted_ms"]);
     assert_eq!(columns(&db, "events")[7..], ["attempt_ordinal", "position"]);
     let legacy: (i64, i64) = db
         .query_row(
             "SELECT (SELECT count(*) FROM sessions WHERE archived=0 AND title IS NULL AND origin_kind IS NULL
-                AND created_ms IS NULL AND parent_session_id IS NULL AND forked_from_session_id IS NULL),
+                AND created_ms IS NULL AND parent_session_id IS NULL AND forked_from_session_id IS NULL
+                AND deleted_ms IS NULL),
              (SELECT count(*) FROM events WHERE attempt_ordinal IS NULL AND position IS NULL)",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -139,7 +142,7 @@ fn v11_fixture_migrates_with_rows_sessions_and_cut_hashes_unchanged() {
     assert_eq!(store.capture_snapshot(&fence).unwrap().cut, cut);
     drop(store);
     drop(Store::open(&path).unwrap());
-    assert_eq!(version(&db), 12);
+    assert_eq!(version(&db), 13);
 }
 
 #[test]
@@ -271,6 +274,8 @@ fn v12_tables_enforce_their_bounds() {
         "UPDATE sessions SET origin_interface='mcp'",
         "UPDATE sessions SET created_ms=-1",
         "UPDATE sessions SET parent_session_id='short'",
+        "UPDATE sessions SET deleted_ms=-1",
+        "UPDATE sessions SET deleted_ms='soon'",
         "UPDATE events SET attempt_ordinal=0",
         "UPDATE events SET position=0",
     ] {

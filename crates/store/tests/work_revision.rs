@@ -195,7 +195,7 @@ fn migration_four_preserves_existing_rows_and_initializes_only_revision_baseline
         connection
             .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        12
+        13
     );
 }
 

@@ -199,6 +199,7 @@ impl Store {
         &self,
         session_id: &str,
     ) -> Result<Option<foundry_contracts::CompletionCriteria>> {
+        crate::read_session(&self.connection, session_id)?;
         session_criteria(&self.connection, session_id)
     }
 
@@ -207,6 +208,7 @@ impl Store {
         session_id: &str,
         attempt_id: &str,
     ) -> Result<Option<CompletionDecision>> {
+        crate::read_session(&self.connection, session_id)?;
         read(
             &self.connection,
             "session_id=?1 AND attempt_id=?2",

@@ -33,6 +33,7 @@ impl Store {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::read_session(&tx, session_id)?;
         require_initial_fresh(&tx, session_id)?;
         let (fence, session) =
             admission::admit(&tx, session_id, expected_version, self.lease_duration, None)?;
