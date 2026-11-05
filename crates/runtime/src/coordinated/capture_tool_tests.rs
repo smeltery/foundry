@@ -1,4 +1,5 @@
-use super::{harness::Harness, *};
+use super::harness::{Harness, WAIT};
+use super::*;
 use crate::coordinated::{PersistenceReply, PersistenceRequest, ToolDisposition, ToolEvidence};
 use foundry_contracts::AdapterEvent;
 
@@ -9,8 +10,7 @@ pub(super) fn finish_request(h: &Harness) -> (crate::coordinated::CheckpointId, 
     let (job, event) = h.event();
     assert!(matches!(event, AdapterEvent::ToolCall { .. }));
     h.commit(job);
-    let PersistenceRequest::ClaimTool { checkpoint, .. } =
-        h.requests.recv_timeout(Duration::from_secs(2)).unwrap()
+    let PersistenceRequest::ClaimTool { checkpoint, .. } = h.requests.recv_timeout(WAIT).unwrap()
     else {
         panic!("claim required")
     };
@@ -20,7 +20,7 @@ pub(super) fn finish_request(h: &Harness) -> (crate::coordinated::CheckpointId, 
     let PersistenceRequest::FinishToolWithEvidence {
         checkpoint,
         evidence,
-    } = h.requests.recv_timeout(Duration::from_secs(2)).unwrap()
+    } = h.requests.recv_timeout(WAIT).unwrap()
     else {
         panic!("explicit evidence request required for every capture outcome")
     };
