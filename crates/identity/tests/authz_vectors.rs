@@ -8,6 +8,7 @@ use foundry_identity::authz::*;
 use serde_json::Value;
 
 const CALLER: &str = "caller";
+const MACHINE: &str = "m-1";
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/identity")
@@ -60,13 +61,17 @@ fn arrange(case: &Value) -> (Option<Principal>, Organization, OperationRequest) 
     let state = text(caller, "state").unwrap_or("active");
     let principal = (state != "missing").then(|| {
         let state = CredentialState::from_name(state).expect("known state");
-        let credential = Credential::new(kind, bound.clone())
+        let mut credential = Credential::new(kind, bound.clone())
             .with_scopes(scopes)
             .with_state(state);
+        // Machine tokens always serve one machine; an unbound one is denied.
+        if kind == CredentialKind::MachineToken {
+            credential = credential.on_machine(MachineId::new(MACHINE));
+        }
         Principal::new(PrincipalId::new(CALLER), credential)
     });
 
-    let mut workspace = Workspace::new(bound.clone());
+    let mut workspace = Workspace::new(bound.clone()).with_machine(MachineId::new(MACHINE));
     if let Some(role) = text(caller, "role") {
         workspace = workspace.with_member(PrincipalId::new(CALLER), role_named(role));
     }
@@ -76,11 +81,15 @@ fn arrange(case: &Value) -> (Option<Principal>, Organization, OperationRequest) 
     let mut org = Organization::new().with_workspace(workspace);
 
     let mut request = OperationRequest::new(text(case, "operation").expect("operation"));
-    // A single-use workspace is retired through its paying parent.
-    let target = text(body, "workspace")
-        .or(text(&given, "workspace"))
-        .or(text(&given, "single_use_parent"));
-    if let Some(target) = target {
+    // The single-use workspace exists with the parent the vector gives, or the
+    // caller's workspace; authorize decides from that relationship.
+    if let Some(single_use) = text(body, "single_use") {
+        let single_use = WorkspaceId::new(single_use);
+        let parent = text(&given, "single_use_parent").map_or(bound.clone(), WorkspaceId::new);
+        org = org.with_workspace(Workspace::new(single_use.clone()).single_use_of(parent));
+        request = request.retiring(single_use);
+    }
+    if let Some(target) = text(body, "workspace").or(text(&given, "workspace")) {
         let target = WorkspaceId::new(target);
         if target != bound {
             // The other workspace exists and the caller even owns it there;
@@ -178,13 +187,14 @@ fn every_vector_with_a_caller_replays_its_authorization_outcome() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    // Guards against silently skipping files or cases.
-    assert!(
-        paths.len() >= 10 && replayed >= 60,
-        "replayed only {replayed} cases"
-    );
+    // Guards against silently skipping files or cases. Update deliberately
+    // when vectors with a caller are added or removed.
+    assert_eq!(replayed, 67, "replayed {replayed} cases");
 }
 
+/// Guards `full_matrix_replays_for_users_and_service_principals`: that test
+/// derives its expectations from the Rust catalog, so this check pins the Rust
+/// catalog to `catalog.json` and the matrix there.
 #[test]
 fn operation_catalog_matches_the_fixture_catalog() {
     let catalog = catalog();
@@ -245,7 +255,16 @@ fn operation_catalog_matches_the_fixture_catalog() {
 #[test]
 fn full_matrix_replays_for_users_and_service_principals() {
     let bound = WorkspaceId::new("ws-a");
-    let request = |operation: Operation| OperationRequest::new(operation.name());
+    let single_use = WorkspaceId::new("su-1");
+    // Every input an operation may require: a non-owner target member, a
+    // non-owner role and a single-use child of the caller's workspace.
+    let request = |operation: Operation| {
+        OperationRequest::new(operation.name())
+            .for_member(PrincipalId::new("user-z"))
+            .assigning(Role::Member)
+            .retiring(single_use.clone())
+    };
+    let child = Workspace::new(single_use.clone()).single_use_of(bound.clone());
     for operation in Operation::ALL.iter().copied() {
         let rule = operation.rule();
         for role in Role::ALL {
@@ -254,7 +273,8 @@ fn full_matrix_replays_for_users_and_service_principals() {
                 Credential::new(CredentialKind::LoginGrant, bound.clone()).with_scopes(Scope::ALL),
             );
             let org = Organization::new()
-                .with_workspace(Workspace::new(bound.clone()).with_member(user.id.clone(), role));
+                .with_workspace(Workspace::new(bound.clone()).with_member(user.id.clone(), role))
+                .with_workspace(child.clone());
             let wanted = match rule.cell(role) {
                 _ if operation == Operation::WorkspaceCreate => Err(Check::Isolation),
                 Cell::Allow | Cell::Any => Ok(Access::Full),
@@ -272,7 +292,9 @@ fn full_matrix_replays_for_users_and_service_principals() {
             PrincipalId::new("service-a"),
             Credential::new(CredentialKind::ScopedKey, bound.clone()).with_scopes(Scope::ALL),
         );
-        let org = Organization::new().with_workspace(Workspace::new(bound.clone()));
+        let org = Organization::new()
+            .with_workspace(Workspace::new(bound.clone()))
+            .with_workspace(child.clone());
         let wanted = match rule.uniform_cell() {
             Some(Cell::Any) => Ok(Access::Full),
             Some(Cell::Retired) => Err(Check::Retired),

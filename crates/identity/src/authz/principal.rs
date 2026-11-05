@@ -102,6 +102,14 @@ impl CredentialState {
     }
 }
 
+/// What a machine token serves: one machine, or one single-use workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MachineBinding {
+    Machine(MachineId),
+    /// The token of a single-use workspace; its credential workspace must be one.
+    SingleUseWorkspace,
+}
+
 /// A resolved credential. It never holds credential bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credential {
@@ -110,12 +118,15 @@ pub struct Credential {
     pub scopes: BTreeSet<Scope>,
     /// The one workspace the credential is bound to. Later workspaces never join it.
     pub workspace: WorkspaceId,
-    /// The machine a machine token is confined to; `None` for workspace-wide credentials.
-    pub machine: Option<MachineId>,
+    /// Required for a machine token, which never authenticates without it;
+    /// any other kind carrying one never authenticates either.
+    pub machine: Option<MachineBinding>,
 }
 
 impl Credential {
-    /// An active credential with no scopes and no machine confinement.
+    /// An active credential with no scopes and no machine binding. A machine
+    /// token built this way is unbound and denied until `on_machine` or
+    /// `for_single_use_workspace` binds it.
     pub fn new(kind: CredentialKind, workspace: WorkspaceId) -> Self {
         Self {
             kind,
@@ -137,7 +148,12 @@ impl Credential {
     }
 
     pub fn on_machine(mut self, machine: MachineId) -> Self {
-        self.machine = Some(machine);
+        self.machine = Some(MachineBinding::Machine(machine));
+        self
+    }
+
+    pub fn for_single_use_workspace(mut self) -> Self {
+        self.machine = Some(MachineBinding::SingleUseWorkspace);
         self
     }
 

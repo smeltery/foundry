@@ -1,12 +1,13 @@
 //! The authorization decision. It evaluates the specified check order and
 //! reports the first failure: authenticate, throttle, resolve the operation,
 //! bind workspace and machine, scope, retirement, role, then the ownership and
-//! isolation rules that need only identity state.
+//! isolation rules that need only identity state. Anything it cannot establish
+//! is denied.
 
 use super::ids::{MachineId, PrincipalId, WorkspaceId};
 use super::operation::{Cell, Operation, OperationRule};
-use super::organization::{Organization, Workspace};
-use super::principal::{CredentialKind, CredentialState, Principal, PrincipalKind};
+use super::organization::{Organization, Workspace, WorkspaceState};
+use super::principal::{CredentialKind, CredentialState, MachineBinding, Principal, PrincipalKind};
 use super::scope::Role;
 
 /// What the caller asks to do. Body validation and state rules stay with the
@@ -18,9 +19,11 @@ pub struct OperationRequest {
     /// Target workspace. Workspace-scoped operations default to the binding.
     pub workspace: Option<WorkspaceId>,
     pub machine: Option<MachineId>,
-    /// The member a membership operation acts on.
+    /// The single-use workspace a retirement acts on. Required for it.
+    pub single_use: Option<WorkspaceId>,
+    /// The member a membership change acts on. Required for non-owners.
     pub member: Option<PrincipalId>,
-    /// The role a role change assigns.
+    /// The role a role change assigns. Required for non-owners.
     pub new_role: Option<Role>,
     /// The rate limiter's verdict for this request, when it throttles.
     pub retry_after_seconds: Option<u32>,
@@ -32,6 +35,7 @@ impl OperationRequest {
             operation: operation.into(),
             workspace: None,
             machine: None,
+            single_use: None,
             member: None,
             new_role: None,
             retry_after_seconds: None,
@@ -45,6 +49,11 @@ impl OperationRequest {
 
     pub fn on_machine(mut self, machine: MachineId) -> Self {
         self.machine = Some(machine);
+        self
+    }
+
+    pub fn retiring(mut self, single_use: WorkspaceId) -> Self {
+        self.single_use = Some(single_use);
         self
     }
 
@@ -78,6 +87,7 @@ pub enum ErrorClass {
     NotFound,
     Forbidden,
     Retired,
+    Unavailable,
 }
 
 impl ErrorClass {
@@ -88,6 +98,7 @@ impl ErrorClass {
             ErrorClass::NotFound => "not_found",
             ErrorClass::Forbidden => "forbidden",
             ErrorClass::Retired => "retired",
+            ErrorClass::Unavailable => "unavailable",
         }
     }
 }
@@ -116,12 +127,16 @@ pub enum Check {
     UnknownOperation,
     WorkspaceBinding,
     MachineBinding,
+    /// The bound workspace is erasing and admits only deletion and identity.
+    Erasing,
     Scope,
     Retired,
     Role,
     /// The matrix cell is unknown, or the caller is a service principal whose
     /// effective role is held under decision C1. Both default to denial.
     UndeterminedRole,
+    /// An `admin_grant`, whose capability set is held under decision C1.
+    HeldCredential,
     Ownership,
     Isolation,
 }
@@ -170,20 +185,29 @@ pub fn authorize(
     let operation = Operation::from_name(&request.operation)
         .ok_or(Denial::forbidden(Check::UnknownOperation))?;
     let rule = operation.rule();
-    bind(principal, bound, &rule, request)?;
+    bind(principal, org, bound, operation, &rule, request)?;
+    if bound.state == WorkspaceState::Erasing
+        && !matches!(
+            operation,
+            Operation::WorkspaceDelete | Operation::IdentitySelf
+        )
+    {
+        return Err(Denial::new(ErrorClass::Unavailable, Check::Erasing));
+    }
     if let Some(scope) = rule.scope
         && !principal.credential.grants(scope)
     {
         return Err(Denial::forbidden(Check::Scope));
     }
-    let access = gate_role(&rule, role)?;
+    let access = gate_role(&rule, principal.credential.kind, role)?;
     check_ownership(operation, principal, bound, role, request)?;
     Ok(access)
 }
 
 /// Resolves the bound workspace and the caller's current role. Revocation is
 /// read from committed state: a terminal credential, a deleted or retired
-/// workspace, an unregistered machine, or a removed membership.
+/// workspace, an unregistered machine, or a removed membership. A machine
+/// token without a valid machine binding never authenticates.
 fn authenticate<'a>(
     principal: &Principal,
     org: &'a Organization,
@@ -197,9 +221,18 @@ fn authenticate<'a>(
         .workspace(&credential.workspace)
         .filter(|workspace| workspace.state.keeps_credentials())
         .ok_or(revoked)?;
-    if let Some(machine) = &credential.machine
-        && !workspace.has_machine(machine)
-    {
+    let binding_holds = match (credential.kind, &credential.machine) {
+        (CredentialKind::MachineToken, Some(MachineBinding::Machine(machine))) => {
+            workspace.has_machine(machine)
+        }
+        (CredentialKind::MachineToken, Some(MachineBinding::SingleUseWorkspace)) => {
+            workspace.parent().is_some()
+        }
+        // Unbound machine tokens, and machine bindings on any other kind.
+        (CredentialKind::MachineToken, None) | (_, Some(_)) => false,
+        (_, None) => true,
+    };
+    if !binding_holds {
         return Err(revoked);
     }
     match principal.kind() {
@@ -215,23 +248,36 @@ fn authenticate<'a>(
 /// cannot probe for other workspaces or machines.
 fn bind(
     principal: &Principal,
+    org: &Organization,
     bound: &Workspace,
+    operation: Operation,
     rule: &OperationRule,
     request: &OperationRequest,
 ) -> Result<(), Denial> {
+    let outside = Denial::new(ErrorClass::NotFound, Check::WorkspaceBinding);
     let target = request
         .workspace
         .as_ref()
         .or(rule.workspace_scoped.then_some(&bound.id));
     if target.is_some_and(|target| *target != bound.id) {
-        return Err(Denial::new(ErrorClass::NotFound, Check::WorkspaceBinding));
+        return Err(outside);
+    }
+    // A single-use workspace is separate; only its paying parent retires it.
+    if operation == Operation::SingleUseRetire {
+        let parent = request
+            .single_use
+            .as_ref()
+            .and_then(|single_use| org.workspace(single_use))
+            .and_then(Workspace::parent);
+        if parent != Some(&bound.id) {
+            return Err(outside);
+        }
     }
     if let Some(machine) = &request.machine {
-        let confined_elsewhere = principal
-            .credential
-            .machine
-            .as_ref()
-            .is_some_and(|own| own != machine);
+        let confined_elsewhere = matches!(
+            &principal.credential.machine,
+            Some(MachineBinding::Machine(own)) if own != machine
+        );
         if confined_elsewhere || !bound.has_machine(machine) {
             return Err(Denial::new(ErrorClass::NotFound, Check::MachineBinding));
         }
@@ -239,12 +285,22 @@ fn bind(
     Ok(())
 }
 
-fn gate_role(rule: &OperationRule, role: Option<Role>) -> Result<Access, Denial> {
+fn gate_role(
+    rule: &OperationRule,
+    kind: CredentialKind,
+    role: Option<Role>,
+) -> Result<Access, Denial> {
     let cell = match (rule.uniform_cell(), role) {
         (Some(cell @ (Cell::Any | Cell::Retired)), _) => cell,
         (_, Some(role)) => rule.cell(role),
         (_, None) => Cell::Unknown,
     };
+    // Decision C1 holds the `admin_grant` capability set. Until it settles, the
+    // grant reaches only rows any valid credential may call (no scope) and
+    // still receives `retired`; every other row is denied.
+    if kind == CredentialKind::AdminGrant && rule.scope.is_some() && cell != Cell::Retired {
+        return Err(Denial::forbidden(Check::HeldCredential));
+    }
     match cell {
         Cell::Allow | Cell::Any => Ok(Access::Full),
         Cell::Partial => Ok(Access::Partial),
@@ -255,7 +311,9 @@ fn gate_role(rule: &OperationRule, role: Option<Role>) -> Result<Access, Denial>
 }
 
 /// Owner-only membership changes, and the rule that a workspace-bound login
-/// grant cannot create another workspace.
+/// grant cannot create another workspace. A non-owner must name the target
+/// member, and for a role change the new role, so the owner rule is never
+/// skipped for lack of input.
 fn check_ownership(
     operation: Operation,
     principal: &Principal,
@@ -281,10 +339,9 @@ fn check_ownership(
     let target_is_owner = request
         .member
         .as_ref()
-        .and_then(|member| bound.role_of(member))
-        == Some(Role::Owner);
-    let grants_owner =
-        operation == Operation::MemberSetRole && request.new_role == Some(Role::Owner);
+        .is_none_or(|member| bound.role_of(member) == Some(Role::Owner));
+    let grants_owner = operation == Operation::MemberSetRole
+        && request.new_role.is_none_or(|role| role == Role::Owner);
     if target_is_owner || grants_owner {
         return Err(Denial {
             cause: Some(Cause::OwnerRequired),

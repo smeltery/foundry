@@ -14,5 +14,7 @@ pub use decision::{Access, Cause, Check, Denial, ErrorClass, OperationRequest, a
 pub use ids::{MachineId, PrincipalId, WorkspaceId};
 pub use operation::{Cell, Operation, OperationRule};
 pub use organization::{Organization, Workspace, WorkspaceState};
-pub use principal::{Credential, CredentialKind, CredentialState, Principal, PrincipalKind};
+pub use principal::{
+    Credential, CredentialKind, CredentialState, MachineBinding, Principal, PrincipalKind,
+};
 pub use scope::{Role, Scope};

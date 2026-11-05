@@ -12,8 +12,9 @@ use super::scope::Role;
 pub enum WorkspaceState {
     /// Usable; a live single-use workspace is also active.
     Active,
-    /// Deletion is erasing in steps. Bound credentials stay valid so the
-    /// owner can repeat the deletion.
+    /// Deletion is erasing in steps. Bound credentials still authenticate so
+    /// the owner can repeat the deletion, but the decision admits only
+    /// `workspace.delete` and `identity.self`; everything else is `unavailable`.
     Erasing,
     /// Deleted; every bound credential is revoked.
     Deleted,
@@ -34,6 +35,8 @@ pub struct Workspace {
     pub state: WorkspaceState,
     members: BTreeMap<PrincipalId, Role>,
     machines: BTreeSet<MachineId>,
+    /// The paying parent when this is a single-use workspace.
+    parent: Option<WorkspaceId>,
 }
 
 impl Workspace {
@@ -44,7 +47,18 @@ impl Workspace {
             state: WorkspaceState::Active,
             members: BTreeMap::new(),
             machines: BTreeSet::new(),
+            parent: None,
         }
+    }
+
+    /// Marks this as a single-use workspace paid for and retired by `parent`.
+    pub fn single_use_of(mut self, parent: WorkspaceId) -> Self {
+        self.parent = Some(parent);
+        self
+    }
+
+    pub fn parent(&self) -> Option<&WorkspaceId> {
+        self.parent.as_ref()
     }
 
     pub fn with_state(mut self, state: WorkspaceState) -> Self {
