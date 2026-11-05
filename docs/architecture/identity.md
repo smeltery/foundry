@@ -103,7 +103,7 @@ acceptable until the wire format is fixed. Unknown classes are treated as
 | `quota_exhausted` | 402 | The paying workspace cannot fund a single-use workspace budget | Not implemented |
 | `forbidden` | 403 | Authenticated caller lacks the scope or role, or a cause code forbids the action | Not implemented |
 | `not_found` | 404 | Workspace, member, pairing or namespace is absent or outside the credential's workspace | Not implemented |
-| `conflict` | 409 | Key reuse with a different request, last-owner protection, retention-blocked deletion, retired or saturated single-use workspace | Not implemented |
+| `conflict` | 409 | Key reuse with a different request, last-owner protection, retention-blocked deletion, retired or saturated single-use workspace, stale network policy revision | Not implemented |
 | `retired` | 410 | The operation is permanently withdrawn | Not implemented |
 | `rate_limited` | 429 | Caller must wait; carries a retry delay in seconds | Not implemented |
 | `sink_failed` | 502 | A feedback report could be neither stored nor delivered | Not implemented |
@@ -660,21 +660,35 @@ Audit rows (external `capabilities.json`, group GAP-003): API-E7E243FCBA7B1,
 API-EAA5699B6D3B4.
 Vectors: `tests/identity/vectors/network_policy.json`.
 
-**Foundry today.** None. Peer network configuration is unrelated, see
-[network command interface](../user/network.md).
+**Foundry today.** The pure document rules and egress evaluator in
+`crates/identity/src/network_policy`, which replay the vectors. There is no
+storage, transport or enforcement yet. Peer network configuration is unrelated,
+see [network command interface](../user/network.md).
 
 **Specified.**
 
-- Get: the saved list of extra allowed hosts.
+- Get: the saved list of extra allowed hosts and its `revision`, which starts
+  at 0 and rises by one with every change.
 - Replace: owner or admin; replaces the whole list with 0 to 50 hosts, and an
-  empty list clears it. The response is the stored list. Repeating it is safe.
+  empty list clears it. The request must carry the `revision` the caller last
+  read: a missing one is `invalid_request`, and one that is no longer current
+  is `conflict`. The store commits only if the revision is still current, so
+  of two concurrent replaces from one revision exactly one succeeds. The
+  response is the stored list. Repeating a replace that already took effect
+  is safe: it returns the stored list unchanged, even with the older revision.
+- Hosts are fully qualified DNS names, matched exactly and case-insensitively.
+  Wildcards, ports, schemes, IP literals (including hex and mixed numeric
+  forms), single-label names and duplicates are `invalid_request`.
 - Workspace hosts extend a platform baseline; an empty list never removes
   baseline access.
 - Changes apply at the next execution start and do not revoke access already
   granted to running execution.
-- Errors: `invalid_request`, `unauthenticated`, `forbidden`, `rate_limited`,
-  `unavailable` when writes are disabled. Enforcement belongs to the network
-  policy child of NIC-36.
+- The policy restricts hosts only, not ports or schemes, and a listed name
+  may still resolve to a private address. Enforcement must check the resolved
+  addresses.
+- Errors: `invalid_request`, `unauthenticated`, `forbidden`, `conflict` for a
+  stale revision, `rate_limited`, `unavailable` when writes are disabled.
+  Enforcement belongs to the network policy child of NIC-36.
 
 ### Local secret import and pairing
 
