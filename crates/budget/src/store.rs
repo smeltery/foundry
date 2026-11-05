@@ -12,7 +12,12 @@
 //! Known limitations:
 //! - A reservation left open by a crash, or by a drop whose settlement failed,
 //!   stays counted against its ceilings. That refuses spend rather than
-//!   allowing it, but there is no API yet to reconcile such reservations.
+//!   allowing it, but there is no API yet to reconcile such reservations. A
+//!   metered reservation keeps its attempt persisted beside it, so a later
+//!   reconcile can still write its usage row.
+//! - A metered settlement whose usage row cannot be written fails as a whole,
+//!   so the reservation stays open and counted (fail-closed), as for any other
+//!   failed settlement.
 //! - Every operation, including the settlement a dropped [`Reservation`] runs,
 //!   can block for up to the 30-second busy timeout while another connection
 //!   holds the write lock.
@@ -22,8 +27,10 @@ use crate::clock::{Clock, WallClock};
 use crate::database::{self, Storage};
 use crate::error::BudgetError;
 use crate::ledger::{self, Ledger};
+use crate::price::Usage;
 use crate::reservation::{Reservation, Settlement};
 use crate::termination::Termination;
+use crate::usage::{self, Attempt, UsageReports};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -177,6 +184,33 @@ impl BudgetStore {
     /// ceiling of the budget and of every ancestor, no member has overrun and no
     /// deadline in the chain has passed.
     pub fn reserve(&self, budget: BudgetId, amount: Amount) -> Result<Reservation, BudgetError> {
+        self.reserve_for(budget, amount, None)
+    }
+
+    /// Reserves like [`Self::reserve`] for one model call of `attempt`. Its
+    /// settlement, including the one a drop runs, also writes the attempt's
+    /// usage row in the same transaction (see [`crate::usage`]).
+    pub fn reserve_attempt(
+        &self,
+        budget: BudgetId,
+        amount: Amount,
+        attempt: Attempt,
+    ) -> Result<Reservation, BudgetError> {
+        attempt.validate()?;
+        self.reserve_for(budget, amount, Some(attempt))
+    }
+
+    /// Consumption reports over this store's usage rows, on its connection.
+    pub fn usage(&self) -> UsageReports {
+        UsageReports::new(self.clone())
+    }
+
+    fn reserve_for(
+        &self,
+        budget: BudgetId,
+        amount: Amount,
+        attempt: Option<Attempt>,
+    ) -> Result<Reservation, BudgetError> {
         let id = self.write(|transaction, now_ms| {
             let mut chain = database::chain(transaction, budget)?;
             if chain[0].unit != amount.unit() {
@@ -184,9 +218,19 @@ impl BudgetStore {
             }
             ledger::reserve(&mut chain, amount, now_ms)?;
             database::save(transaction, &chain)?;
-            database::insert_reservation(transaction, budget, amount.atoms())
+            let id = database::insert_reservation(transaction, budget, amount.atoms())?;
+            if let Some(attempt) = &attempt {
+                usage::database::insert_attempt(transaction, id, attempt)?;
+            }
+            Ok(id)
         })?;
-        Ok(Reservation::new(self.clone(), id, budget, amount))
+        Ok(Reservation::new(
+            self.clone(),
+            id,
+            budget,
+            amount,
+            attempt.is_some(),
+        ))
     }
 
     pub fn snapshot(&self, budget: BudgetId) -> Result<BudgetSnapshot, BudgetError> {
@@ -207,19 +251,35 @@ impl BudgetStore {
     }
 
     /// Commits `actual` for the reservation and releases the rest along the chain.
+    /// A metered reservation also writes its usage row, from the attempt
+    /// persisted with it, costed at `actual` and dated now, in the same
+    /// transaction. A reservation that is already gone was settled before, so
+    /// it is `conflict`.
     pub(crate) fn settle(
         &self,
         id: ReservationId,
         actual: Amount,
+        usage: Usage,
     ) -> Result<Settlement, BudgetError> {
         self.write(|transaction, now_ms| {
-            let (budget, reserved_atoms) = database::take_reservation(transaction, id)?;
+            let attempt = usage::database::take_attempt(transaction, id)?;
+            let (budget, reserved_atoms) = match database::take_reservation(transaction, id) {
+                Err(BudgetError::NotFound { .. }) => {
+                    return Err(BudgetError::Conflict {
+                        what: "reservation",
+                    });
+                }
+                taken => taken?,
+            };
             let mut chain = database::chain(transaction, budget)?;
             if chain[0].unit != actual.unit() {
                 return Err(BudgetError::invalid("unit"));
             }
             let overrun = ledger::settle(&mut chain, reserved_atoms, actual)?;
             database::save(transaction, &chain)?;
+            if let Some(attempt) = &attempt {
+                usage::database::insert(transaction, attempt, usage, actual, now_ms)?;
+            }
             let unit = actual.unit();
             Ok(Settlement {
                 charged: actual,
@@ -243,7 +303,7 @@ impl BudgetStore {
     /// is already held then, so no other writer can commit between the reading
     /// and the checks. A deferred read takes its snapshot at the first query,
     /// just after the reading, so its state is never older than its time.
-    fn transaction<T>(
+    pub(crate) fn transaction<T>(
         &self,
         behavior: TransactionBehavior,
         operation: impl FnOnce(&Transaction<'_>, u64) -> Result<T, BudgetError>,
