@@ -144,7 +144,7 @@ fn missing_grant_reaches_owner_and_pending_stops_without_receipt() {
                 disposition,
             })
             .unwrap();
-        let result = run.results.recv_timeout(Duration::from_secs(3)).unwrap();
+        let result = run.results.recv_timeout(WAIT).unwrap();
         match disposition {
             PermissionDisposition::ActionRequired => assert_eq!(
                 result.unwrap(),
