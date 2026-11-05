@@ -5,3 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license-file = "../../LICENSE"
 repository.workspace = true
+
+[dependencies]
+foundry-identity = { version = "0.1.0", path = "../identity" }
+libc = "0.2"
+rusqlite = { version = "=0.37.0", features = ["bundled"] }
+subtle = "=2.6.1"
+zeroize = "=1.9.1"
+
+[dev-dependencies]
+foundry-service = { version = "0.1.0", path = "../service" }
+tempfile = "3"

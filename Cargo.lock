@@ -973,6 +973,15 @@ dependencies = [
 [[package]]
 name = "foundry-providers"
 version = "0.1.0"
+dependencies = [
+ "foundry-identity",
+ "foundry-service",
+ "libc",
+ "rusqlite",
+ "subtle",
+ "tempfile",
+ "zeroize",
+]
 
 [[package]]
 name = "foundry-runtime"
