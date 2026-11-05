@@ -1,0 +1,5 @@
+{
+  "id": "rename-symbol",
+  "prompt": "Rename the function count_items to item_count in /workspace/src/items.py.",
+  "max_output_tokens": 128
+}

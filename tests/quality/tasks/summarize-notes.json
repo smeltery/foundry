@@ -1,0 +1,6 @@
+{
+  "id": "summarize-notes",
+  "system": "You are a fixture assistant.",
+  "prompt": "Summarize these notes in one sentence: the build passed, two files changed, one test was added.",
+  "max_output_tokens": 64
+}

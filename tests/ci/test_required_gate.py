@@ -40,6 +40,11 @@ class RequiredGateTests(unittest.TestCase):
         jobs = LINUX + [job("activation (x86_64-darwin)", "cancelled", runner="")]
         self.assertTrue(self.decide("success", "cancelled", jobs, True))
 
+    def test_failed_advisory_campaign_never_blocks_the_macos_excuse(self):
+        jobs = LINUX + [job("check (integration, macos-15)", "cancelled", runner=None),
+                        job("campaign", "failure")]
+        self.assertTrue(self.decide("cancelled", "success", jobs, True))
+
     def test_macos_that_ran_and_failed_or_was_cancelled_still_blocks(self):
         for conclusion in ("failure", "cancelled", "timed_out"):
             jobs = LINUX + [job("check (integration, macos-15)", conclusion)]

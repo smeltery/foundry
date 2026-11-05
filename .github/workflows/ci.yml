@@ -38,6 +38,27 @@ jobs:
           CI_HEAD: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/checks/ci_scope.py
 
+  # Advisory: the required gate ignores this job, and a failed step only warns.
+  # It records outcomes and grades nothing. Docs-only changes plan no python group.
+  campaign:
+    needs: [plan]
+    if: contains(needs.plan.outputs.matrix, 'python')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: campaign
+        name: Test the harness, then run the campaign twice and compare
+        continue-on-error: true
+        run: |
+          python3 -m unittest discover -s tests/quality -p 'check_*.py'
+          python3 scripts/quality/campaign.py --manifest tests/quality/campaign.json --verify
+      - name: Warn about a campaign failure
+        if: steps.campaign.outcome == 'failure'
+        run: echo "::warning title=Advisory campaign::The deterministic campaign check failed; it does not block merging."
+
   check:
     needs: [plan]
     name: check (${{ matrix.group }}, ${{ matrix.runner }})
