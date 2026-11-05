@@ -1,7 +1,6 @@
 import os,sys,json,struct,time
-# Startup harnesses prepend mode=...; the shared installed helper reads it from its directory.
-if 'mode' not in globals():
-    fd=os.open('helper-mode',os.O_RDONLY,dir_fd=3);mode=os.read(fd,64).decode();os.close(fd)
+# The installed helper is shared across tests, so each fixture names its mode in a file.
+fd=os.open('helper-mode',os.O_RDONLY,dir_fd=3);mode=os.read(fd,64).decode();os.close(fd)
 size=struct.unpack('>I',sys.stdin.buffer.read(4))[0]
 request=json.loads(sys.stdin.buffer.read(size))
 assert sys.stdin.buffer.read()==b''
