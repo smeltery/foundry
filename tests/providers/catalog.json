@@ -10,7 +10,7 @@
   ],
   "results": ["ok", "created", "replayed", "accepted", "error"],
   "efforts": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  "endpoint_failures": ["dns", "connect", "timeout", "tls", "http"],
+  "endpoint_failures": ["dns", "connect", "timeout", "tls", "http", "protocol"],
   "write_only_fields": ["key", "token", "setup_token", "access_token", "refresh_token", "answer"],
   "machines": {
     "credential": {
