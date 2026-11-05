@@ -1,7 +1,6 @@
-//! One attempt's metered usage: its token and compute counts and its cost.
-use crate::amount::{Amount, CostUnit};
+//! Who and what a metered reservation charges for. The cost and the settlement
+//! time are never supplied by the caller: they come from the settlement itself.
 use crate::error::BudgetError;
-use crate::price::Usage;
 
 /// Longest attempt, session or user identifier, in bytes. Provisional.
 pub const ID_MAX_BYTES: usize = 256;
@@ -9,11 +8,12 @@ const PROVIDER_ID_MAX_CHARS: usize = 64;
 const ACCOUNT_KEY_MAX_CHARS: usize = 512;
 const MODEL_MAX_BYTES: usize = 256;
 
-/// The usage and cost of one attempt, recorded once when the attempt settles.
-/// `attempt_id` identifies the record: recording the same attempt again is a
-/// no-op, so a retried settlement is never counted twice.
+/// The attempt a metered reservation belongs to. Its settlement writes one
+/// usage row in the same transaction that commits the ledger, so reports and
+/// `committed` spend always agree. An attempt with several model calls
+/// reserves once per call; its rows share `attempt_id`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AttemptUsage {
+pub struct Attempt {
     pub attempt_id: String,
     pub provider_id: String,
     pub account_key: String,
@@ -22,22 +22,10 @@ pub struct AttemptUsage {
     pub session_id: Option<String>,
     /// `None` reports as `unattributed` when grouping by user.
     pub user_id: Option<String>,
-    pub usage: Usage,
-    /// The attempt's money cost, for example from [`crate::PriceTable::cost`].
-    pub cost: Amount,
 }
 
-/// What [`crate::usage::UsageStore::record`] did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Recording {
-    /// The attempt was new and is now counted.
-    Recorded,
-    /// An identical record for the attempt already existed; nothing changed.
-    AlreadyRecorded,
-}
-
-impl AttemptUsage {
-    /// Checks every field against the provider limits before anything is stored.
+impl Attempt {
+    /// Checks every field against the provider limits before anything is reserved.
     pub(crate) fn validate(&self) -> Result<(), BudgetError> {
         check_id(&self.attempt_id, "attempt_id")?;
         check_chars(&self.provider_id, PROVIDER_ID_MAX_CHARS, "provider_id")?;
@@ -51,9 +39,6 @@ impl AttemptUsage {
         }
         if let Some(user_id) = &self.user_id {
             check_id(user_id, "user_id")?;
-        }
-        if !matches!(self.cost.unit(), CostUnit::Money(_)) {
-            return Err(BudgetError::invalid("cost"));
         }
         Ok(())
     }

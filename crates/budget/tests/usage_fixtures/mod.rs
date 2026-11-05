@@ -1,8 +1,10 @@
 //! Fixture attempts, a settable clock and window helpers shared by the usage
 //! tests. All prices are the synthetic fixture table's, in `XTS`.
 #![allow(dead_code)]
-use foundry_budget::usage::{AttemptUsage, Recording, UsageStore, UtcDate, Window};
-use foundry_budget::{Amount, Clock, CostUnit, Currency, Usage};
+use foundry_budget::usage::{Attempt, UtcDate, Window};
+use foundry_budget::{
+    Amount, BudgetId, BudgetStore, Clock, CostUnit, Currency, Settlement, Usage, WallClock,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,15 +15,24 @@ pub fn currency() -> Currency {
     Currency::parse("XTS").unwrap()
 }
 
+pub fn xts() -> CostUnit {
+    CostUnit::Money(currency())
+}
+
+pub fn money(text: &str) -> Amount {
+    Amount::parse(xts(), text).unwrap()
+}
+
 pub fn at(date: &str) -> u64 {
     UtcDate::parse(date).unwrap().start_ms()
 }
 
-pub fn window(start: &str, end: &str) -> Window {
-    Window::new(UtcDate::parse(start).unwrap(), UtcDate::parse(end).unwrap()).unwrap()
+pub fn window(start: &str, end: &str) -> Option<Window> {
+    Some(Window::new(UtcDate::parse(start).unwrap(), UtcDate::parse(end).unwrap()).unwrap())
 }
 
-/// A clock set to absolute fixture times, in any order.
+/// A clock set to absolute fixture times, in any order. No fixture budget has
+/// a deadline, so moving it backwards is harmless.
 #[derive(Default)]
 pub struct FixtureClock(AtomicU64);
 
@@ -37,41 +48,47 @@ impl Clock for FixtureClock {
     }
 }
 
-pub fn attempt(id: &str, cost: &str, compute_ms: u64) -> AttemptUsage {
-    AttemptUsage {
+pub fn attempt(id: &str) -> Attempt {
+    Attempt {
         attempt_id: id.into(),
         provider_id: "fixture".into(),
         account_key: "primary".into(),
         model: "fixture-small".into(),
         session_id: None,
         user_id: None,
-        usage: Usage {
-            input_tokens: 100,
-            output_tokens: 10,
-            compute_ms,
-        },
-        cost: money(cost),
     }
 }
 
-pub fn usage_store() -> (UsageStore, Arc<FixtureClock>) {
+pub fn calls(input_tokens: u64, compute_ms: u64) -> Usage {
+    Usage {
+        input_tokens,
+        output_tokens: 10,
+        compute_ms,
+    }
+}
+
+/// An in-memory store with one unbounded `XTS` budget.
+pub fn fixture_store() -> (BudgetStore, Arc<FixtureClock>, BudgetId) {
     let clock = Arc::new(FixtureClock::default());
-    (UsageStore::open_in_memory(clock.clone()).unwrap(), clock)
+    let store = BudgetStore::open_in_memory(clock.clone()).unwrap();
+    let budget = store.create(xts(), None, WallClock::NONE).unwrap();
+    (store, clock, budget)
 }
 
-/// Records each `(time, attempt)` at its time.
-pub fn record_all(store: &UsageStore, clock: &FixtureClock, attempts: &[(u64, AttemptUsage)]) {
-    for (time, attempt) in attempts {
-        clock.set(*time);
-        assert_eq!(store.record(attempt).unwrap(), Recording::Recorded);
-    }
-}
-
-/// Money in `XTS`.
-pub fn money(text: &str) -> Amount {
-    Amount::parse(xts(), text).unwrap()
-}
-
-pub fn xts() -> CostUnit {
-    CostUnit::Money(currency())
+/// Reserves `cost` for `attempt` and settles exactly that much at `time`.
+pub fn settle(
+    store: &BudgetStore,
+    clock: &FixtureClock,
+    budget: BudgetId,
+    time: u64,
+    attempt: Attempt,
+    cost: Amount,
+    usage: Usage,
+) -> Settlement {
+    clock.set(time);
+    store
+        .reserve_attempt(budget, cost, attempt)
+        .unwrap()
+        .commit_usage(cost, usage)
+        .unwrap()
 }

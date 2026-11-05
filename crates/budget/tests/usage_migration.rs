@@ -2,7 +2,7 @@
 //! is upgraded in place by schema step 2 and keeps its budgets.
 mod support;
 
-use foundry_budget::usage::{AttemptUsage, Recording, UsageStore, UtcDate, Window};
+use foundry_budget::usage::{Attempt, UtcDate, Window};
 use foundry_budget::{BudgetStore, Currency, ManualClock, Usage, WallClock};
 use rusqlite::Connection;
 use std::path::Path;
@@ -100,45 +100,43 @@ fn a_version_1_database_is_upgraded_and_keeps_its_budgets() {
     assert_eq!(before.len(), 2);
 
     let clock = Arc::new(ManualClock::default());
-    let usage = UsageStore::open(&path, clock.clone()).unwrap();
+    let store = BudgetStore::open(&path, clock.clone()).unwrap();
     assert_eq!(version(&path), 2);
     assert!(tables(&path).contains(&"usage_records".to_owned()));
     assert_eq!(ledger_rows(&path), before);
 
-    // The budget store opens the upgraded file and continues its row IDs.
-    let budgets = BudgetStore::open(&path, clock.clone()).unwrap();
-    let budget = budgets.create(xts(), None, WallClock::NONE).unwrap();
+    // The upgraded file continues its row IDs and meters new settlements.
+    let budget = store.create(xts(), None, WallClock::NONE).unwrap();
     assert_eq!(budget.get(), 2);
-
-    let record = AttemptUsage {
+    let attempt = Attempt {
         attempt_id: "attempt-1".into(),
         provider_id: "fixture".into(),
         account_key: "primary".into(),
         model: "fixture-small".into(),
         session_id: None,
         user_id: None,
-        usage: Usage::default(),
-        cost: money("0.4"),
     };
-    assert_eq!(usage.record(&record).unwrap(), Recording::Recorded);
-    drop((usage, budgets));
+    store
+        .reserve_attempt(budget, money("0.5"), attempt)
+        .unwrap()
+        .commit_usage(money("0.4"), Usage::default())
+        .unwrap();
+    drop(store);
 
-    // Reopening an upgraded file runs no step again and keeps the record.
-    let reopened = UsageStore::open(&path, clock).unwrap();
+    // Reopening an upgraded file runs no step again and keeps the row.
+    let reopened = BudgetStore::open(&path, clock).unwrap();
     assert_eq!(version(&path), 2);
-    assert_eq!(
-        reopened.record(&record).unwrap(),
-        Recording::AlreadyRecorded
-    );
     let window = Window::new(
         UtcDate::parse("1970-01-01").unwrap(),
         UtcDate::parse("1970-01-02").unwrap(),
     )
     .unwrap();
     let report = reopened
+        .usage()
         .daily(Some(window), Currency::parse("XTS").unwrap())
         .unwrap();
     assert_eq!(report.total.spend, money("0.4"));
+    assert_eq!(reopened.snapshot(budget).unwrap().committed, money("0.4"));
 }
 
 #[test]
@@ -148,7 +146,7 @@ fn a_failed_step_leaves_the_version_1_file_unchanged() {
     // A stray table under the step's name makes the step fail part way.
     write_version_1(&path, "CREATE TABLE usage_records (stray INTEGER);");
 
-    let error = UsageStore::open(&path, Arc::new(ManualClock::default())).unwrap_err();
+    let error = BudgetStore::open(&path, Arc::new(ManualClock::default())).unwrap_err();
     assert_eq!(error.class(), "unavailable");
     assert!(
         error.to_string().contains("usage_records already exists"),

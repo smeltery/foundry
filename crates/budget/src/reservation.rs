@@ -1,7 +1,9 @@
 //! The owning handle for one open reservation.
 use crate::amount::Amount;
 use crate::error::BudgetError;
+use crate::price::Usage;
 use crate::store::{BudgetId, BudgetStore, ReservationId};
+use crate::usage::Attempt;
 
 /// The result of settling a reservation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +35,8 @@ pub struct Reservation {
     id: ReservationId,
     budget: BudgetId,
     amount: Amount,
+    /// Set for a metered reservation; every settlement then writes usage.
+    attempt: Option<Attempt>,
     open: bool,
 }
 
@@ -42,14 +46,28 @@ impl Reservation {
         id: ReservationId,
         budget: BudgetId,
         amount: Amount,
+        attempt: Option<Attempt>,
     ) -> Self {
         Self {
             store,
             id,
             budget,
             amount,
+            attempt,
             open: true,
         }
+    }
+
+    fn settle(&mut self, actual: Amount, usage: Usage) -> Result<Settlement, BudgetError> {
+        if !self.open {
+            return Err(BudgetError::Conflict {
+                what: "reservation",
+            });
+        }
+        let metered = self.attempt.as_ref().map(|attempt| (attempt, usage));
+        let settlement = self.store.settle(self.id, actual, metered)?;
+        self.open = false;
+        Ok(settlement)
     }
 
     pub fn id(&self) -> ReservationId {
@@ -66,15 +84,24 @@ impl Reservation {
 
     /// Commits the actual cost and releases the remainder. On error the
     /// reservation stays open, so the caller may retry with a corrected amount.
+    /// A metered reservation records zero token counts this way; use
+    /// [`Reservation::commit_usage`] to record them.
     pub fn commit(&mut self, actual: Amount) -> Result<Settlement, BudgetError> {
-        if !self.open {
-            return Err(BudgetError::Conflict {
-                what: "reservation",
-            });
+        self.settle(actual, Usage::default())
+    }
+
+    /// Commits like [`Reservation::commit`] and records the call's token and
+    /// compute counts in the usage row. Only a metered reservation, made with
+    /// [`BudgetStore::reserve_attempt`], has a row to record them in.
+    pub fn commit_usage(
+        &mut self,
+        actual: Amount,
+        usage: Usage,
+    ) -> Result<Settlement, BudgetError> {
+        if self.attempt.is_none() {
+            return Err(BudgetError::invalid("usage"));
         }
-        let settlement = self.store.settle(self.id, actual)?;
-        self.open = false;
-        Ok(settlement)
+        self.settle(actual, usage)
     }
 
     /// Releases the whole reservation for a call that consumed nothing.
@@ -89,7 +116,12 @@ impl Drop for Reservation {
             // Drop cannot report an error. If the store is unavailable the
             // reservation stays open and counted, which refuses spend rather
             // than allowing it.
-            let _ = self.store.settle(self.id, self.amount);
+            // A metered drop records the full charge with unknown (zero) counts.
+            let metered = self
+                .attempt
+                .as_ref()
+                .map(|attempt| (attempt, Usage::default()));
+            let _ = self.store.settle(self.id, self.amount, metered);
         }
     }
 }

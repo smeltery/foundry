@@ -1,25 +1,40 @@
-//! Aggregates over recorded attempts: daily consumption, grouped totals and
+//! Aggregates over settled usage rows: daily consumption, grouped totals and
 //! metric time series. Every sum is checked, so an overflowing report fails
-//! instead of wrapping, and every ordering is total, so the same records always
+//! instead of wrapping, and every ordering is total, so the same rows always
 //! produce the same report. Wire names are provisional pending NIC-34 D1/D6.
+//!
+//! Spend reports (`daily`, `grouped`) cover only rows charged in the requested
+//! currency; rows charged in another currency, or in a token or millisecond
+//! unit, are left out because no exchange rate exists. `metrics` carries no
+//! spend and counts every row.
 use crate::amount::{Amount, CostUnit, Currency};
 use crate::error::BudgetError;
 use crate::price::Usage;
 use crate::usage::calendar::{DAY_MS, HOUR_MS, UtcDate, Window};
-use crate::usage::record::AttemptUsage;
+use crate::usage::record::Attempt;
 use std::collections::BTreeMap;
 
-/// A recorded attempt with the time it was recorded.
+/// One settlement's usage row.
 pub(crate) struct Stored {
-    pub record: AttemptUsage,
-    pub recorded_at_ms: u64,
+    pub attempt: Attempt,
+    pub usage: Usage,
+    /// The amount the ledger committed, in the budget's unit.
+    pub cost: Amount,
+    pub settled_at_ms: u64,
+}
+
+impl Stored {
+    fn charged_in(&self, currency: Currency) -> bool {
+        self.cost.unit() == CostUnit::Money(currency)
+    }
 }
 
 /// Summed usage and spend. Token and millisecond totals stay unsigned 64-bit
 /// integers, as the consumption units require.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Totals {
-    pub attempts: u64,
+    /// Settled model calls; an attempt with several calls counts each.
+    pub settlements: u64,
     pub usage: Usage,
     pub spend: Amount,
 }
@@ -27,32 +42,37 @@ pub struct Totals {
 impl Totals {
     pub fn zero(currency: Currency) -> Self {
         Self {
-            attempts: 0,
+            settlements: 0,
             usage: Usage::default(),
             spend: Amount::zero(CostUnit::Money(currency)),
         }
     }
 
-    /// Adds one attempt, or fails without changing anything. A cost in another
-    /// currency is `conflict`: no exchange rate exists to combine them.
-    fn add(&mut self, record: &AttemptUsage) -> Result<(), BudgetError> {
-        if record.cost.unit() != self.spend.unit() {
-            return Err(BudgetError::Conflict { what: "currency" });
-        }
-        let attempts = self.attempts.checked_add(1).ok_or_else(overflow)?;
-        let usage = add_usage(self.usage, record.usage)?;
-        let spend = self.spend.checked_add(record.cost)?;
+    /// Adds one row charged in this total's currency, or fails without
+    /// changing anything.
+    fn add(&mut self, stored: &Stored) -> Result<(), BudgetError> {
+        let settlements = self.settlements.checked_add(1).ok_or_else(overflow)?;
+        let usage = add_usage(self.usage, stored.usage)?;
+        let spend = self
+            .spend
+            .atoms()
+            .checked_add(stored.cost.atoms())
+            .ok_or_else(overflow)?;
         *self = Self {
-            attempts,
+            settlements,
             usage,
-            spend,
+            spend: Amount::from_atoms(self.spend.unit(), spend)?,
         };
         Ok(())
     }
 }
 
+/// Stored rows whose sum does not fit the report's integer types. The caller
+/// asked for nothing invalid, so this is the store's failure, not theirs.
 fn overflow() -> BudgetError {
-    BudgetError::invalid("total")
+    BudgetError::Unavailable {
+        detail: "usage total overflows".into(),
+    }
 }
 
 fn add_usage(left: Usage, right: Usage) -> Result<Usage, BudgetError> {
@@ -70,7 +90,8 @@ pub struct DailyEntry {
     pub totals: Totals,
 }
 
-/// `consumption.daily`: one entry per UTC day with activity, oldest first.
+/// `consumption.daily`: one entry per UTC settlement day with activity,
+/// oldest first.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DailyReport {
     pub window: Window,
@@ -86,12 +107,12 @@ pub(crate) fn daily(
 ) -> Result<DailyReport, BudgetError> {
     let mut total = Totals::zero(currency);
     let mut days: BTreeMap<UtcDate, Totals> = BTreeMap::new();
-    for stored in records {
-        let date = UtcDate::containing(stored.recorded_at_ms);
+    for stored in records.iter().filter(|stored| stored.charged_in(currency)) {
+        let date = UtcDate::containing(stored.settled_at_ms);
         days.entry(date)
             .or_insert_with(|| Totals::zero(currency))
-            .add(&stored.record)?;
-        total.add(&stored.record)?;
+            .add(stored)?;
+        total.add(stored)?;
     }
     let daily = days
         .into_iter()
@@ -111,10 +132,12 @@ pub enum GroupBy {
     User,
     /// One provider account slot: `provider_id` and `account_key`.
     Account,
+    /// Every settlement of one attempt.
+    Attempt,
 }
 
-/// The group an attempt counts toward. `Unattributed` collects attempts with
-/// no session or user and sorts after every named group with equal spend.
+/// The group a settlement counts toward. `Unattributed` collects rows with no
+/// session or user and sorts after every named group with equal spend.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum GroupKey {
     Session(String),
@@ -123,21 +146,23 @@ pub enum GroupKey {
         provider_id: String,
         account_key: String,
     },
+    Attempt(String),
     Unattributed,
 }
 
 impl GroupKey {
-    fn of(record: &AttemptUsage, group_by: GroupBy) -> Self {
+    fn of(attempt: &Attempt, group_by: GroupBy) -> Self {
         let named = |id: &Option<String>, wrap: fn(String) -> Self| {
             id.clone().map_or(Self::Unattributed, wrap)
         };
         match group_by {
-            GroupBy::Session => named(&record.session_id, Self::Session),
-            GroupBy::User => named(&record.user_id, Self::User),
+            GroupBy::Session => named(&attempt.session_id, Self::Session),
+            GroupBy::User => named(&attempt.user_id, Self::User),
             GroupBy::Account => Self::Account {
-                provider_id: record.provider_id.clone(),
-                account_key: record.account_key.clone(),
+                provider_id: attempt.provider_id.clone(),
+                account_key: attempt.account_key.clone(),
             },
+            GroupBy::Attempt => Self::Attempt(attempt.attempt_id.clone()),
         }
     }
 }
@@ -166,12 +191,12 @@ pub(crate) fn grouped(
 ) -> Result<GroupedReport, BudgetError> {
     let mut total = Totals::zero(currency);
     let mut groups: BTreeMap<GroupKey, Totals> = BTreeMap::new();
-    for stored in records {
+    for stored in records.iter().filter(|stored| stored.charged_in(currency)) {
         groups
-            .entry(GroupKey::of(&stored.record, group_by))
+            .entry(GroupKey::of(&stored.attempt, group_by))
             .or_insert_with(|| Totals::zero(currency))
-            .add(&stored.record)?;
-        total.add(&stored.record)?;
+            .add(stored)?;
+        total.add(stored)?;
     }
     let mut items: Vec<GroupTotal> = groups
         .into_iter()
@@ -210,27 +235,27 @@ impl Bucket {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MetricsPoint {
     pub start_ms: u64,
-    pub attempts: u64,
+    pub settlements: u64,
     pub usage: Usage,
 }
 
-/// Buckets with activity, oldest first. Metrics carry no spend, so attempts
-/// in any currency are counted.
+/// Buckets with activity, oldest first. Metrics carry no spend, so rows
+/// charged in any unit are counted.
 pub(crate) fn metrics(
     bucket: Bucket,
     records: &[Stored],
 ) -> Result<Vec<MetricsPoint>, BudgetError> {
     let mut points: BTreeMap<u64, MetricsPoint> = BTreeMap::new();
     for stored in records {
-        let start_ms = stored.recorded_at_ms - stored.recorded_at_ms % bucket.ms();
+        let start_ms = stored.settled_at_ms - stored.settled_at_ms % bucket.ms();
         let point = points.entry(start_ms).or_insert(MetricsPoint {
             start_ms,
-            attempts: 0,
+            settlements: 0,
             usage: Usage::default(),
         });
-        let attempts = point.attempts.checked_add(1).ok_or_else(overflow)?;
-        point.usage = add_usage(point.usage, stored.record.usage)?;
-        point.attempts = attempts;
+        let settlements = point.settlements.checked_add(1).ok_or_else(overflow)?;
+        point.usage = add_usage(point.usage, stored.usage)?;
+        point.settlements = settlements;
     }
     Ok(points.into_values().collect())
 }

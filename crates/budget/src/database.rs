@@ -186,14 +186,14 @@ fn atoms(text: &str) -> Result<u128, BudgetError> {
         .map_err(|_| unavailable("malformed stored amount"))
 }
 
-fn unit_columns(unit: CostUnit) -> (&'static str, Option<String>) {
+pub(crate) fn unit_columns(unit: CostUnit) -> (&'static str, Option<String>) {
     match unit {
         CostUnit::Money(currency) => (unit.name(), Some(currency.code().to_owned())),
         _ => (unit.name(), None),
     }
 }
 
-fn unit_from(name: &str, currency: Option<&str>) -> Result<CostUnit, BudgetError> {
+pub(crate) fn unit_from(name: &str, currency: Option<&str>) -> Result<CostUnit, BudgetError> {
     let corrupt = || unavailable("malformed stored unit");
     match (name, currency) {
         ("input_tokens", None) => Ok(CostUnit::InputTokens),

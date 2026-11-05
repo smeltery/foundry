@@ -13,7 +13,7 @@
     "crates/tools/": 3000,
     "crates/identity/": 3000,
     "crates/providers/": 3000,
-    "crates/budget/": 4606,
+    "crates/budget/": 4754,
     "packages/adapter/": 4000,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,

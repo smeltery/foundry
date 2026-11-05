@@ -1,37 +1,38 @@
-//! Usage records and consumption reports from fixture attempts. Days are UTC
-//! calendar days, as the provider specification requires.
+//! Usage rows are written by settlement itself, so reports always agree with
+//! committed spend. Days are UTC calendar days of the settlement time.
 mod usage_fixtures;
 
-use foundry_budget::usage::{
-    AttemptUsage, Bucket, GroupBy, GroupKey, Recording, UsageStore, UtcDate,
-};
-use foundry_budget::{Amount, BudgetStore, Clock, PriceTable, Usage, WallClock};
+use foundry_budget::usage::{Attempt, Bucket, GroupBy, GroupKey, UtcDate};
+use foundry_budget::{Amount, BudgetStore, CostUnit, PriceTable, Usage, WallClock};
 use std::sync::Arc;
 use usage_fixtures::*;
 
 #[test]
 fn daily_lists_active_utc_days_oldest_first_and_excludes_the_end_day() {
-    let (store, clock) = usage_store();
-    record_all(
-        &store,
-        &clock,
-        &[
-            // The last millisecond before the window starts.
-            (at("2026-01-01") - 1, attempt("before", "9", 1)),
-            (at("2026-01-01"), attempt("a", "0.10", 20_000)),
-            // The last millisecond of 2026-01-01 still belongs to it.
-            (at("2026-01-02") - 1, attempt("b", "0.15", 40_000)),
-            (
-                at("2026-01-03") + 12 * HOUR_MS,
-                attempt("c", "0.75", 120_000),
-            ),
-            // The end day is excluded, from its first millisecond.
-            (at("2026-01-04"), attempt("after", "9", 1)),
-        ],
-    );
+    let (store, clock, budget) = fixture_store();
+    let charge = |time, id: &str, cost: &str, compute_ms| {
+        settle(
+            &store,
+            &clock,
+            budget,
+            time,
+            attempt(id),
+            money(cost),
+            calls(100, compute_ms),
+        );
+    };
+    // The last millisecond before the window starts.
+    charge(at("2026-01-01") - 1, "before", "9", 1);
+    charge(at("2026-01-01"), "a", "0.10", 20_000);
+    // The last millisecond of 2026-01-01 still belongs to it.
+    charge(at("2026-01-02") - 1, "b", "0.15", 40_000);
+    charge(at("2026-01-03") + 12 * HOUR_MS, "c", "0.75", 120_000);
+    // The end day is excluded, from its first millisecond.
+    charge(at("2026-01-04"), "after", "9", 1);
 
     let report = store
-        .daily(Some(window("2026-01-01", "2026-01-04")), currency())
+        .usage()
+        .daily(window("2026-01-01", "2026-01-04"), currency())
         .unwrap();
     let days: Vec<(String, String, u64)> = report
         .daily
@@ -54,8 +55,7 @@ fn daily_lists_active_utc_days_oldest_first_and_excludes_the_end_day() {
     );
     assert_eq!(report.total.spend, money("1.00"));
     assert_eq!(report.total.usage.compute_ms, 180_000);
-    assert_eq!(report.total.attempts, 3);
-    assert_eq!(report.daily[0].totals.attempts, 2);
+    assert_eq!(report.total.settlements, 3);
 }
 
 #[test]
@@ -64,74 +64,189 @@ fn a_retried_settlement_is_counted_once() {
     let path = directory.path().join("budget.sqlite");
     let clock = Arc::new(FixtureClock::default());
     clock.set(at("2026-01-01") + HOUR_MS);
-    let budgets = BudgetStore::open(&path, clock.clone()).unwrap();
-    let usage = UsageStore::open(&path, clock.clone()).unwrap();
-
-    let budget = budgets
+    let store = BudgetStore::open(&path, clock.clone()).unwrap();
+    let budget = store
         .create(xts(), Some(money("1")), WallClock::NONE)
         .unwrap();
-    let mut reservation = budgets.reserve(budget, money("0.5")).unwrap();
-    let settled = reservation.commit(money("0.3")).unwrap();
-    let record = attempt("attempt-1", "0.3", 5_000);
-    assert_eq!(usage.record(&record).unwrap(), Recording::Recorded);
-    // The settlement is retried, for example after a lost acknowledgement:
-    // the reservation refuses a second commit and the record is a no-op.
-    assert_eq!(
-        reservation.commit(money("0.3")).unwrap_err().class(),
-        "conflict"
-    );
-    clock.set(clock.now_ms() + DAY_MS);
-    assert_eq!(usage.record(&record).unwrap(), Recording::AlreadyRecorded);
-    // A restarted process retrying the record still counts it once.
-    drop(usage);
-    let usage = UsageStore::open(&path, clock.clone()).unwrap();
-    assert_eq!(usage.record(&record).unwrap(), Recording::AlreadyRecorded);
 
-    let report = usage
-        .daily(Some(window("2026-01-01", "2026-01-03")), currency())
+    let mut reservation = store
+        .reserve_attempt(budget, money("0.5"), attempt("attempt-1"))
         .unwrap();
-    assert_eq!(report.total.spend, settled.committed);
-    assert_eq!(report.total.attempts, 1);
-    // The first recording's day is kept; the retry a day later moves nothing.
+    let settled = reservation
+        .commit_usage(money("0.3"), calls(7, 5_000))
+        .unwrap();
+    // The settlement is retried, for example after a lost acknowledgement.
+    // The reservation is gone, so neither the ledger nor the report changes.
+    clock.set(at("2026-01-02"));
+    let retried = reservation.commit_usage(money("0.3"), calls(7, 5_000));
+    assert_eq!(retried.unwrap_err().class(), "conflict");
+    assert_eq!(reservation.release().unwrap_err().class(), "conflict");
+    drop(reservation);
+    drop(store);
+
+    // A restarted process sees the one row.
+    let store = BudgetStore::open(&path, clock).unwrap();
+    let range = window("2026-01-01", "2026-01-03");
+    let report = store.usage().daily(range, currency()).unwrap();
+    assert_eq!(report.total.spend, settled.charged);
+    assert_eq!(report.total.settlements, 1);
+    assert_eq!(report.total.usage, calls(7, 5_000));
     assert_eq!(report.daily.len(), 1);
     assert_eq!(report.daily[0].date, UtcDate::parse("2026-01-01").unwrap());
-    assert_eq!(budgets.snapshot(budget).unwrap().committed, money("0.3"));
+    assert_eq!(store.snapshot(budget).unwrap().committed, settled.committed);
+}
 
-    // Different content under the same attempt is refused and changes nothing.
-    let changed = attempt("attempt-1", "0.4", 5_000);
-    assert_eq!(usage.record(&changed).unwrap_err().class(), "conflict");
-    let again = usage
-        .daily(Some(window("2026-01-01", "2026-01-03")), currency())
+#[test]
+fn the_settlement_time_fixes_the_day() {
+    let (store, clock, budget) = fixture_store();
+    clock.set(at("2026-01-02") - 1);
+    let mut reservation = store
+        .reserve_attempt(budget, money("1"), attempt("late"))
         .unwrap();
-    assert_eq!(again, report);
+    clock.set(at("2026-01-02") + 1);
+    reservation.commit(money("0.4")).unwrap();
+    let range = window("2026-01-01", "2026-01-03");
+    let report = store.usage().daily(range, currency()).unwrap();
+    assert_eq!(report.daily.len(), 1);
+    assert_eq!(report.daily[0].date, UtcDate::parse("2026-01-02").unwrap());
+}
+
+#[test]
+fn a_dropped_reservation_is_reported_at_its_full_charge() {
+    let (store, clock, budget) = fixture_store();
+    clock.set(at("2026-01-01"));
+    let cancelled = store
+        .reserve_attempt(budget, money("0.50"), attempt("cancelled"))
+        .unwrap();
+    drop(cancelled);
+
+    let committed = store.snapshot(budget).unwrap().committed;
+    assert_eq!(committed, money("0.50"));
+    let range = window("2026-01-01", "2026-01-02");
+    let accounts = store
+        .usage()
+        .grouped(range, currency(), GroupBy::Account)
+        .unwrap();
+    assert_eq!(accounts.items.len(), 1);
+    assert_eq!(accounts.items[0].totals.spend, committed);
+    // The dropped call's token counts are unknown.
+    assert_eq!(accounts.items[0].totals.usage, Usage::default());
+}
+
+#[test]
+fn per_account_totals_match_committed_spend() {
+    let (store, clock, budget) = fixture_store();
+    clock.set(at("2026-02-10"));
+    let on = |id: &str, account: &str| Attempt {
+        account_key: account.into(),
+        ..attempt(id)
+    };
+    let reserve = |id, account, cost| store.reserve_attempt(budget, money(cost), on(id, account));
+    // A release, a drop, unmetered spend, then two calls of one attempt where
+    // the last overruns (an overrun refuses any later reservation).
+    reserve("b", "secondary", "0.3").unwrap().release().unwrap();
+    drop(reserve("c", "secondary", "0.25").unwrap());
+    // Unmetered spend moves the ledger but writes no usage row.
+    let mut unmetered = store.reserve(budget, money("0.05")).unwrap();
+    let counted = unmetered.commit_usage(money("0.05"), calls(1, 0));
+    assert_eq!(counted.unwrap_err().class(), "invalid_request");
+    unmetered.commit(money("0.05")).unwrap();
+    let mut first = reserve("a", "primary", "0.2").unwrap();
+    first.commit_usage(money("0.2"), calls(100, 0)).unwrap();
+    let mut second = reserve("a", "primary", "0.1").unwrap();
+    assert!(
+        second
+            .commit_usage(money("0.15"), calls(50, 0))
+            .unwrap()
+            .overrun
+    );
+
+    let usage = store.usage();
+    let range = window("2026-02-01", "2026-03-01");
+    let accounts = usage.grouped(range, currency(), GroupBy::Account).unwrap();
+    let account = |key: &str| GroupKey::Account {
+        provider_id: "fixture".into(),
+        account_key: key.into(),
+    };
+    let spends: Vec<(GroupKey, Amount, u64)> = accounts
+        .items
+        .iter()
+        .map(|item| (item.key.clone(), item.totals.spend, item.totals.settlements))
+        .collect();
+    assert_eq!(
+        spends,
+        [
+            (account("primary"), money("0.35"), 2),
+            (account("secondary"), money("0.25"), 2),
+        ]
+    );
+    let committed = store.snapshot(budget).unwrap().committed;
+    let metered = accounts.total.spend;
+    assert_eq!(metered.checked_add(money("0.05")).unwrap(), committed);
+
+    let attempts = usage.grouped(range, currency(), GroupBy::Attempt).unwrap();
+    assert_eq!(attempts.items[0].key, GroupKey::Attempt("a".into()));
+    assert_eq!(attempts.items[0].totals.usage.input_tokens, 150);
+    assert_eq!(attempts.total, accounts.total);
+}
+
+#[test]
+fn a_failed_settlement_writes_no_usage() {
+    let (store, clock, budget) = fixture_store();
+    clock.set(at("2026-01-01"));
+    let mut reservation = store
+        .reserve_attempt(budget, money("1"), attempt("a"))
+        .unwrap();
+    let tokens = Amount::from_atoms(CostUnit::InputTokens, 1).unwrap();
+    let refused = reservation.commit(tokens).unwrap_err();
+    assert_eq!(refused.class(), "invalid_request");
+    let range = window("2026-01-01", "2026-01-02");
+    assert!(
+        store
+            .usage()
+            .metrics(range, Bucket::Day)
+            .unwrap()
+            .is_empty()
+    );
+    // The reservation stayed open; the corrected retry writes exactly one row.
+    reservation.commit(money("0.6")).unwrap();
+    let report = store.usage().daily(range, currency()).unwrap();
+    assert_eq!(report.total.settlements, 1);
+    assert_eq!(
+        report.total.spend,
+        store.snapshot(budget).unwrap().committed
+    );
 }
 
 #[test]
 fn grouping_by_session_orders_by_spend_with_unattributed_usage() {
-    let (store, clock) = usage_store();
-    let in_session = |id: &str, session: &str, cost: &str| AttemptUsage {
-        session_id: Some(session.into()),
-        ..attempt(id, cost, 1_000)
+    let (store, clock, budget) = fixture_store();
+    let charge = |id: &str, session: Option<&str>, cost: &str| {
+        let attempt = Attempt {
+            session_id: session.map(Into::into),
+            ..attempt(id)
+        };
+        let time = at("2026-01-01");
+        settle(
+            &store,
+            &clock,
+            budget,
+            time,
+            attempt,
+            money(cost),
+            calls(1, 0),
+        );
     };
-    let day = at("2026-01-01");
-    record_all(
-        &store,
-        &clock,
-        &[
-            (day, in_session("a", "session-1", "0.10")),
-            (day + 1, attempt("b", "0.15", 1_000)),
-            (day + 2, in_session("c", "session-2", "0.60")),
-            (day + 3, attempt("d", "0.25", 1_000)),
-            // Equal spend: the named group sorts first, then by identifier.
-            (day + 4, in_session("e", "session-0", "0.40")),
-        ],
-    );
+    charge("a", Some("session-1"), "0.10");
+    charge("b", None, "0.15");
+    charge("c", Some("session-2"), "0.60");
+    charge("d", None, "0.25");
+    // Equal spend: the named group sorts first, then by identifier.
+    charge("e", Some("session-0"), "0.40");
+    let range = window("2026-01-01", "2026-01-02");
     let report = store
-        .grouped(
-            Some(window("2026-01-01", "2026-01-02")),
-            currency(),
-            GroupBy::Session,
-        )
+        .usage()
+        .grouped(range, currency(), GroupBy::Session)
         .unwrap();
     let items: Vec<(GroupKey, Amount)> = report
         .items
@@ -151,45 +266,8 @@ fn grouping_by_session_orders_by_spend_with_unattributed_usage() {
 }
 
 #[test]
-fn per_account_totals_split_by_provider_account() {
-    let (store, clock) = usage_store();
-    let on = |id: &str, account: &str, cost: &str| AttemptUsage {
-        account_key: account.into(),
-        user_id: Some("user-1".into()),
-        ..attempt(id, cost, 1_000)
-    };
-    let day = at("2026-02-10");
-    record_all(
-        &store,
-        &clock,
-        &[
-            (day, on("a", "primary", "0.2")),
-            (day + 1, on("b", "secondary", "0.5")),
-            (day + 2, on("c", "primary", "0.1")),
-        ],
-    );
-    let range = Some(window("2026-02-01", "2026-03-01"));
-    let report = store.grouped(range, currency(), GroupBy::Account).unwrap();
-    let account = |key: &str| GroupKey::Account {
-        provider_id: "fixture".into(),
-        account_key: key.into(),
-    };
-    assert_eq!(report.items.len(), 2);
-    assert_eq!(report.items[0].key, account("secondary"));
-    assert_eq!(report.items[0].totals.spend, money("0.5"));
-    assert_eq!(report.items[1].key, account("primary"));
-    assert_eq!(report.items[1].totals.spend, money("0.3"));
-    assert_eq!(report.items[1].totals.attempts, 2);
-    assert_eq!(report.items[1].totals.usage.input_tokens, 200);
-    let users = store.grouped(range, currency(), GroupBy::User).unwrap();
-    assert_eq!(users.items.len(), 1);
-    assert_eq!(users.items[0].key, GroupKey::User("user-1".into()));
-    assert_eq!(users.total, report.total);
-}
-
-#[test]
 fn metrics_report_integer_units_per_bucket_from_fixture_prices() {
-    let (store, clock) = usage_store();
+    let (store, clock, budget) = fixture_store();
     let usage = Usage {
         input_tokens: 1_200,
         output_tokens: 300,
@@ -200,39 +278,39 @@ fn metrics_report_integer_units_per_bucket_from_fixture_prices() {
         .unwrap();
     // 1,200 tokens at 1,000 nano-units plus 300 at 4,000.
     assert_eq!(cost, money("0.0024"));
-    let priced = AttemptUsage {
-        usage,
-        cost,
-        ..attempt("a", "0", 0)
-    };
-    record_all(&store, &clock, &[(at("2026-01-01") + 30 * 60_000, priced)]);
+    let time = at("2026-01-01") + 30 * 60_000;
+    settle(&store, &clock, budget, time, attempt("a"), cost, usage);
 
-    let range = Some(window("2026-01-01", "2026-01-02"));
-    let days = store.metrics(range, Bucket::default()).unwrap();
+    let range = window("2026-01-01", "2026-01-02");
+    let days = store.usage().metrics(range, Bucket::default()).unwrap();
     assert_eq!(days.len(), 1);
     assert_eq!(days[0].start_ms, at("2026-01-01"));
     assert_eq!(days[0].usage, usage);
-    let hours = store.metrics(range, Bucket::Hour).unwrap();
+    let hours = store.usage().metrics(range, Bucket::Hour).unwrap();
     assert_eq!(hours[0].start_ms, at("2026-01-01"));
-    // Reading reports records nothing.
-    assert_eq!(store.metrics(range, Bucket::Day).unwrap(), days);
+    let spend = store.usage().daily(range, currency()).unwrap().total.spend;
+    assert_eq!(spend, cost);
 }
 
 #[test]
 fn the_default_window_is_the_last_thirty_utc_days_including_today() {
-    let (store, clock) = usage_store();
-    let today = at("2026-03-31") + 5 * HOUR_MS;
-    record_all(
-        &store,
-        &clock,
-        &[
-            (at("2026-03-01") + 1, attempt("too-old", "1", 0)),
-            (at("2026-03-02"), attempt("oldest", "0.1", 0)),
-            (today, attempt("today", "0.2", 0)),
-        ],
-    );
-    let report = store.daily(None, currency()).unwrap();
-    assert_eq!(report.window, window("2026-03-02", "2026-04-01"));
+    let (store, clock, budget) = fixture_store();
+    let charge = |time, id: &str, cost: &str| {
+        settle(
+            &store,
+            &clock,
+            budget,
+            time,
+            attempt(id),
+            money(cost),
+            Usage::default(),
+        );
+    };
+    charge(at("2026-03-01") + 1, "too-old", "1");
+    charge(at("2026-03-02"), "oldest", "0.1");
+    charge(at("2026-03-31") + 5 * HOUR_MS, "today", "0.2");
+    let report = store.usage().daily(None, currency()).unwrap();
+    assert_eq!(Some(report.window), window("2026-03-02", "2026-04-01"));
     assert_eq!(report.window.days(), 30);
     assert_eq!(report.total.spend, money("0.3"));
 }
