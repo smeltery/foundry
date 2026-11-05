@@ -704,8 +704,9 @@ without `I`, `O`, `0` and `1`, so the secret carries 60 random bits. Input is
 case-insensitive and the hyphens between secret groups are optional. Text of the
 wrong length or with symbols outside the alphabet is refused as
 `pairing_invalid` without using up an attempt. The store keeps only a digest of
-the secret bound to the prefix, and erases it once the pairing is claimed,
-exhausted or expired. A code lives at most 10 minutes. Evidence:
+the secret bound to the prefix. It erases the digest when the pairing is
+claimed or exhausted, and erases an expired pairing's digest on the next pairing
+write. A code lives at most 10 minutes. Evidence:
 [`store_pairing.rs`](../../crates/identity/tests/store_pairing.rs)
 (`codes_show_three_secret_groups_and_accept_any_case_or_grouping`,
 `malformed_codes_and_bad_inputs_are_refused`,

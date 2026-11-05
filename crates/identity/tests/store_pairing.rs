@@ -246,6 +246,11 @@ fn malformed_codes_and_bad_inputs_are_refused() {
         format!("{prefix}-0{}", &secret[1..]),
         format!("{prefix}-{}O", &secret[..11]),
         format!("{prefix}-{}é", &secret[..11]),
+        format!("{prefix}-{}\u{410}", &secret[..11]),
+        format!("{prefix}-{}\u{2010}{}", &secret[..4], &secret[4..]),
+        format!("{code}-"),
+        format!(" {code}"),
+        format!("{code}\n"),
     ] {
         assert_eq!(
             store.claim_pairing(&own, "cli-1", &text),
@@ -253,10 +258,8 @@ fn malformed_codes_and_bad_inputs_are_refused() {
             "{text}"
         );
     }
-    assert_eq!(
-        store.pairing(&ws("ws-a"), prefix).unwrap().failed_attempts,
-        0
-    );
+    let lookup = store.pairing(&ws("ws-a"), &prefix.to_lowercase());
+    assert_eq!(lookup.unwrap().failed_attempts, 0);
     assert_eq!(
         store.claim_pairing(&own, "", code),
         Err(StoreError::InvalidRequest { field: "client" })

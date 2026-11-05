@@ -318,15 +318,16 @@ impl CredentialStore {
         })?
     }
 
-    /// The pairing with public `prefix` in `workspace`; one in another
-    /// workspace is `NotFound`.
+    /// The pairing with public `prefix` in `workspace`, ignoring case as
+    /// claims do; one in another workspace is `NotFound`.
     pub fn pairing(
         &self,
         workspace: &WorkspaceId,
         prefix: &str,
     ) -> Result<PairingRecord, StoreError> {
+        let prefix = prefix.to_ascii_uppercase();
         self.read(|transaction, now_ms| {
-            load(transaction, prefix, now_ms)?
+            load(transaction, &prefix, now_ms)?
                 .map(|(record, _)| record)
                 .filter(|record| &record.workspace == workspace)
                 .ok_or(StoreError::NotFound { what: "pairing" })
