@@ -16,7 +16,8 @@ fn main() {
     // Publish by rename: a polling reader must never see an empty id.
     std::fs::write("session-id.partial", id).unwrap();
     std::fs::rename("session-id.partial", "session-id").unwrap();
-    for _ in 0..1000 {
+    // Self-release after 30s, well past the test's 15s deadline.
+    for _ in 0..3000 {
         if std::path::Path::new("release").exists() {
             break;
         }

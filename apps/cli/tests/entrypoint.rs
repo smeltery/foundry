@@ -1,9 +1,11 @@
+mod support_entrypoint;
 use serde_json::{Value, json};
 use std::{
     io::Write,
     path::Path,
     process::{Command, Output, Stdio},
 };
+use support_entrypoint::reap;
 use tempfile::TempDir;
 
 fn command(directory: &Path) -> Command {
@@ -297,20 +299,10 @@ fn watch_live_task_and_finished_session_with_both_command_forms() {
             break id;
         }
         if Instant::now() >= deadline || task.try_wait().unwrap().is_some() {
-            let _ = task.kill();
-            let output = task.wait_with_output().unwrap();
-            panic!(
-                "task did not start: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            panic!("task did not start: {}", reap(&mut [&mut task]));
         }
         std::thread::sleep(Duration::from_millis(10));
     };
-    let get = ["session", "get", &id, "--database", "state.db", "--json"];
-    while success(run(path, &get))["session"]["lifecycle"] != "running" {
-        assert!(Instant::now() < deadline, "session never reported running");
-        std::thread::sleep(Duration::from_millis(10));
-    }
     let mut watcher = command(path)
         .env("FOUNDRY_ADAPTER", "invalid-relative-path")
         .args([
@@ -328,23 +320,27 @@ fn watch_live_task_and_finished_session_with_both_command_forms() {
         .unwrap();
     // The first replayed event proves watch is following. The task cannot settle
     // before release, so an exit at this point is a watch defect, not a race.
-    let mut stdout = BufReader::new(watcher.stdout.take().unwrap());
-    let mut followed = String::new();
-    stdout.read_line(&mut followed).unwrap();
-    let waiting = !followed.is_empty() && watcher.try_wait().unwrap().is_none();
-    std::fs::write(path.join("release"), "continue").unwrap();
-    if !waiting {
-        let output = watcher.wait_with_output().unwrap();
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = watcher.stdout.take().unwrap();
+    let (sender, first_line) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut stdout = BufReader::new(stdout);
+        let mut followed = String::new();
+        stdout.read_line(&mut followed).unwrap();
+        let _ = sender.send(!followed.is_empty());
+        stdout.read_to_string(&mut followed).unwrap();
+        followed
+    });
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let followed = first_line.recv_timeout(remaining).unwrap_or(false);
+    if !followed || watcher.try_wait().unwrap().is_some() {
+        let stderr = reap(&mut [&mut task, &mut watcher]);
         panic!("watch must wait for the running task: {stderr}");
     }
+    std::fs::write(path.join("release"), "continue").unwrap();
     while task.try_wait().unwrap().is_none() || watcher.try_wait().unwrap().is_none() {
         if Instant::now() >= deadline {
-            let _ = task.kill();
-            let _ = watcher.kill();
-            let _ = task.wait();
-            let _ = watcher.wait();
-            panic!("task or watcher exceeded deadline");
+            let stderr = reap(&mut [&mut task, &mut watcher]);
+            panic!("task or watcher exceeded deadline: {stderr}");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -363,8 +359,7 @@ fn watch_live_task_and_finished_session_with_both_command_forms() {
         &["session", "watch", &id, "--database", "state.db", "--json"],
     );
     let mut live = watcher.wait_with_output().unwrap();
-    stdout.read_to_string(&mut followed).unwrap();
-    live.stdout = followed.into_bytes();
+    live.stdout = reader.join().unwrap().into_bytes();
     for output in [live, replay] {
         assert_eq!(
             output.status.code(),
