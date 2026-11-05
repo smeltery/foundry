@@ -36,6 +36,8 @@ def select_groups(event, paths):
             selected.update(("rust", "integration", "mcp-sdk"))
         elif path.startswith("packages/adapter/"):
             selected.update(("rust", "adapter", "integration"))
+        elif path.startswith("packages/provider-local/"):
+            selected.add("adapter")
         else:
             return GROUPS
     return tuple(group for group in GROUPS if group in selected)

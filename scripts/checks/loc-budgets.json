@@ -11,15 +11,16 @@
     "crates/network/": 47802,
     "crates/connectors/": 3000,
     "crates/tools/": 3000,
-    "crates/identity/": 5449,
+    "crates/identity/": 9293,
     "crates/providers/": 6223,
     "crates/budget/": 5056,
     "packages/adapter/": 4000,
+    "packages/provider-local/": 1900,
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
     "scripts/ci/": 616,
     "scripts/release/": 1200,
-    "tests/": 5375,
+    "tests/": 5379,
     "vendor/netwatch/": 5695
   },
   "files": {
