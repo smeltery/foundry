@@ -1,5 +1,5 @@
-//! Pairing codes: single use, expiry, attempt limits, digest erasure and
-//! concurrent claims through separate connections.
+//! Pairing codes: format, single use, expiry, attempt limits, digest erasure
+//! and concurrent claims through separate connections.
 use std::path::Path;
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -34,10 +34,10 @@ fn login(store: &CredentialStore, user: &str, workspace: &str) -> String {
 /// The issued code with its secret half replaced, keeping the public prefix.
 fn wrong_secret(code: &str) -> String {
     let (prefix, secret) = code.split_once('-').unwrap();
-    let replacement = if secret == "AAAAAAAA" {
-        "BBBBBBBB"
+    let replacement = if secret == "AAAA-AAAA-AAAA" {
+        "BBBB-BBBB-BBBB"
     } else {
-        "AAAAAAAA"
+        "AAAA-AAAA-AAAA"
     };
     format!("{prefix}-{replacement}")
 }
@@ -48,6 +48,33 @@ fn store() -> (CredentialStore, Arc<ManualClock>) {
         CredentialStore::open_in_memory(clock.clone()).unwrap(),
         clock,
     )
+}
+
+#[test]
+fn codes_show_three_secret_groups_and_accept_any_case_or_grouping() {
+    let (store, _) = store();
+    let own = login(&store, "user-a", "ws-a");
+    let variants: [fn(&str) -> String; 4] = [
+        str::to_owned,
+        |code| format!("{}{}", &code[..9], code[9..].replace('-', "")),
+        |code| format!("{}{}", &code[..13], code[13..].replacen('-', "", 1)),
+        str::to_lowercase,
+    ];
+    for variant in variants {
+        let issued = store
+            .issue_pairing(&who("user-a"), &ws("ws-a"), WINDOW, 1)
+            .unwrap();
+        let code = issued.code.expose();
+        let lengths: Vec<usize> = code.split('-').map(str::len).collect();
+        assert_eq!(lengths, [8, 4, 4, 4], "{code}");
+        assert!(code.starts_with(&issued.record.prefix));
+        // Twelve secret symbols from a 32-symbol alphabet: 60 random bits.
+        let alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789-";
+        assert!(code.chars().all(|symbol| alphabet.contains(symbol)));
+        let presented = variant(code);
+        let claimed = store.claim_pairing(&own, "cli-1", &presented);
+        assert!(claimed.is_ok(), "{presented}");
+    }
 }
 
 #[test]
@@ -200,18 +227,36 @@ fn malformed_codes_and_bad_inputs_are_refused() {
         .unwrap();
     let code = issued.code.expose();
     let own = login(&store, "user-a", "ws-a");
+    let prefix = &issued.record.prefix;
+    let secret = code[9..].replace('-', "");
+    // Each keeps the real prefix, so it would use up an attempt if it reached
+    // the stored digest; there are more of them than the pairing allows.
     for text in [
-        "",
-        "-",
-        "ABCDEFGH",
-        &code.to_lowercase(),
-        &code.replace('-', "_"),
+        String::new(),
+        "-".to_owned(),
+        "ABCDEFGH".to_owned(),
+        code.replace('-', "_"),
+        format!("{prefix}{secret}"),
+        format!("{prefix}-{}", &secret[..8]),
+        format!("{prefix}-{}", &secret[..11]),
+        format!("{prefix}-{secret}A"),
+        format!("{prefix}-{}-{}", &secret[..3], &secret[3..]),
+        format!("{prefix}-{}--{}", &secret[..4], &secret[4..]),
+        format!("{prefix}--{secret}"),
+        format!("{prefix}-0{}", &secret[1..]),
+        format!("{prefix}-{}O", &secret[..11]),
+        format!("{prefix}-{}é", &secret[..11]),
     ] {
         assert_eq!(
-            store.claim_pairing(&own, "cli-1", text),
-            Err(StoreError::PairingInvalid)
+            store.claim_pairing(&own, "cli-1", &text),
+            Err(StoreError::PairingInvalid),
+            "{text}"
         );
     }
+    assert_eq!(
+        store.pairing(&ws("ws-a"), prefix).unwrap().failed_attempts,
+        0
+    );
     assert_eq!(
         store.claim_pairing(&own, "", code),
         Err(StoreError::InvalidRequest { field: "client" })

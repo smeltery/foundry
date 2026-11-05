@@ -696,7 +696,20 @@ Audit rows (external `capabilities.json`, group GAP-003): API-EFB31B0659144,
 API-E843B640767A6, API-E13ACC3718754, API-E41EA65B1CA27, API-E24F092B775EF.
 Vectors: `tests/identity/vectors/secret_import.json`.
 
-**Foundry today.** None.
+**Foundry today.** No operation is exposed. The identity credential store issues
+and claims pairing codes. A code is an 8-symbol public prefix and a 12-symbol
+secret, shown as `ABCDEFGH-JKLM-NPQR-STUV`: three groups of four after the
+prefix. Symbols come from a 32-symbol alphabet of upper-case letters and digits
+without `I`, `O`, `0` and `1`, so the secret carries 60 random bits. Input is
+case-insensitive and the hyphens between secret groups are optional. Text of the
+wrong length or with symbols outside the alphabet is refused as
+`pairing_invalid` without using up an attempt. The store keeps only a digest of
+the secret bound to the prefix, and erases it once the pairing is claimed,
+exhausted or expired. A code lives at most 10 minutes. Evidence:
+[`store_pairing.rs`](../../crates/identity/tests/store_pairing.rs)
+(`codes_show_three_secret_groups_and_accept_any_case_or_grouping`,
+`malformed_codes_and_bad_inputs_are_refused`,
+`digests_are_erased_once_a_pairing_is_claimed_exhausted_or_expired`).
 
 **Held specification (C4, C5).**
 
