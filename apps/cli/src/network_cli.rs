@@ -52,6 +52,8 @@ pub fn normalize(
 }
 fn validate(command: &StandaloneCommand) -> Result<(), CommandError> {
     match command {
+        // The grammar accepts an empty selection; refusing it here, before any backend
+        // request, is a deliberate choice so that no backend can treat it as "all".
         StandaloneCommand::Approve { ids, all } | StandaloneCommand::Reject { ids, all }
             if ids.is_empty() && !all =>
         {
