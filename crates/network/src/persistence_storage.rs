@@ -98,9 +98,7 @@ impl Protection {
         // validating the supplied final directory without following a link.
         let root = std::fs::canonicalize(root).map_err(|_| PersistenceError::Storage)?;
         inspect(&root.join(name))?;
-        for suffix in ["-wal", "-shm", "-journal"] {
-            inspect_sidecar(&root.join(format!("{name}{suffix}")))?;
-        }
+        inspect_sidecars(&root, name)?;
         let database = root.join(name);
         let mut options = OpenOptions::new();
         options
@@ -158,10 +156,7 @@ impl Protection {
                 return Err(PersistenceError::UnsafeStorage);
             }
         }
-        for suffix in ["-wal", "-shm", "-journal"] {
-            inspect_sidecar(&self.root.join(format!("{}{suffix}", self.name)))?;
-        }
-        Ok(())
+        inspect_sidecars(&self.root, &self.name)
     }
     #[cfg(unix)]
     pub fn sync(&self) -> Result<()> {
@@ -226,6 +221,33 @@ fn inspect(path: &Path) -> Result<()> {
         &file.metadata().map_err(|_| PersistenceError::Storage)?,
         false,
     )
+}
+/// SQLite holds its WAL-index locks as POSIX advisory locks on `-shm`. Those
+/// belong to the process, not a descriptor: closing any descriptor this process
+/// opened on that inode releases every lock SQLite holds there. Another process
+/// can then take the WAL index as abandoned and truncate it under this
+/// process's live mapping (SIGBUS). So `-shm` is inspected by path metadata
+/// alone and never opened. SQLite locks neither `-wal` nor `-journal`, so
+/// those keep the descriptor generation check.
+#[cfg(unix)]
+fn inspect_sidecars(root: &Path, name: &str) -> Result<()> {
+    inspect_sidecar(&root.join(format!("{name}-wal")))?;
+    inspect_wal_index(&root.join(format!("{name}-shm")))?;
+    inspect_sidecar(&root.join(format!("{name}-journal")))
+}
+#[cfg(unix)]
+fn inspect_wal_index(path: &Path) -> Result<()> {
+    // lstat rejects a symlink, extra hardlink, foreign owner or widened mode
+    // without a descriptor. An already unlinked generation is observed again.
+    for _ in 0..4 {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if sidecar_live(&metadata)? => return Ok(()),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(PersistenceError::Storage),
+        }
+    }
+    Err(PersistenceError::Busy)
 }
 #[cfg(unix)]
 fn inspect_sidecar(path: &Path) -> Result<()> {
