@@ -12,15 +12,24 @@ pub fn decode_create_request(json: &str) -> std::result::Result<CreateSession, C
         .map_err(|error| ContractError::Invalid(format!("create request: {error}")))
 }
 
+/// Refuses a well-formed tool profile that names no known profile. The
+/// contract checks only the format, so a caller that creates through the store
+/// directly must run this after `validate` and before the write.
+pub fn check_tool_profile_known(request: &CreateSession) -> std::result::Result<(), ContractError> {
+    match &request.tool_profile {
+        Some(profile) if ToolProfile::named(profile).is_err() => {
+            Err(ContractError::Unsupported("tool profile".into()))
+        }
+        _ => Ok(()),
+    }
+}
+
 impl Service {
     /// Reports whether the session was newly created or replayed for its key.
     /// An unknown tool profile is unsupported before anything is written.
     pub fn create_session(&mut self, request: CreateSession) -> Result<CreateReceipt> {
         request.validate().map_err(StoreError::from)?;
-        if let Some(profile) = &request.tool_profile {
-            let unsupported = ContractError::Unsupported("tool profile".into());
-            ToolProfile::named(profile).map_err(|_| StoreError::from(unsupported))?;
-        }
+        check_tool_profile_known(&request).map_err(StoreError::from)?;
         Ok(self.store.create_session(request)?)
     }
 

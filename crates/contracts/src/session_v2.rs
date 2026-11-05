@@ -210,6 +210,7 @@ impl CreateSession {
         }
         if let Some(profile) = &self.tool_profile {
             label("tool profile", profile, MAX_REFERENCE_BYTES)?;
+            reference("tool profile", profile)?;
         }
         if let Some(SessionOrigin::External {
             interface: Some(interface),
@@ -280,6 +281,23 @@ fn label(field: &str, value: &str, max_bytes: usize) -> Result<(), ContractError
     if value.trim().is_empty() || value.len() > max_bytes {
         return Err(ContractError::Invalid(format!(
             "{field} must contain 1 to {max_bytes} UTF-8 bytes"
+        )));
+    }
+    Ok(())
+}
+
+/// A reference is `/`-separated segments of lowercase ASCII letters, digits,
+/// `-`, `_` and `.`, with no empty, `.` or `..` segment.
+fn reference(field: &str, value: &str) -> Result<(), ContractError> {
+    let segment_ok = |segment: &str| {
+        !matches!(segment, "" | "." | "..")
+            && segment
+                .bytes()
+                .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.'))
+    };
+    if !value.split('/').all(segment_ok) {
+        return Err(ContractError::Invalid(format!(
+            "{field} must be lowercase segments of letters, digits, '-', '_' or '.'"
         )));
     }
     Ok(())
