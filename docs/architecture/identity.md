@@ -773,6 +773,39 @@ Vectors: `tests/identity/vectors/settings.json`.
 - Errors: `invalid_request`, `unauthenticated`, `forbidden`, `not_found`,
   `rate_limited`.
 
+## Local authorization server fixture
+
+`foundry_identity::oauth` is an in-process OAuth authorization server for tests.
+It is not an identity authority: using one is decision C1, and it binds no
+socket until C2 settles a transport. All parameter, error and path names are
+provisional pending NIC-34 D1 and D6. Evidence:
+[`oauth_code.rs`](../../crates/identity/tests/oauth_code.rs),
+[`oauth_device.rs`](../../crates/identity/tests/oauth_device.rs) and
+[`oauth_tokens.rs`](../../crates/identity/tests/oauth_tokens.rs).
+
+- **Authorization code.** PKCE is required and only `S256` is accepted. A code
+  issued to one client and presented by another is refused and stays usable by
+  its own client. Any other presentation consumes it. Presenting it again
+  revokes the tokens it issued.
+- **Loopback redirects.** Only `http` to `127.0.0.1` or `[::1]` is accepted;
+  `localhost` is refused. Following RFC 8252 section 7.3, the request may use
+  any port. Scheme, host, path and query must match a registered URI byte for
+  byte. The token request must repeat the redirect URI exactly as the
+  authorization request sent it.
+- **Device authorization.** Early polls slow down. A user code is matched without
+  regard to case or the group separator. After five wrong user codes within 60
+  seconds, every approval and denial is refused until that window ends. The
+  limit is server-wide because the fixture does not know who is typing.
+- **Refresh rotation.** Reusing a rotated refresh token revokes its whole token
+  family.
+- **Introspection** shows an active token only to the client it was issued to,
+  or to a confidential client registered as an introspector. Every other caller
+  sees it as inactive.
+- **Revocation.** Revoking a refresh token revokes its family. Revoking an access
+  token revokes only that token.
+- **Limitations.** State is held in memory only, there is no consent page, and
+  the lifetimes are provisional.
+
 ## Fixture vectors
 
 Each vector file lists cases with an operation, audit rows, an optional caller, an
