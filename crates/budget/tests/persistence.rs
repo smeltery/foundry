@@ -112,7 +112,7 @@ fn the_database_uses_wal_and_its_own_schema_version() {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
     let application_id: i64 = connection
         .query_row("PRAGMA application_id", [], |row| row.get(0))
         .unwrap();
@@ -126,12 +126,12 @@ fn the_database_uses_wal_and_its_own_schema_version() {
 
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection
-        .execute("UPDATE budget_schema_version SET version = 2", [])
+        .execute("UPDATE budget_schema_version SET version = 3", [])
         .unwrap();
     drop(connection);
     let error = BudgetStore::open(&path, clock).unwrap_err();
     assert_eq!(error.class(), "unavailable");
-    assert!(error.to_string().contains("unsupported schema version 2"));
+    assert!(error.to_string().contains("unsupported schema version 3"));
 }
 
 #[test]

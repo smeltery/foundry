@@ -16,7 +16,11 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const SCHEMA_VERSION: i64 = 1;
+/// Schema steps applied after the version 1 schema, in order: entry `n`
+/// upgrades version `n + 1` to `n + 2`.
+const STEPS: &[&str] = &[crate::usage::SCHEMA_STEP];
+
+const SCHEMA_VERSION: i64 = 1 + STEPS.len() as i64;
 
 /// Marks a file as a budget database in the SQLite header ("FBDG").
 const APPLICATION_ID: i64 = 0x4642_4447;
@@ -105,7 +109,8 @@ fn is_busy(error: &rusqlite::Error) -> bool {
 }
 
 /// Creates the schema in an empty file, or checks that an existing file is a
-/// budget database at the supported version. A file holding anything else is
+/// budget database at a known version and upgrades it to the current one in
+/// the same transaction. A file holding anything else, or a newer version, is
 /// refused untouched.
 fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
     connection
@@ -124,14 +129,12 @@ fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
         (0, 0) => {
             transaction.execute_batch(SCHEMA).storage()?;
             transaction
-                .execute(
-                    "INSERT INTO budget_schema_version (version) VALUES (?1)",
-                    [SCHEMA_VERSION],
-                )
+                .execute("INSERT INTO budget_schema_version (version) VALUES (1)", [])
                 .storage()?;
             transaction
                 .execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
                 .storage()?;
+            upgrade(&transaction, 1)?;
         }
         (APPLICATION_ID, _) => {
             let version: Option<i64> = transaction
@@ -140,15 +143,37 @@ fn prepare(mut connection: Connection) -> Result<Connection, BudgetError> {
                 })
                 .optional()
                 .storage()?;
-            if version != Some(SCHEMA_VERSION) {
-                let found = version.map_or("none".to_owned(), |version| version.to_string());
-                return Err(unavailable(format!("unsupported schema version {found}")));
+            match version {
+                Some(version) if (1..=SCHEMA_VERSION).contains(&version) => {
+                    upgrade(&transaction, version)?;
+                }
+                _ => {
+                    let found = version.map_or("none".to_owned(), |version| version.to_string());
+                    return Err(unavailable(format!("unsupported schema version {found}")));
+                }
             }
         }
         _ => return Err(unavailable("not a budget database")),
     }
     transaction.commit().storage()?;
     Ok(connection)
+}
+
+/// Applies every step after `from` and records the current version.
+fn upgrade(connection: &Connection, from: i64) -> Result<(), BudgetError> {
+    if from == SCHEMA_VERSION {
+        return Ok(());
+    }
+    for step in &STEPS[(from - 1) as usize..] {
+        connection.execute_batch(step).storage()?;
+    }
+    connection
+        .execute(
+            "UPDATE budget_schema_version SET version = ?1",
+            [SCHEMA_VERSION],
+        )
+        .storage()?;
+    Ok(())
 }
 
 fn to_sql(value: u64) -> Result<i64, BudgetError> {
@@ -164,14 +189,14 @@ fn atoms(text: &str) -> Result<u128, BudgetError> {
         .map_err(|_| unavailable("malformed stored amount"))
 }
 
-fn unit_columns(unit: CostUnit) -> (&'static str, Option<String>) {
+pub(crate) fn unit_columns(unit: CostUnit) -> (&'static str, Option<String>) {
     match unit {
         CostUnit::Money(currency) => (unit.name(), Some(currency.code().to_owned())),
         _ => (unit.name(), None),
     }
 }
 
-fn unit_from(name: &str, currency: Option<&str>) -> Result<CostUnit, BudgetError> {
+pub(crate) fn unit_from(name: &str, currency: Option<&str>) -> Result<CostUnit, BudgetError> {
     let corrupt = || unavailable("malformed stored unit");
     match (name, currency) {
         ("input_tokens", None) => Ok(CostUnit::InputTokens),
