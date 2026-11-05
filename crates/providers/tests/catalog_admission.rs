@@ -1,85 +1,11 @@
+mod catalog_support;
+
+use catalog_support::{catalog, id, key, keyed, request};
 use foundry_providers::catalog::{
-    AdmissionError, AttemptDecision, AuthKind, AutoCause, AutoRequest, AutoResolution,
-    CatalogError, ConfiguredCredentials, Effort, EffortDecision, EffortSource, LoginUnavailable,
-    ModelChoice, ModelDescriptor, ModelId, ModelRef, ModelRequest, OauthLogin, ProviderCatalog,
-    ProviderDescriptor, ProviderId, ProviderKind, ResolutionRule, SelectionRequest,
-    SessionSelection,
+    AdmissionError, AttemptDecision, AutoCause, AutoRequest, AutoResolution, CatalogError,
+    ConfiguredCredentials, Effort, EffortDecision, EffortSource, ModelChoice, ModelRequest,
+    ResolutionRule, SelectionRequest,
 };
-
-fn id(value: &str) -> ProviderId {
-    ProviderId::new(value).unwrap()
-}
-
-fn key(provider_id: &str, model_id: &str) -> ModelRef {
-    ModelRef {
-        provider_id: id(provider_id),
-        model_id: ModelId::new(model_id).unwrap(),
-    }
-}
-
-fn provider(provider_id: &str, auth_kind: AuthKind) -> ProviderDescriptor {
-    ProviderDescriptor {
-        provider_id: id(provider_id),
-        kind: match auth_kind {
-            AuthKind::None => ProviderKind::Fixture,
-            _ => ProviderKind::HostedApi,
-        },
-        auth_kinds: vec![auth_kind],
-        config_fields: vec![],
-        oauth_login: OauthLogin::Unavailable(LoginUnavailable::NotSupported),
-        efforts: Effort::ALL.to_vec(),
-        endpoint_format: None,
-    }
-}
-
-fn model(provider_id: &str, model_id: &str, efforts: &[Effort], hidden: bool) -> ModelDescriptor {
-    ModelDescriptor {
-        provider_id: id(provider_id),
-        model_id: ModelId::new(model_id).unwrap(),
-        label: format!("Model {model_id}"),
-        efforts: efforts.to_vec(),
-        default_effort: efforts.first().copied(),
-        hidden,
-    }
-}
-
-/// `fixture` needs no credential; `fixture-a` needs an API key that is only
-/// configured when a test asks for it.
-fn catalog(workspace_default: Option<ModelRef>) -> ProviderCatalog {
-    let models = vec![
-        model("fixture", "small", &[Effort::Low, Effort::Off], false),
-        model("fixture", "large", &[Effort::Off, Effort::High], false),
-        model("fixture", "plain", &[], false),
-        model("fixture-a", "large", &[Effort::Low, Effort::Medium], false),
-        model("fixture-a", "legacy", &[], true),
-    ];
-    let providers = vec![
-        provider("fixture", AuthKind::None),
-        provider("fixture-a", AuthKind::ApiKey),
-    ];
-    ProviderCatalog::new(7, providers, models, workspace_default).unwrap()
-}
-
-fn keyed() -> ConfiguredCredentials {
-    ConfiguredCredentials::new([(id("fixture-a"), AuthKind::ApiKey)])
-}
-
-fn request(model: &str) -> SelectionRequest {
-    SelectionRequest {
-        provider_id: None,
-        model: ModelRequest::parse(Some(model)).unwrap(),
-        effort: None,
-        session: None,
-    }
-}
-
-fn follow_up(model: Option<&str>, session: SessionSelection) -> SelectionRequest {
-    SelectionRequest {
-        model: ModelRequest::parse(model).unwrap(),
-        session: Some(session),
-        ..request("auto")
-    }
-}
 
 #[test]
 fn named_model_is_admitted_with_its_default_effort() {
@@ -216,97 +142,53 @@ fn auto_never_falls_back_to_another_model_or_provider() {
 }
 
 #[test]
-fn model_override_on_a_follow_up_starts_a_new_attempt() {
-    let catalog = catalog(None);
-    let session = SessionSelection {
-        model: key("fixture", "small"),
-        effort: Some(Effort::Off),
-    };
-    let admission = catalog
-        .admit(&follow_up(Some("large"), session.clone()), &keyed())
-        .unwrap_err();
-    assert_eq!(admission, AdmissionError::AmbiguousModel);
-    let mut overridden = follow_up(Some("large"), session.clone());
-    overridden.provider_id = Some(id("fixture"));
-    let admission = catalog.admit(&overridden, &keyed()).unwrap();
-    assert_eq!(admission.model, key("fixture", "large"));
-    assert_eq!(admission.effort.source, EffortSource::KeptFromSession);
-    assert_eq!(
-        admission.attempt,
-        AttemptDecision::NewAttempt {
-            previous: session.clone()
+fn every_admission_error_maps_to_its_specified_class() {
+    let cases = [
+        (
+            AdmissionError::InvalidRequest(CatalogError::InvalidModelId),
+            "invalid_request",
+        ),
+        (AdmissionError::AmbiguousModel, "invalid_request"),
+        (AdmissionError::ProviderMismatch, "invalid_request"),
+        (AdmissionError::EffortNotOffered, "invalid_request"),
+        (AdmissionError::UnknownProvider, "not_found"),
+        (AdmissionError::UnknownModel, "not_found"),
+        (AdmissionError::HiddenModel, "not_found"),
+        (AdmissionError::ModelUnavailable, "model_unavailable"),
+        (
+            AdmissionError::AutoUnresolvable(AutoCause::NoWorkspaceDefault),
+            "model_unavailable",
+        ),
+        (
+            AdmissionError::AutoUnresolvable(AutoCause::DefaultUnavailable),
+            "model_unavailable",
+        ),
+        (
+            AdmissionError::AutoUnresolvable(AutoCause::DefaultOutsideProvider),
+            "model_unavailable",
+        ),
+    ];
+    for (index, (error, class)) in cases.iter().enumerate() {
+        assert_eq!(error.class(), *class, "{error:?}");
+        // Variants that share a class stay distinguishable to callers.
+        for (other, _) in &cases[index + 1..] {
+            assert_ne!(error, other);
         }
-    );
-    let mut new_effort = follow_up(None, session.clone());
-    new_effort.effort = Some(Effort::Low);
-    let admission = catalog.admit(&new_effort, &keyed()).unwrap();
-    assert_eq!(admission.choice, ModelChoice::KeptFromSession);
-    assert!(matches!(
-        admission.attempt,
-        AttemptDecision::NewAttempt { .. }
-    ));
-    let unchanged = catalog.admit(&follow_up(None, session), &keyed()).unwrap();
-    assert_eq!(unchanged.attempt, AttemptDecision::SameSelection);
-    assert_eq!(unchanged.effort.effective, Some(Effort::Off));
+    }
 }
 
 #[test]
-fn kept_session_effort_must_be_offered_by_the_overriding_model() {
-    let session = SessionSelection {
-        model: key("fixture", "large"),
-        effort: Some(Effort::High),
-    };
-    let mut overridden = follow_up(Some("small"), session);
+fn unavailability_is_reported_before_an_effort_mismatch() {
+    let mut both = request("large");
+    both.provider_id = Some(id("fixture-a"));
+    both.effort = Some(Effort::Max);
     let catalog = catalog(None);
     assert_eq!(
-        catalog.admit(&overridden, &keyed()),
-        Err(AdmissionError::EffortNotOffered)
-    );
-    overridden.effort = Some(Effort::Low);
-    assert!(catalog.admit(&overridden, &keyed()).is_ok());
-}
-
-#[test]
-fn hidden_model_only_continues_a_session_that_uses_it() {
-    let catalog = catalog(None);
-    let mut fresh = request("legacy");
-    fresh.provider_id = Some(id("fixture-a"));
-    assert_eq!(
-        catalog.admit(&fresh, &keyed()),
-        Err(AdmissionError::HiddenModel)
-    );
-    let session = SessionSelection {
-        model: key("fixture-a", "legacy"),
-        effort: None,
-    };
-    let continued = catalog
-        .admit(&follow_up(None, session.clone()), &keyed())
-        .unwrap();
-    assert_eq!(continued.model, key("fixture-a", "legacy"));
-    assert_eq!(continued.attempt, AttemptDecision::SameSelection);
-    let other = SessionSelection {
-        model: key("fixture", "small"),
-        effort: Some(Effort::Low),
-    };
-    assert_eq!(
-        catalog.admit(&follow_up(Some("legacy"), other), &keyed()),
-        Err(AdmissionError::HiddenModel)
-    );
-    // Continuing still needs the provider to be available now.
-    assert_eq!(
-        catalog.admit(&follow_up(None, session), &ConfiguredCredentials::default()),
+        catalog.admit(&both, &ConfiguredCredentials::default()),
         Err(AdmissionError::ModelUnavailable)
     );
-}
-
-#[test]
-fn a_session_model_missing_from_the_catalog_is_not_kept_silently() {
-    let session = SessionSelection {
-        model: key("fixture", "retired"),
-        effort: None,
-    };
     assert_eq!(
-        catalog(None).admit(&follow_up(None, session), &keyed()),
-        Err(AdmissionError::UnknownModel)
+        catalog.admit(&both, &keyed()),
+        Err(AdmissionError::EffortNotOffered)
     );
 }

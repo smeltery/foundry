@@ -27,6 +27,10 @@ use std::collections::BTreeMap;
 
 /// An immutable, validated catalog revision. A changed catalog is a new value
 /// with a new revision, so a recorded resolution names exactly what it used.
+///
+/// The catalog does not derive or check its revision. The caller must never
+/// reuse a revision number for different providers, models or default;
+/// otherwise a recorded resolution cannot identify the catalog it used.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderCatalog {
     revision: u64,
@@ -44,7 +48,7 @@ impl ProviderCatalog {
     ) -> Result<Self, CatalogError> {
         let mut by_id = BTreeMap::new();
         for provider in providers {
-            provider.validate()?;
+            let provider = provider.normalize()?;
             if by_id
                 .insert(provider.provider_id.clone(), provider)
                 .is_some()
@@ -107,7 +111,9 @@ impl ProviderCatalog {
     }
 
     /// Listed models ordered by provider then model ID, each flagged with its
-    /// current availability. Hidden models are never listed.
+    /// current availability. Hidden models are never listed. The specified
+    /// grouping (Foundry-configured providers before connected accounts) is
+    /// pending the credential store, which owns that distinction.
     pub fn models(&self, credentials: &impl CredentialAvailability) -> Vec<ModelEntry<'_>> {
         self.models
             .values()

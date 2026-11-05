@@ -42,9 +42,8 @@ pub enum AuthKind {
 }
 
 /// Request shape a provider endpoint speaks. Names are provisional wire names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EndpointFormat {
-    #[default]
     Chat,
     Response,
     Message,
@@ -101,11 +100,24 @@ pub struct ProviderDescriptor {
     pub oauth_login: OauthLogin,
     /// The effort vocabulary this provider's models may offer.
     pub efforts: Vec<Effort>,
-    /// Required for a local endpoint, which never has its format guessed.
+    /// A local endpoint without one is registered with `Chat`, the specified
+    /// default. A fixture takes none.
     pub endpoint_format: Option<EndpointFormat>,
 }
 
 impl ProviderDescriptor {
+    /// The format a local endpoint uses when its descriptor names none.
+    pub const LOCAL_ENDPOINT_FORMAT: EndpointFormat = EndpointFormat::Chat;
+
+    /// Fills in specified defaults, then validates.
+    pub(super) fn normalize(mut self) -> Result<Self, CatalogError> {
+        if self.kind == ProviderKind::LocalEndpoint && self.endpoint_format.is_none() {
+            self.endpoint_format = Some(Self::LOCAL_ENDPOINT_FORMAT);
+        }
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> Result<(), CatalogError> {
         if self.auth_kinds.is_empty()
             || !is_unique(&self.auth_kinds)
@@ -118,12 +130,7 @@ impl ProviderDescriptor {
         if !is_unique(&self.efforts) {
             return Err(CatalogError::InvalidEfforts);
         }
-        let format_allowed = match self.kind {
-            ProviderKind::LocalEndpoint => self.endpoint_format.is_some(),
-            ProviderKind::Fixture => self.endpoint_format.is_none(),
-            ProviderKind::HostedApi => true,
-        };
-        if !format_allowed {
+        if self.kind == ProviderKind::Fixture && self.endpoint_format.is_some() {
             return Err(CatalogError::InvalidEndpointFormat);
         }
         Ok(())

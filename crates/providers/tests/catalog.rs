@@ -130,9 +130,8 @@ fn auth_kinds_must_be_nonempty_unique_and_none_only_offline() {
     }
     let mut local = offline("fixture-local");
     local.kind = ProviderKind::LocalEndpoint;
-    local.endpoint_format = Some(EndpointFormat::default());
+    local.endpoint_format = Some(EndpointFormat::Response);
     assert_eq!(local.validate(), Ok(()));
-    assert_eq!(EndpointFormat::default(), EndpointFormat::Chat);
 }
 
 #[test]
@@ -188,17 +187,23 @@ fn oauth_login_needs_oauth_and_a_listed_default_method() {
 }
 
 #[test]
-fn endpoint_format_is_explicit_for_local_endpoints_and_absent_for_fixtures() {
-    let mut local = offline("fixture-local");
-    local.kind = ProviderKind::LocalEndpoint;
+fn local_endpoint_format_defaults_to_chat_and_fixtures_take_none() {
+    let mut defaulted = offline("fixture-local");
+    defaulted.kind = ProviderKind::LocalEndpoint;
+    let mut explicit = defaulted.clone();
+    explicit.provider_id = id("fixture-local-b");
+    explicit.endpoint_format = Some(EndpointFormat::Message);
+    let catalog = build(vec![defaulted, explicit], vec![]).unwrap();
+    let format = |provider_id| catalog.provider(&id(provider_id)).unwrap().endpoint_format;
+    assert_eq!(format("fixture-local"), Some(EndpointFormat::Chat));
+    assert_eq!(format("fixture-local-b"), Some(EndpointFormat::Message));
+
     let mut fixture_with_format = offline("fixture");
     fixture_with_format.endpoint_format = Some(EndpointFormat::Message);
-    for descriptor in [local, fixture_with_format] {
-        assert_eq!(
-            descriptor.validate(),
-            Err(CatalogError::InvalidEndpointFormat)
-        );
-    }
+    assert_eq!(
+        build(vec![fixture_with_format], vec![]),
+        Err(CatalogError::InvalidEndpointFormat)
+    );
 }
 
 #[test]

@@ -58,6 +58,9 @@ pub enum AdmissionError {
     HiddenModel,
     /// The model identifier is listed by several providers and none was named.
     AmbiguousModel,
+    /// A follow-up named a provider other than the session model's provider
+    /// without naming a model.
+    ProviderMismatch,
     ModelUnavailable,
     EffortNotOffered,
     AutoUnresolvable(AutoCause),
@@ -67,9 +70,10 @@ impl AdmissionError {
     /// Provisional neutral error class from the providers specification.
     pub fn class(self) -> &'static str {
         match self {
-            Self::InvalidRequest(_) | Self::AmbiguousModel | Self::EffortNotOffered => {
-                "invalid_request"
-            }
+            Self::InvalidRequest(_)
+            | Self::AmbiguousModel
+            | Self::ProviderMismatch
+            | Self::EffortNotOffered => "invalid_request",
             Self::UnknownProvider | Self::UnknownModel | Self::HiddenModel => "not_found",
             Self::ModelUnavailable | Self::AutoUnresolvable(_) => "model_unavailable",
         }

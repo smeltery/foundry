@@ -159,12 +159,19 @@ impl ProviderCatalog {
                 .as_ref()
                 .is_none_or(|provider_id| *provider_id == key.provider_id)
         };
+        let session_model = request.session.as_ref().map(|session| &session.model);
         match (&request.model, &request.session) {
             (ModelRequest::Named(model_id), _) => {
-                let mut candidates = self
-                    .models
-                    .values()
-                    .filter(|model| model.model_id == *model_id && provider_matches(&model.key()));
+                // A bare ID never matches a hidden model other than the session's,
+                // so a retired model cannot make a listed one ambiguous.
+                let visible = |model: &ModelDescriptor| {
+                    request.provider_id.is_some()
+                        || !model.hidden
+                        || session_model == Some(&model.key())
+                };
+                let mut candidates = self.models.values().filter(|model| {
+                    model.model_id == *model_id && provider_matches(&model.key()) && visible(model)
+                });
                 let model = candidates.next().ok_or(AdmissionError::UnknownModel)?;
                 if candidates.next().is_some() {
                     return Err(AdmissionError::AmbiguousModel);
@@ -172,9 +179,11 @@ impl ProviderCatalog {
                 Ok((model, ModelChoice::Named))
             }
             (ModelRequest::Omitted, Some(session)) => {
+                if !provider_matches(&session.model) {
+                    return Err(AdmissionError::ProviderMismatch);
+                }
                 let model = self
                     .model(&session.model)
-                    .filter(|model| provider_matches(&model.key()))
                     .ok_or(AdmissionError::UnknownModel)?;
                 Ok((model, ModelChoice::KeptFromSession))
             }
@@ -210,8 +219,9 @@ impl ProviderCatalog {
 }
 
 /// A requested effort must be offered. An omitted effort keeps the session's
-/// effort, which the new model must also offer, or takes the model's default on
-/// a new session or after a model that took no effort.
+/// effort, which the new model must also offer, so a session effort is never
+/// dropped silently. A new session, or one whose model took no effort, gets the
+/// model's default, or no effort when the model offers none.
 fn choose_effort(
     model: &ModelDescriptor,
     request: &SelectionRequest,
@@ -223,14 +233,12 @@ fn choose_effort(
         }
         return decision(Some(effort), EffortSource::Requested);
     }
-    if model.efforts.is_empty() {
-        return decision(None, EffortSource::NotOffered);
-    }
     match request.session.as_ref().and_then(|session| session.effort) {
         Some(effort) if model.offers(effort) => {
             decision(Some(effort), EffortSource::KeptFromSession)
         }
         Some(_) => Err(AdmissionError::EffortNotOffered),
+        None if model.efforts.is_empty() => decision(None, EffortSource::NotOffered),
         None => decision(model.default_effort, EffortSource::ModelDefault),
     }
 }
