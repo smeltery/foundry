@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "campaign_id": "fixture-campaign",
+  "provider": "local",
+  "provider_id": "stub-local",
+  "model": "fixture-model",
+  "effort": "low",
+  "seeds": [7, 1031],
+  "repeats": 2,
+  "tasks": [
+    {
+      "path": "tasks/summarize-notes.json",
+      "sha256": "b08c10a88de06e627acc0e536513e7d066f03c446359e9ca25ce93845f9541dd"
+    },
+    {
+      "path": "tasks/rename-symbol.json",
+      "sha256": "462e046811a7ea7a28fc3a59d36be690b31f7b03bc7c4a9c3bc3a3715d7a96ed"
+    },
+    {
+      "path": "tasks/read-file-tool.json",
+      "sha256": "b5186745dad9082494275345acafd4aac2571d212e9ae17948c8b513debd65b3"
+    }
+  ]
+}

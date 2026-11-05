@@ -1,0 +1,17 @@
+{
+  "id": "read-file-tool",
+  "system": "You are a fixture assistant.",
+  "prompt": "Read /workspace/README.md and list its section headings.",
+  "max_output_tokens": 128,
+  "tools": [
+    {
+      "name": "read-file",
+      "description": "Read one workspace file.",
+      "parameters": {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"]
+      }
+    }
+  ]
+}

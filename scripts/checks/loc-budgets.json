@@ -19,8 +19,9 @@
     "scripts/checks/": 1600,
     "scripts/clients/": 170,
     "scripts/ci/": 616,
+    "scripts/quality/": 351,
     "scripts/release/": 1200,
-    "tests/": 5379,
+    "tests/": 5515,
     "vendor/netwatch/": 5695
   },
   "files": {
