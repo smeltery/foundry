@@ -39,9 +39,13 @@ These follow the Rust local endpoint client and the
 - Each call resolves the host once and connects only to the vetted addresses, over
   a socket this package opens itself. Proxy variables are ignored, redirects are
   never followed, and replies are never decoded from a content encoding.
-- One timeout bounds lookup, connection and reply. Replies are limited to 4 MiB,
-  and request bodies to the same size.
-- HTTPS uses the platform trust store and requires a verified peer certificate.
+- One timeout bounds lookup, connection and reply. Reply bodies are limited to
+  4 MiB after chunked decoding, request bodies to the same size, and raw reply
+  bytes to a fixed bound. Informational (1xx) heads before the final status are
+  skipped.
+- HTTPS uses the runtime's trust store. After the handshake the package checks
+  that the chain was verified and that the certificate names the host or literal
+  address itself, so the check does not depend on the runtime.
 - Errors carry a neutral class (`invalid_request`, `not_found`,
   `insecure_transport`, `endpoint_not_permitted` or `endpoint_failure`) and, for
   failures, a category: `dns`, `connect`, `timeout`, `tls`, `http` with the
@@ -54,7 +58,8 @@ These follow the Rust local endpoint client and the
 - Only the `chat` wire format is built, without streaming. The `response` and
   `message` formats of the Rust client are not.
 - Wire names are provisional pending the naming decision.
-- A private certificate authority cannot be configured yet.
+- A private certificate authority can only be added for the whole process, through
+  `NODE_EXTRA_CA_CERTS`; there is no per-endpoint setting.
 - The facade does not support steering or native context hooks, and usage counts
   are parsed but not reported over the adapter protocol.
 - Nothing here downloads or runs model weights.
@@ -67,4 +72,5 @@ bun test packages/provider-local/test
 
 The tests run a deterministic stub server on loopback inside the test process and
 use a fixture resolver for host names. They make no external calls and need no
-credentials.
+credentials. The HTTPS test needs the `openssl` CLI: it creates a throwaway CA
+and certificates in a temporary directory and trusts that CA in a child process.

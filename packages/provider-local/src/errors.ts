@@ -76,3 +76,11 @@ export class EndpointError extends Error {
     );
   }
 }
+
+/**
+ * A categorized transport failure inside one call. It keeps no error text,
+ * which can name the peer; the endpoint turns it into an `EndpointError`.
+ */
+export class TransportFailure {
+  constructor(readonly category: FailureCategory) {}
+}

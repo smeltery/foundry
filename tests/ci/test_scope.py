@@ -33,6 +33,10 @@ class ScopeTests(unittest.TestCase):
         groups = scope.select_groups("pull_request", ["crates/runtime/src/prompt.md"])
         self.assertTrue({"rust", "integration", "mcp-sdk"}.issubset(groups))
 
+    def test_local_endpoint_facade_selects_only_adapter_checks(self):
+        groups = scope.select_groups("pull_request", ["packages/provider-local/src/http.ts"])
+        self.assertEqual(groups, ("adapter", "docs", "hygiene"))
+
     def test_mixed_components_keep_integration_on_all_platforms(self):
         groups = scope.select_groups("pull_request", ["packages/adapter/src/protocol.ts", "apps/cli/src/main.rs"])
         self.assertTrue({"adapter", "rust", "integration", "mcp-sdk", "docs", "hygiene"}.issubset(groups))

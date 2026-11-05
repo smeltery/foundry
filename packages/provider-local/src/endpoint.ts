@@ -1,9 +1,10 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { CHAT_PATH, parseReply, requestBody, type Completion, type CompletionRequest } from "./chat.ts";
-import { EndpointError, type FailureCategory } from "./errors.ts";
-import { abortCause, MAX_REPLY_BYTES, postPinned, TransportFailure, type Reply } from "./http.ts";
+import { EndpointError, TransportFailure, type FailureCategory } from "./errors.ts";
+import { abortCause, postPinned } from "./http.ts";
 import { admitAddresses, type Resolve } from "./network.ts";
+import { MAX_REPLY_BYTES, type Reply } from "./reply.ts";
 import { validateSettings, type EndpointSettings, type Target } from "./settings.ts";
 
 /** Most messages one request carries. */

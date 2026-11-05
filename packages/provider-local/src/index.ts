@@ -7,6 +7,6 @@ export {
   type FailureCategory,
   type InvalidField,
 } from "./errors.ts";
-export { MAX_REPLY_BYTES } from "./http.ts";
+export { MAX_REPLY_BYTES } from "./reply.ts";
 export { classify, type NetworkClass, type OptIn, type Resolve } from "./network.ts";
 export { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, type EndpointSettings } from "./settings.ts";

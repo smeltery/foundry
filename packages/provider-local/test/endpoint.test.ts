@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { EndpointError } from "../src/errors.ts";
-import { MAX_REPLY_BYTES } from "../src/http.ts";
+import { MAX_REPLY_BYTES } from "../src/reply.ts";
 import { ask, chat, endpointFor, KEY, leakFree, MODEL, reply, startRaw, startStub, type Stub } from "./stub.ts";
 
 const open: Omit<Stub, "requests">[] = [];
