@@ -24,6 +24,7 @@ pub mod profile_host;
 mod publication;
 pub mod restoration_owner;
 mod run_lease;
+pub mod session_meta;
 pub mod session_query;
 mod tool_digest;
 mod tool_worker;
@@ -123,8 +124,9 @@ impl Service {
         self.snapshots = Some(settings);
         self
     }
+    /// Same checks as `create_session`, including the tool profile.
     pub fn create(&mut self, request: CreateSession) -> Result<Session> {
-        Ok(self.store.create(request)?)
+        Ok(self.create_session(request)?.session)
     }
     pub fn get(&self, id: &str) -> Result<Session> {
         Ok(self.store.get(id)?)

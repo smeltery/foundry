@@ -39,6 +39,7 @@ pub(crate) fn verify_session(
     session_id: &str,
     body: &WitnessBodyV1,
 ) -> Result<()> {
+    crate::read_session(connection, session_id)?;
     let snapshot = crate::capture_snapshot::snapshot(connection, session_id)?;
     require(snapshot.cut == body.header.cut)?;
     let events = witness_events::selected(connection, session_id)?;
@@ -54,6 +55,8 @@ pub(crate) fn verify_evidence(
     snapshot: &crate::CaptureSnapshot,
     events: &[EvidenceEvent],
 ) -> Result<()> {
+    // A tombstone dropped the content these facts are checked against.
+    crate::read_session(connection, session_id)?;
     require(snapshot.cut == body.header.cut)?;
     let mut messages = BTreeSet::new();
     let mut tools = BTreeSet::new();

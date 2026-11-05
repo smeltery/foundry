@@ -1,1 +1,3 @@
-//! Identity crate placeholder. It is registered in the workspace and has no logic yet.
+//! Identity: principals, workspaces and the authorization decision.
+
+pub mod authz;

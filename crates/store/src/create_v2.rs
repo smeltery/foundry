@@ -30,6 +30,8 @@ pub struct CreateReceipt {
 impl Store {
     /// Validates, then records a queued session with its metadata and
     /// associations, or replays the session an equal keyed request created.
+    /// Only the reference format of a tool profile is checked here; the service
+    /// owns resolving it to a known profile.
     pub fn create_session(&mut self, request: CreateSession) -> Result<CreateReceipt> {
         request.validate()?;
         if let Some(profile) = &request.tool_profile {
@@ -170,7 +172,7 @@ fn origin_columns(origin: Option<&SessionOrigin>) -> (Option<&'static str>, Opti
 fn read_associations(connection: &Connection, session_id: &str) -> Result<SessionAssociations> {
     let creation: Option<String> = connection
         .query_row(
-            "SELECT creation FROM sessions WHERE id=?1",
+            "SELECT creation FROM sessions WHERE id=?1 AND deleted_ms IS NULL",
             [session_id],
             |row| row.get(0),
         )

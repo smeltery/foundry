@@ -75,6 +75,7 @@ impl Store {
         id: &ContextCheckpointId,
     ) -> Result<PrivateWitness> {
         let tx = self.connection.unchecked_transaction()?;
+        crate::read_session(&tx, session)?;
         let row = checkpoint_read::load(&tx, session, id.as_str())?
             .ok_or_else(|| conflict("checkpoint missing"))?;
         let (private, witness) = row.private_and_witness()?;

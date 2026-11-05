@@ -7,7 +7,8 @@
       "name": "rename_sets_title",
       "operation": "session.rename",
       "rows": ["API-X040"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_meta.rs::rename_sets_clears_and_validates_the_stored_title"],
       "request": {"title": "Sample cleanup"},
       "expect": {"result": "ok", "title": "Sample cleanup"}
     },
@@ -15,7 +16,8 @@
       "name": "empty_title_restores_derived_title",
       "operation": "session.rename",
       "rows": ["API-X040"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_meta.rs::rename_reports_the_stored_or_derived_title"],
       "given": {"prompt": "Summarize the sample notes.", "title": "Sample cleanup"},
       "request": {"title": ""},
       "expect": {"result": "ok", "title": "Summarize the sample notes."}
@@ -24,7 +26,8 @@
       "name": "list_tags_of_untagged_session",
       "operation": "session.tags.list",
       "rows": ["API-X046"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_meta.rs::tags_list_append_and_replace_return_the_normalized_stored_list"],
       "request": {},
       "expect": {"result": "ok", "tags": []}
     },
@@ -32,7 +35,8 @@
       "name": "append_tags_is_a_deduplicated_union",
       "operation": "session.tags.append",
       "rows": ["API-X047"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_meta.rs::tag_operations_follow_the_metadata_vectors", "crates/store/tests/session_meta_races.rs::concurrent_tag_patches_from_separate_connections_never_lose_a_tag"],
       "given": {"tags": ["alpha", "beta"]},
       "request": {"tags": ["beta", "gamma"]},
       "expect": {"result": "ok", "tags": ["alpha", "beta", "gamma"]}
@@ -41,7 +45,8 @@
       "name": "replace_tags_with_empty_list_clears",
       "operation": "session.tags.replace",
       "rows": ["API-X048"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_meta.rs::tag_operations_follow_the_metadata_vectors"],
       "given": {"tags": ["alpha"]},
       "request": {"tags": []},
       "expect": {"result": "ok", "tags": []}
