@@ -42,7 +42,7 @@ mapping for an HTTP transport, which is itself an open decision.
 | Row | Operation | Label | Section |
 | --- | --- | --- | --- |
 | CLI-027 | `cli.providers_connect` | Local foundation | [Connect a provider from the CLI](#connect-a-provider-from-the-cli) |
-| API-E5297A5569474 | `providers.catalog` | Specified | [Provider catalog and inference status](#provider-catalog-and-inference-status) |
+| API-E5297A5569474 | `providers.catalog` | Local foundation | [Provider catalog and inference status](#provider-catalog-and-inference-status) |
 | API-E1BC704592670 | `providers.status` | Specified | [Provider catalog and inference status](#provider-catalog-and-inference-status) |
 | API-E12E38D9F7C28 | `credentials.list` | Specified | [Provider credentials](#provider-credentials) |
 | API-E5BEDB65EA9B9 | `credentials.configure` | Local foundation | [Provider credentials](#provider-credentials) |
@@ -57,7 +57,7 @@ mapping for an HTTP transport, which is itself an open decision.
 | API-E4881077B6501 | `oauth_logins.cancel` | Held | [Provider OAuth logins](#provider-oauth-logins) |
 | API-E28E3F3BCFA6D | `accounts.check` | Held | [Account checks and provider usage](#account-checks-and-provider-usage) |
 | API-E7619AD9B11AD | `accounts.usage` | Held | [Account checks and provider usage](#account-checks-and-provider-usage) |
-| API-EA0E3BF6C25F6 | `models.list` | Specified | [Model availability, auto resolution and effort](#model-availability-auto-resolution-and-effort) |
+| API-EA0E3BF6C25F6 | `models.list` | Local foundation | [Model availability, auto resolution and effort](#model-availability-auto-resolution-and-effort) |
 | AG-09 | `session.model_selection` | Local foundation | [Model availability, auto resolution and effort](#model-availability-auto-resolution-and-effort) |
 | AG-12 | `budget.*`, `session.rollover` | Specified | [Budgets, reservations, deadlines and review rounds](#budgets-reservations-deadlines-and-review-rounds) |
 | API-E288021BA77EC | `consumption.daily` | Specified | [Consumption reports](#consumption-reports) |
@@ -239,8 +239,19 @@ Audit rows (external `capabilities.json`, group GAP-013): API-E5297A5569474,
 API-E1BC704592670.
 Vectors: `tests/providers/vectors/descriptors.json`.
 
-**Foundry today.** None. The only provider identity is the explicit
-`selection.provider` string in private adapter configuration, validated by
+**Foundry today.** The `foundry-providers` catalog validates secret-free
+descriptors (kind, auth kinds, config fields, login availability, effort
+vocabulary and endpoint format, with `chat` as the local endpoint default) and
+lists them in `provider_id` order. Availability comes from an injected
+credential source; nothing is stored or read. No operation, transport or
+authentication exposes the catalog, and `providers.status` is not implemented.
+Execution still takes its provider identity only from the explicit
+`selection.provider` string in private adapter configuration. Evidence:
+[`catalog.rs`](../../crates/providers/tests/catalog.rs)
+(`providers_are_listed_in_id_order_without_credential_state`,
+`oauth_login_needs_oauth_and_a_listed_default_method`,
+`local_endpoint_format_defaults_to_chat_and_fixtures_take_none`,
+`availability_follows_configured_credentials_of_an_accepted_kind`) and
 [`adapter_selection.rs`](../../crates/contracts/tests/adapter_selection.rs)
 (`unsupported_or_unbounded_selection_never_gets_an_identity`).
 
@@ -430,14 +441,36 @@ without NUL, and an effort from `off`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`. Any other effort, including `automatic`, gets no identity.
 Provider, model and effort are all part of the selection identity, so a changed
 model is a different selection. The CLI accepts `--effort low|medium|high|xhigh`,
-rejects other values before configuration, and never chooses a default. There
-is no model list, no `auto` and no per-model effort check: the contract accepts
-the literal model string `auto` as an ordinary name. Evidence:
+rejects other values before configuration, and never chooses a default. The
+contract still accepts the literal model string `auto` as an ordinary name.
+Evidence:
 [`adapter_selection.rs`](../../crates/contracts/tests/adapter_selection.rs)
 (`every_mutable_selection_field_changes_the_identity`,
 `unsupported_or_unbounded_selection_never_gets_an_identity`) and
 [`effort.rs`](../../apps/cli/tests/effort.rs)
 (`missing_and_invalid_effort_reject_before_dispatch_or_configuration`).
+
+The `foundry-providers` catalog implements the model list and admission as a
+library, not yet wired into session create, follow-up or the runtime. It lists
+non-hidden models by provider then model ID with availability, and refuses
+unknown, hidden, ambiguous and unavailable models and unoffered efforts with
+distinct errors. It resolves `auto` once to the workspace default with a
+recorded resolution and no fallback, never drops a session effort silently,
+and reports a model or effort override as a new attempt decision. The
+Foundry-configured versus connected-account grouping of `models.list` waits on
+the credential store. Evidence:
+[`catalog.rs`](../../crates/providers/tests/catalog.rs)
+(`model_list_is_ordered_flags_availability_and_omits_hidden_models`,
+`model_efforts_stay_within_the_provider_and_name_a_default`),
+[`catalog_admission.rs`](../../crates/providers/tests/catalog_admission.rs)
+(`unknown_unavailable_and_ambiguous_models_are_refused_distinctly`,
+`effort_the_model_does_not_offer_is_refused_before_execution`,
+`auto_and_an_omitted_model_resolve_once_and_are_recorded`,
+`auto_never_falls_back_to_another_model_or_provider`) and
+[`catalog_follow_up.rs`](../../crates/providers/tests/catalog_follow_up.rs)
+(`model_override_on_a_follow_up_starts_a_new_attempt`,
+`session_effort_is_never_dropped_for_a_model_without_efforts`,
+`hidden_model_only_continues_a_session_that_uses_it`).
 
 **Specified.**
 
