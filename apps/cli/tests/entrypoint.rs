@@ -1,9 +1,11 @@
+mod support_entrypoint;
 use serde_json::{Value, json};
 use std::{
     io::Write,
     path::Path,
     process::{Command, Output, Stdio},
 };
+use support_entrypoint::reap;
 use tempfile::TempDir;
 
 fn command(directory: &Path) -> Command {
@@ -265,30 +267,13 @@ fn root_task_options_cannot_be_silently_ignored_by_subcommands() {
 
 #[test]
 fn watch_live_task_and_finished_session_with_both_command_forms() {
+    use std::io::{BufRead, BufReader, Read};
     use std::time::{Duration, Instant};
     let directory = TempDir::new().unwrap();
     let path = directory.path();
     let source = path.join("fixture.rs");
     let executable = path.join("fixture-adapter");
-    std::fs::write(&source, r#"
-use std::{io::{self, Write}, time::Duration};
-fn main() {
-    println!("{{\"type\":\"ready\",\"version\":1}}");
-    io::stdout().flush().unwrap();
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let attempt = input.split("\"attempt_id\":\"").nth(1).unwrap().split('"').next().unwrap();
-    let id = input.split("\"id\":\"").nth(1).unwrap().split('"').next().unwrap();
-    println!("{{\"type\":\"text\",\"attempt_id\":\"{attempt}\",\"text\":\"progress\"}}");
-    io::stdout().flush().unwrap();
-    std::fs::write("session-id", id).unwrap();
-    for _ in 0..1000 {
-        if std::path::Path::new("release").exists() { break; }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    println!("{{\"type\":\"settled\",\"attempt_id\":\"{attempt}\",\"outcome\":\"success\",\"result\":\"done\"}}");
-}
-"#).unwrap();
+    std::fs::write(&source, include_str!("support_entrypoint/watch_adapter.rs")).unwrap();
     let compiled = Command::new("rustc")
         .args(["--edition=2024"])
         .arg(&source)
@@ -314,12 +299,7 @@ fn main() {
             break id;
         }
         if Instant::now() >= deadline || task.try_wait().unwrap().is_some() {
-            let _ = task.kill();
-            let output = task.wait_with_output().unwrap();
-            panic!(
-                "task did not start: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            panic!("task did not start: {}", reap(&mut [&mut task]));
         }
         std::thread::sleep(Duration::from_millis(10));
     };
@@ -338,17 +318,29 @@ fn main() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_millis(100));
-    let waiting = watcher.try_wait().unwrap().is_none();
+    // The first replayed event proves watch is following. The task cannot settle
+    // before release, so an exit at this point is a watch defect, not a race.
+    let stdout = watcher.stdout.take().unwrap();
+    let (sender, first_line) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut stdout = BufReader::new(stdout);
+        let mut followed = String::new();
+        stdout.read_line(&mut followed).unwrap();
+        let _ = sender.send(!followed.is_empty());
+        stdout.read_to_string(&mut followed).unwrap();
+        followed
+    });
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let followed = first_line.recv_timeout(remaining).unwrap_or(false);
+    if !followed || watcher.try_wait().unwrap().is_some() {
+        let stderr = reap(&mut [&mut task, &mut watcher]);
+        panic!("watch must wait for the running task: {stderr}");
+    }
     std::fs::write(path.join("release"), "continue").unwrap();
-    assert!(waiting, "watch must wait for the running task");
     while task.try_wait().unwrap().is_none() || watcher.try_wait().unwrap().is_none() {
         if Instant::now() >= deadline {
-            let _ = task.kill();
-            let _ = watcher.kill();
-            let _ = task.wait();
-            let _ = watcher.wait();
-            panic!("task or watcher exceeded deadline");
+            let stderr = reap(&mut [&mut task, &mut watcher]);
+            panic!("task or watcher exceeded deadline: {stderr}");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -366,7 +358,9 @@ fn main() {
         path,
         &["session", "watch", &id, "--database", "state.db", "--json"],
     );
-    for output in [watcher.wait_with_output().unwrap(), replay] {
+    let mut live = watcher.wait_with_output().unwrap();
+    live.stdout = reader.join().unwrap().into_bytes();
+    for output in [live, replay] {
         assert_eq!(
             output.status.code(),
             Some(3),
