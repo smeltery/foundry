@@ -7,7 +7,7 @@ use std::{path::PathBuf, process::Command, sync::mpsc, thread::JoinHandle};
 mod helper_install;
 // Each test's phase timeout decides its outcome. These bounds only detect a stuck run,
 // so they sit far above process startup on a loaded workstation.
-const WAIT: Duration = Duration::from_secs(20);
+pub(super) const WAIT: Duration = Duration::from_secs(20);
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 const HELPER_TIMEOUT: Duration = Duration::from_secs(20);
 

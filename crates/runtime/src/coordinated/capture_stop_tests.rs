@@ -1,4 +1,5 @@
-use super::{harness::Harness, *};
+use super::harness::{Harness, WAIT};
+use super::*;
 use crate::coordinated::{engine::EngineExit, *};
 use foundry_contracts::{AdapterEvent, CancelMode};
 
@@ -9,8 +10,7 @@ fn claimed(h: &Harness) -> CheckpointId {
     let (checkpoint, event) = h.event();
     assert!(matches!(event, AdapterEvent::ToolCall { .. }));
     h.commit(checkpoint);
-    let PersistenceRequest::ClaimTool { checkpoint, .. } =
-        h.requests.recv_timeout(Duration::from_secs(2)).unwrap()
+    let PersistenceRequest::ClaimTool { checkpoint, .. } = h.requests.recv_timeout(WAIT).unwrap()
     else {
         panic!()
     };
