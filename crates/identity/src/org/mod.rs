@@ -11,8 +11,12 @@
 //! processes are serialized and each one decides against the state the
 //! previous one committed.
 //!
-//! The caller passes a principal already resolved from its credential, for
-//! example by the credential store, and applies throttling before calling.
+//! The caller passes a [`Caller`]: the principal its credential resolved to,
+//! for example through the credential store, and that credential's display
+//! prefix. Each transaction reads the credential row again before deciding,
+//! so a revocation, logout or expiry committed in between refuses the
+//! operation, and current scopes replace the ones the caller presented.
+//! Throttling is applied by the caller before calling.
 //!
 //! Held, not implemented here:
 //! - Bootstrapping the first workspace, accepting an invitation and delivering
@@ -22,6 +26,13 @@
 //!   active limits (C1, C4). Deletion completes in one step.
 //! - A single-use workspace's machine token, live work and machines are owned
 //!   elsewhere, so retirement reports zero cancelled runs and revoked machines.
+//! - An expiry sweep. A single-use workspace past its expiry is retired for
+//!   authorization at once (see `snapshot`), so its credentials stop
+//!   authenticating; its retirement is persisted, with cause `expired`, at the
+//!   next retirement of it or deletion of its parent. A scheduled sweep that
+//!   records it without a request belongs to a later ticket.
+//! - Machine tokens and admin grants are not stored credentials, so they
+//!   cannot call these operations.
 //! - Matrix cells the specification leaves unknown, including
 //!   `single_use.create`, `settings.list` and `settings.get`, are denied by the
 //!   decision core for every caller.
@@ -31,6 +42,7 @@
 //!
 //! [`authz::authorize`]: crate::authz::authorize
 mod audit;
+mod caller;
 mod error;
 #[cfg(test)]
 mod held_tests;
@@ -48,6 +60,7 @@ use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 pub use audit::{
     AUDIT_PAGE_DEFAULT, AUDIT_PAGE_MAX, AuditCursor, AuditEntry, AuditPage, AuditQuery,
 };
+pub use caller::Caller;
 pub use error::{OrgCause, OrgError};
 pub use member::{Invitation, InviteOutcome, MemberList, MemberRecord};
 pub use settings::{SettingsCatalog, SettingsNamespace};
@@ -120,7 +133,7 @@ impl OrgStore {
     /// Authorizes and applies a mutation under the write lock.
     fn write<T>(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         request: OperationRequest,
         operation: impl FnOnce(&Authorized<'_>) -> Result<T, OrgError>,
     ) -> Result<T, OrgError> {
@@ -130,7 +143,7 @@ impl OrgStore {
     /// Authorizes and answers a read from one consistent snapshot.
     fn read<T>(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         request: OperationRequest,
         operation: impl FnOnce(&Authorized<'_>) -> Result<T, OrgError>,
     ) -> Result<T, OrgError> {
@@ -143,7 +156,7 @@ impl OrgStore {
     fn authorized<T>(
         &self,
         behavior: TransactionBehavior,
-        caller: &Principal,
+        caller: &Caller,
         request: OperationRequest,
         operation: impl FnOnce(&Authorized<'_>) -> Result<T, OrgError>,
     ) -> Result<T, OrgError> {
@@ -154,12 +167,13 @@ impl OrgStore {
             .map_err(|_| OrgError::unavailable("connection lock poisoned"))?;
         let transaction = connection.transaction_with_behavior(behavior).storage()?;
         let now_ms = self.shared.clock.now_ms();
-        let organization = snapshot::load(&transaction, caller, &request, now_ms)?;
-        let access = authorize(Some(caller), &organization, &request)?;
+        let principal = caller::refresh(&transaction, caller, now_ms)?;
+        let organization = snapshot::load(&transaction, &principal, &request, now_ms)?;
+        let access = authorize(Some(&principal), &organization, &request)?;
         let value = operation(&Authorized {
             transaction: &transaction,
             now_ms,
-            caller,
+            caller: &principal,
             access,
         })?;
         transaction.commit().storage()?;

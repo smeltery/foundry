@@ -7,7 +7,7 @@ use std::time::Duration;
 use foundry_identity::authz::{Check, Role, Scope};
 use foundry_identity::org::OrgError;
 use foundry_identity::store::{CredentialStore, StoreError};
-use org_fixture::{Fixture, failure, login, who, ws};
+use org_fixture::{Fixture, failure, who, ws};
 
 const READ: &[Scope] = &[Scope::WorkspaceRead];
 const WRITE: &[Scope] = &[Scope::WorkspaceWrite];
@@ -28,7 +28,7 @@ fn team() -> Fixture {
 }
 
 fn role_of(fixture: &Fixture, user: &str) -> Role {
-    let owner = login("user-a", "ws-a", READ);
+    let owner = fixture.login("user-a", "ws-a", READ);
     fixture
         .store
         .get_member(&owner, &ws("ws-a"), &who(user))
@@ -42,7 +42,7 @@ fn admin_list_includes_invitations_and_member_list_hides_them() {
     let invited = fixture
         .store
         .invite_members(
-            &login("user-b", "ws-a", WRITE),
+            &fixture.login("user-b", "ws-a", WRITE),
             &ws("ws-a"),
             &["new@team.example"],
             None,
@@ -54,7 +54,7 @@ fn admin_list_includes_invitations_and_member_list_hides_them() {
     );
     let admin = fixture
         .store
-        .list_members(&login("user-b", "ws-a", READ), &ws("ws-a"))
+        .list_members(&fixture.login("user-b", "ws-a", READ), &ws("ws-a"))
         .unwrap();
     let users: Vec<_> = admin
         .members
@@ -66,7 +66,7 @@ fn admin_list_includes_invitations_and_member_list_hides_them() {
     assert_eq!(admin.invitations[0].email, "new@team.example");
     let member = fixture
         .store
-        .list_members(&login("user-c", "ws-a", READ), &ws("ws-a"))
+        .list_members(&fixture.login("user-c", "ws-a", READ), &ws("ws-a"))
         .unwrap();
     assert_eq!((member.members.len(), member.invitations.len()), (3, 0));
 }
@@ -74,7 +74,7 @@ fn admin_list_includes_invitations_and_member_list_hides_them() {
 #[test]
 fn invitations_validate_role_and_addresses() {
     let fixture = team();
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     let invite = |emails: &[&str], role| {
         fixture
             .store
@@ -114,7 +114,7 @@ fn invitations_validate_role_and_addresses() {
 #[test]
 fn member_reads_but_cannot_change_membership() {
     let fixture = team();
-    let member = login(
+    let member = fixture.login(
         "user-c",
         "ws-a",
         &[Scope::WorkspaceRead, Scope::WorkspaceWrite],
@@ -156,7 +156,7 @@ fn member_reads_but_cannot_change_membership() {
 fn missing_scope_and_foreign_workspace_are_refused_before_any_rule() {
     let fixture = team();
     fixture.seed("ws-b", "Team B", &[("user-z", Role::Owner)]);
-    let read_only = login("user-a", "ws-a", READ);
+    let read_only = fixture.login("user-a", "ws-a", READ);
     let Err(OrgError::Denied(denial)) =
         fixture
             .store
@@ -165,7 +165,7 @@ fn missing_scope_and_foreign_workspace_are_refused_before_any_rule() {
         panic!("removal without workspace.write must be denied")
     };
     assert_eq!(denial.check, Check::Scope);
-    let owner = login("user-a", "ws-a", READ);
+    let owner = fixture.login("user-a", "ws-a", READ);
     let Err(OrgError::Denied(denial)) =
         fixture
             .store
@@ -182,10 +182,11 @@ fn missing_scope_and_foreign_workspace_are_refused_before_any_rule() {
 #[test]
 fn non_member_reads_are_not_member() {
     let fixture = team();
-    let result =
-        fixture
-            .store
-            .get_member(&login("user-c", "ws-a", READ), &ws("ws-a"), &who("user-z"));
+    let result = fixture.store.get_member(
+        &fixture.login("user-c", "ws-a", READ),
+        &ws("ws-a"),
+        &who("user-z"),
+    );
     assert_eq!(failure(result), ("not_found", Some("not_member")));
 }
 
@@ -200,7 +201,7 @@ fn admin_removes_member_and_revokes_only_that_login() {
     let kept = credentials
         .issue_login(&who("user-b"), &ws("ws-a"), [], lifetime)
         .unwrap();
-    let admin = login("user-b", "ws-a", WRITE);
+    let admin = fixture.login("user-b", "ws-a", WRITE);
     fixture
         .store
         .remove_member(&admin, &ws("ws-a"), &who("user-c"))
@@ -213,7 +214,7 @@ fn admin_removes_member_and_revokes_only_that_login() {
     // The removed user's next request no longer authenticates.
     let Err(OrgError::Denied(denial)) = fixture
         .store
-        .list_members(&login("user-c", "ws-a", READ), &ws("ws-a"))
+        .list_members(&fixture.login("user-c", "ws-a", READ), &ws("ws-a"))
     else {
         panic!("a removed member must be refused")
     };
@@ -228,7 +229,7 @@ fn admin_removes_member_and_revokes_only_that_login() {
 #[test]
 fn only_an_owner_touches_owner_memberships() {
     let fixture = team();
-    let admin = login("user-b", "ws-a", WRITE);
+    let admin = fixture.login("user-b", "ws-a", WRITE);
     let remove = fixture
         .store
         .remove_member(&admin, &ws("ws-a"), &who("user-a"));
@@ -241,7 +242,7 @@ fn only_an_owner_touches_owner_memberships() {
         .store
         .set_member_role(&admin, &ws("ws-a"), &who("user-a"), Role::Member);
     assert_eq!(failure(demote), ("forbidden", Some("owner_required")));
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     let promoted = fixture
         .store
         .set_member_role(&owner, &ws("ws-a"), &who("user-c"), Role::Owner)
@@ -253,7 +254,7 @@ fn only_an_owner_touches_owner_memberships() {
 #[test]
 fn the_last_owner_can_be_neither_removed_nor_demoted() {
     let fixture = team();
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     let remove = fixture
         .store
         .remove_member(&owner, &ws("ws-a"), &who("user-a"));
@@ -273,7 +274,7 @@ fn the_last_owner_can_be_neither_removed_nor_demoted() {
         .set_member_role(&owner, &ws("ws-a"), &who("user-a"), Role::Admin)
         .unwrap();
     assert_eq!(role_of(&fixture, "user-b"), Role::Owner);
-    let new_owner = login("user-b", "ws-a", WRITE);
+    let new_owner = fixture.login("user-b", "ws-a", WRITE);
     let remove = fixture
         .store
         .remove_member(&new_owner, &ws("ws-a"), &who("user-b"));
@@ -283,7 +284,7 @@ fn the_last_owner_can_be_neither_removed_nor_demoted() {
 #[test]
 fn repeating_a_role_reports_the_same_state_and_viewer_is_not_assignable() {
     let fixture = team();
-    let admin = login("user-b", "ws-a", WRITE);
+    let admin = fixture.login("user-b", "ws-a", WRITE);
     let same = fixture
         .store
         .set_member_role(&admin, &ws("ws-a"), &who("user-c"), Role::Member)
@@ -294,4 +295,30 @@ fn repeating_a_role_reports_the_same_state_and_viewer_is_not_assignable() {
         .set_member_role(&admin, &ws("ws-a"), &who("user-c"), Role::Viewer);
     assert_eq!(failure(viewer), ("invalid_request", None));
     assert!(fixture.audit_actions("ws-a").is_empty());
+}
+
+#[test]
+fn an_owner_removing_itself_keeps_its_email_in_the_audit_entry() {
+    let fixture = team();
+    let owner = fixture.login("user-a", "ws-a", WRITE);
+    fixture
+        .store
+        .set_member_role(&owner, &ws("ws-a"), &who("user-b"), Role::Owner)
+        .unwrap();
+    fixture
+        .store
+        .remove_member(&owner, &ws("ws-a"), &who("user-a"))
+        .unwrap();
+    let (actor, email): (String, Option<String>) = fixture
+        .raw()
+        .query_row(
+            "SELECT actor, actor_email FROM org_audit WHERE action = 'member.remove'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (actor.as_str(), email.as_deref()),
+        ("user-a", Some("user-a@team.example"))
+    );
 }

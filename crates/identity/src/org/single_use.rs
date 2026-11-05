@@ -8,8 +8,8 @@ use rusqlite::{OptionalExtension, params};
 use super::error::{OrgCause, OrgError, Storage};
 use super::snapshot::state_name;
 use super::workspace::derive_handle;
-use super::{Authorized, Change, OrgStore, new_id};
-use crate::authz::{OperationRequest, Principal, Role, WorkspaceId, WorkspaceState};
+use super::{Authorized, Caller, Change, OrgStore, new_id};
+use crate::authz::{OperationRequest, Role, WorkspaceId, WorkspaceState};
 use crate::store::database::{from_sql, to_sql};
 
 pub const LIFETIME_DEFAULT_MINUTES: u32 = 240;
@@ -83,7 +83,7 @@ fn trial_key(text: &str) -> Result<&str, OrgError> {
 impl OrgStore {
     pub fn create_single_use(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         parent: &WorkspaceId,
         request: &SingleUseRequest,
     ) -> Result<SingleUseCreated, OrgError> {
@@ -97,7 +97,7 @@ impl OrgStore {
     /// Repeating it returns the saved result.
     pub fn retire_single_use(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         parent: &WorkspaceId,
         single_use: &WorkspaceId,
     ) -> Result<RetireOutcome, OrgError> {
@@ -190,7 +190,7 @@ impl Authorized<'_> {
         })
     }
 
-    fn retire_single_use(
+    pub(super) fn retire_single_use(
         &self,
         parent: &WorkspaceId,
         single_use: &WorkspaceId,
@@ -247,6 +247,25 @@ impl Authorized<'_> {
         )?;
         record.retired_ms = Some(self.now_ms);
         Ok(outcome(record, cause))
+    }
+
+    /// Every single-use workspace of `parent` whose retirement is not saved.
+    pub(super) fn live_single_use(
+        &self,
+        parent: &WorkspaceId,
+    ) -> Result<Vec<WorkspaceId>, OrgError> {
+        let mut statement = self
+            .transaction
+            .prepare(
+                "SELECT id FROM org_workspaces
+                 WHERE parent = ?1 AND retired_ms IS NULL ORDER BY created_ms, id",
+            )
+            .storage()?;
+        let rows = statement
+            .query_map([parent.as_str()], |row| row.get::<_, String>(0))
+            .storage()?;
+        rows.map(|row| row.storage().map(WorkspaceId::new))
+            .collect()
     }
 
     /// The single-use workspace of `parent` and its saved retirement cause.

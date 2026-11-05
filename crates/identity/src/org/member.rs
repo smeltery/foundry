@@ -6,10 +6,8 @@ use rusqlite::{OptionalExtension, params};
 
 use super::error::{OrgCause, OrgError, Storage};
 use super::snapshot::parse_role;
-use super::{Authorized, Change, OrgStore, nonblank};
-use crate::authz::{
-    Access, CredentialKind, OperationRequest, Principal, PrincipalId, Role, WorkspaceId,
-};
+use super::{Authorized, Caller, Change, OrgStore, nonblank};
+use crate::authz::{Access, CredentialKind, OperationRequest, PrincipalId, Role, WorkspaceId};
 use crate::store::database::{from_sql, to_sql};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +58,7 @@ fn address(text: &str) -> Result<&str, OrgError> {
 impl OrgStore {
     pub fn list_members(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
     ) -> Result<MemberList, OrgError> {
         let request = OperationRequest::new("member.list").in_workspace(workspace.clone());
@@ -107,7 +105,7 @@ impl OrgStore {
     /// The owner role is granted only after joining.
     pub fn invite_members(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         emails: &[&str],
         role: Option<Role>,
@@ -160,7 +158,7 @@ impl OrgStore {
 
     pub fn get_member(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         user: &PrincipalId,
     ) -> Result<MemberRecord, OrgError> {
@@ -178,7 +176,7 @@ impl OrgStore {
     /// workspace in the same commit. The account and other memberships stay.
     pub fn remove_member(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         user: &PrincipalId,
     ) -> Result<(), OrgError> {
@@ -192,6 +190,18 @@ impl OrgStore {
             if target.role == Role::Owner {
                 authorized.keep_an_owner(workspace)?;
             }
+            // Recorded before the delete, so a self-removal keeps the actor's
+            // email; the transaction commits both or neither.
+            authorized.record(
+                workspace,
+                Change {
+                    action: "member.remove",
+                    target_kind: "member",
+                    target: user.as_str(),
+                    label: target.email.as_deref(),
+                    details: format!("role={}", target.role.name()),
+                },
+            )?;
             let transaction = authorized.transaction;
             transaction
                 .execute(
@@ -212,16 +222,7 @@ impl OrgStore {
                     ],
                 )
                 .storage()?;
-            authorized.record(
-                workspace,
-                Change {
-                    action: "member.remove",
-                    target_kind: "member",
-                    target: user.as_str(),
-                    label: target.email.as_deref(),
-                    details: format!("role={}", target.role.name()),
-                },
-            )
+            Ok(())
         })
     }
 
@@ -230,7 +231,7 @@ impl OrgStore {
     /// never touched.
     pub fn set_member_role(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         user: &PrincipalId,
         role: Role,

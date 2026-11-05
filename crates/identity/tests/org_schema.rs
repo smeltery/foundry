@@ -9,7 +9,7 @@ use std::thread;
 use foundry_identity::authz::{Role, Scope};
 use foundry_identity::org::{OrgError, OrgStore};
 use foundry_identity::store::{CredentialStore, IDENTITY_DATABASE, ManualClock};
-use org_fixture::{Fixture, failure, login, who, ws};
+use org_fixture::{Fixture, failure, who, ws};
 use rusqlite::Connection;
 
 const WRITE: &[Scope] = &[Scope::WorkspaceWrite];
@@ -90,7 +90,7 @@ fn a_version_1_file_gains_the_organization_tables_and_keeps_its_rows() {
         "SELECT count(*) FROM sqlite_master WHERE type IN ('table', 'trigger')
          AND name LIKE 'org_%'",
     );
-    assert_eq!(tables, 7);
+    assert_eq!(tables, 8);
     // Both stores open the migrated file, and the step does not run twice.
     CredentialStore::open(&path, Arc::new(ManualClock::default())).unwrap();
     drop(open(&path).unwrap());
@@ -155,7 +155,7 @@ fn a_mutation_whose_audit_entry_fails_is_rolled_back() {
              BEGIN SELECT RAISE(ABORT, 'audit sink down'); END;",
         )
         .unwrap();
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     let changed = fixture
         .store
         .set_member_role(&owner, &ws("ws-a"), &who("user-c"), Role::Admin);
@@ -176,9 +176,16 @@ fn a_mutation_whose_audit_entry_fails_is_rolled_back() {
     assert_eq!((role.as_str(), name.as_str()), ("member", "Team A"));
 }
 
-/// Runs both changes at once, each on its own connection, and returns their
-/// results with the number of owners left.
-fn race(first: (&str, &str, Role), second: (&str, &str, Role)) -> (Vec<Result<(), OrgError>>, i64) {
+/// One membership change in a race.
+#[derive(Clone, Copy)]
+enum Change {
+    SetRole(&'static str, &'static str, Role),
+    Remove(&'static str, &'static str),
+}
+
+/// Runs both changes at once between two owners, each on its own connection,
+/// and returns how the refused one failed with the number of owners left.
+fn race(first: Change, second: Change) -> (Vec<(&'static str, Option<&'static str>)>, i64) {
     let fixture = Fixture::new();
     fixture.seed(
         "ws-a",
@@ -188,59 +195,113 @@ fn race(first: (&str, &str, Role), second: (&str, &str, Role)) -> (Vec<Result<()
     let barrier = Arc::new(Barrier::new(2));
     let handles: Vec<_> = [first, second]
         .into_iter()
-        .map(|(caller, target, role)| {
+        .map(|change| {
             let (store, barrier) = (fixture.connect(), barrier.clone());
-            let (caller, target) = (login(caller, "ws-a", WRITE), who(target));
+            let caller = match change {
+                Change::SetRole(caller, ..) | Change::Remove(caller, _) => caller,
+            };
+            let caller = fixture.login(caller, "ws-a", WRITE);
             thread::spawn(move || {
                 barrier.wait();
-                store
-                    .set_member_role(&caller, &ws("ws-a"), &target, role)
-                    .map(|_| ())
+                match change {
+                    Change::SetRole(_, target, role) => store
+                        .set_member_role(&caller, &ws("ws-a"), &who(target), role)
+                        .map(|_| ()),
+                    Change::Remove(_, target) => {
+                        store.remove_member(&caller, &ws("ws-a"), &who(target))
+                    }
+                }
             })
         })
         .collect();
-    let results = handles
+    let refused = handles
         .into_iter()
-        .map(|handle| handle.join().unwrap())
+        .filter_map(|handle| handle.join().unwrap().err())
+        .map(|error: OrgError| (error.class(), error.cause()))
         .collect();
     let owners = scalar(
         &fixture.path,
         "SELECT count(*) FROM org_members WHERE role = 'owner'",
     );
-    (results, owners)
+    (refused, owners)
 }
 
 #[test]
 fn concurrent_owners_demoting_each_other_leave_one_owner() {
     for _ in 0..10 {
-        let (results, owners) = race(
-            ("user-a", "user-b", Role::Admin),
-            ("user-b", "user-a", Role::Admin),
+        let (refused, owners) = race(
+            Change::SetRole("user-a", "user-b", Role::Admin),
+            Change::SetRole("user-b", "user-a", Role::Admin),
         );
-        assert_eq!(owners, 1);
-        let refused: Vec<_> = results
-            .into_iter()
-            .filter_map(Result::err)
-            .map(|error| (error.class(), error.cause()))
-            .collect();
         // The loser is an admin by the time it decides.
-        assert_eq!(refused, [("forbidden", Some("owner_required"))]);
+        assert_eq!(
+            (refused, owners),
+            (vec![("forbidden", Some("owner_required"))], 1)
+        );
     }
 }
 
 #[test]
 fn concurrent_owners_stepping_down_leave_one_owner() {
     for _ in 0..10 {
-        let (results, owners) = race(
-            ("user-a", "user-a", Role::Member),
-            ("user-b", "user-b", Role::Member),
+        let (refused, owners) = race(
+            Change::SetRole("user-a", "user-a", Role::Member),
+            Change::SetRole("user-b", "user-b", Role::Member),
+        );
+        assert_eq!(
+            (refused, owners),
+            (vec![("conflict", Some("last_owner"))], 1)
+        );
+    }
+}
+
+#[test]
+fn concurrent_owners_removing_each_other_leave_one_owner() {
+    for _ in 0..10 {
+        let (refused, owners) = race(
+            Change::Remove("user-a", "user-b"),
+            Change::Remove("user-b", "user-a"),
+        );
+        // The loser's membership and login are gone by the time it decides.
+        assert_eq!((refused, owners), (vec![("unauthenticated", None)], 1));
+    }
+}
+
+#[test]
+fn concurrent_removal_and_demotion_leave_one_owner() {
+    for _ in 0..10 {
+        let (refused, owners) = race(
+            Change::Remove("user-a", "user-b"),
+            Change::SetRole("user-b", "user-a", Role::Admin),
         );
         assert_eq!(owners, 1);
-        let refused: Vec<_> = results
-            .into_iter()
-            .filter_map(Result::err)
-            .map(|error| (error.class(), error.cause()))
-            .collect();
-        assert_eq!(refused, [("conflict", Some("last_owner"))]);
+        // Removed first, the demoter no longer authenticates; demoted first,
+        // the remover is an admin and may not remove an owner.
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [("unauthenticated", None) | ("forbidden", Some("owner_required"))]
+            ),
+            "{refused:?}"
+        );
+    }
+}
+
+#[test]
+fn a_version_2_file_missing_an_audit_guard_is_refused() {
+    for guard in [
+        "DROP TRIGGER org_audit_no_update",
+        "DROP TRIGGER org_audit_no_delete",
+        "DROP TRIGGER org_audit_no_replace",
+        "DROP INDEX org_audit_by_workspace",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(IDENTITY_DATABASE);
+        drop(open(&path).unwrap());
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(guard)
+            .unwrap();
+        assert_eq!(open(&path).unwrap_err().class(), "unavailable", "{guard}");
     }
 }

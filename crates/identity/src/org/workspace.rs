@@ -3,8 +3,8 @@ use rusqlite::{OptionalExtension, params};
 
 use super::error::{OrgCause, OrgError, Storage};
 use super::snapshot::{parse_role, state_name};
-use super::{Authorized, Change, OrgStore, new_id, nonblank};
-use crate::authz::{OperationRequest, Principal, Role, WorkspaceId, WorkspaceState};
+use super::{Authorized, Caller, Change, OrgStore, new_id, nonblank};
+use crate::authz::{OperationRequest, Role, WorkspaceId, WorkspaceState};
 use crate::store::database::to_sql;
 
 /// A workspace as the caller sees it, with the caller's role in it.
@@ -38,7 +38,7 @@ impl OrgStore {
     /// to their own workspace; a login grant is refused by the decision core.
     pub fn create_workspace(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         name: &str,
     ) -> Result<WorkspaceRecord, OrgError> {
         self.write(
@@ -68,7 +68,12 @@ impl OrgStore {
                     .execute(
                         "INSERT INTO org_members (workspace, principal, role, joined_ms)
                      VALUES (?1, ?2, ?3, ?4)",
-                        params![id.as_str(), caller.id.as_str(), Role::Owner.name(), now],
+                        params![
+                            id.as_str(),
+                            authorized.caller.id.as_str(),
+                            Role::Owner.name(),
+                            now
+                        ],
                     )
                     .storage()?;
                 authorized.record(
@@ -93,17 +98,21 @@ impl OrgStore {
     }
 
     /// Every workspace the credential can act on: exactly its bound one.
-    pub fn list_workspaces(&self, caller: &Principal) -> Result<Vec<WorkspaceRecord>, OrgError> {
+    pub fn list_workspaces(&self, caller: &Caller) -> Result<Vec<WorkspaceRecord>, OrgError> {
         self.read(
             caller,
             OperationRequest::new("workspace.list"),
-            |authorized| Ok(vec![authorized.workspace(&caller.credential.workspace)?]),
+            |authorized| {
+                Ok(vec![
+                    authorized.workspace(&authorized.caller.credential.workspace)?,
+                ])
+            },
         )
     }
 
     pub fn get_workspace(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
     ) -> Result<WorkspaceRecord, OrgError> {
         let request = OperationRequest::new("workspace.get").in_workspace(workspace.clone());
@@ -116,7 +125,7 @@ impl OrgStore {
     /// records no entry.
     pub fn rename_workspace(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         name: &str,
     ) -> Result<WorkspaceRecord, OrgError> {
@@ -154,10 +163,12 @@ impl OrgStore {
     }
 
     /// Deletes the workspace when `confirm_name` equals its current name
-    /// exactly, and revokes every credential bound to it in the same commit.
+    /// exactly. In the same commit it revokes every credential bound to it
+    /// and retires each of its live single-use workspaces, with their own
+    /// audit entries, since nothing would be left to pay for or retire them.
     pub fn delete_workspace(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         confirm_name: &str,
     ) -> Result<(), OrgError> {
@@ -169,6 +180,9 @@ impl OrgStore {
                     field: "confirm_name",
                     cause: Some(OrgCause::NameMismatch),
                 });
+            }
+            for child in authorized.live_single_use(workspace)? {
+                authorized.retire_single_use(workspace, &child)?;
             }
             let now = to_sql(authorized.now_ms)?;
             authorized

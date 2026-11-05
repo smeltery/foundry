@@ -4,7 +4,7 @@ mod org_fixture;
 
 use foundry_identity::authz::{Check, Role, Scope};
 use foundry_identity::org::{AUDIT_PAGE_DEFAULT, AUDIT_PAGE_MAX, AuditQuery, OrgError};
-use org_fixture::{Fixture, failure, login, who, ws};
+use org_fixture::{Fixture, failure, who, ws};
 
 const AUDIT: &[Scope] = &[Scope::AuditRead];
 const WRITE: &[Scope] = &[Scope::WorkspaceWrite];
@@ -26,7 +26,7 @@ fn team() -> Fixture {
 
 /// `count` invitations from the owner, one millisecond apart.
 fn invite(fixture: &Fixture, count: usize) {
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     for index in 0..count {
         fixture.clock.advance(1);
         let email = format!("person{index}@team.example");
@@ -40,7 +40,7 @@ fn invite(fixture: &Fixture, count: usize) {
 fn targets(fixture: &Fixture, query: &AuditQuery) -> (Vec<String>, Option<u64>) {
     let page = fixture
         .store
-        .list_audit(&login("user-b", "ws-a", AUDIT), &ws("ws-a"), query)
+        .list_audit(&fixture.login("user-b", "ws-a", AUDIT), &ws("ws-a"), query)
         .unwrap();
     let targets = page
         .entries
@@ -54,7 +54,7 @@ fn targets(fixture: &Fixture, query: &AuditQuery) -> (Vec<String>, Option<u64>) 
 fn every_mutation_records_actor_email_and_time() {
     let fixture = team();
     fixture.clock.advance(7);
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     fixture
         .store
         .rename_workspace(&owner, &ws("ws-a"), "Team Alpha")
@@ -70,7 +70,7 @@ fn every_mutation_records_actor_email_and_time() {
     let page = fixture
         .store
         .list_audit(
-            &login("user-a", "ws-a", AUDIT),
+            &fixture.login("user-a", "ws-a", AUDIT),
             &ws("ws-a"),
             &AuditQuery::default(),
         )
@@ -128,7 +128,7 @@ fn pages_are_newest_first_and_follow_the_end_position() {
 #[test]
 fn page_size_defaults_caps_and_refuses_zero() {
     let fixture = team();
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     let emails: Vec<String> = (0..205)
         .map(|index| format!("p{index}@team.example"))
         .collect();
@@ -149,9 +149,10 @@ fn page_size_defaults_caps_and_refuses_zero() {
         page: Some(0),
         ..AuditQuery::default()
     };
-    let refused = fixture
-        .store
-        .list_audit(&login("user-a", "ws-a", AUDIT), &ws("ws-a"), &zero);
+    let refused =
+        fixture
+            .store
+            .list_audit(&fixture.login("user-a", "ws-a", AUDIT), &ws("ws-a"), &zero);
     assert_eq!(failure(refused), ("invalid_request", None));
 }
 
@@ -171,13 +172,19 @@ fn time_bounds_and_filters_narrow_the_page() {
         until_ms: Some(1),
         ..AuditQuery::default()
     };
-    let refused = fixture
-        .store
-        .list_audit(&login("user-a", "ws-a", AUDIT), &ws("ws-a"), &inverted);
+    let refused = fixture.store.list_audit(
+        &fixture.login("user-a", "ws-a", AUDIT),
+        &ws("ws-a"),
+        &inverted,
+    );
     assert_eq!(failure(refused), ("invalid_request", None));
     fixture
         .store
-        .rename_workspace(&login("user-b", "ws-a", WRITE), &ws("ws-a"), "Renamed")
+        .rename_workspace(
+            &fixture.login("user-b", "ws-a", WRITE),
+            &ws("ws-a"),
+            "Renamed",
+        )
         .unwrap();
     let by_actor = AuditQuery {
         actor: Some(who("user-b")),
@@ -207,7 +214,7 @@ fn members_get_other_members_personal_entries_withheld() {
     let member = fixture
         .store
         .list_audit(
-            &login("user-c", "ws-a", AUDIT),
+            &fixture.login("user-c", "ws-a", AUDIT),
             &ws("ws-a"),
             &AuditQuery::default(),
         )
@@ -228,7 +235,7 @@ fn members_get_other_members_personal_entries_withheld() {
     let admin = fixture
         .store
         .list_audit(
-            &login("user-a", "ws-a", AUDIT),
+            &fixture.login("user-a", "ws-a", AUDIT),
             &ws("ws-a"),
             &AuditQuery::default(),
         )
@@ -247,11 +254,17 @@ fn reading_needs_the_audit_scope_and_a_known_role() {
     let query = AuditQuery::default();
     let cases = [
         (
-            login("user-a", "ws-a", &[Scope::WorkspaceRead]),
+            fixture.login("user-a", "ws-a", &[Scope::WorkspaceRead]),
             Check::Scope,
         ),
-        (login("user-d", "ws-a", AUDIT), Check::UndeterminedRole),
-        (login("user-z", "ws-a", AUDIT), Check::Authentication),
+        (
+            fixture.login("user-d", "ws-a", AUDIT),
+            Check::UndeterminedRole,
+        ),
+        (
+            fixture.login("user-z", "ws-a", AUDIT),
+            Check::Authentication,
+        ),
     ];
     for (caller, check) in cases {
         let Err(OrgError::Denied(denial)) = fixture.store.list_audit(&caller, &ws("ws-a"), &query)
@@ -263,15 +276,31 @@ fn reading_needs_the_audit_scope_and_a_known_role() {
 }
 
 #[test]
-fn stored_entries_can_be_neither_updated_nor_deleted() {
+fn stored_entries_can_be_neither_updated_replaced_nor_deleted() {
     let fixture = team();
     invite(&fixture, 1);
     let raw = fixture.raw();
+    let first: i64 = raw
+        .query_row("SELECT min(sequence) FROM org_audit", [], |row| row.get(0))
+        .unwrap();
+    let forged = |verb: &str| {
+        format!(
+            "{verb} INTO org_audit (sequence, workspace, action, target_kind, target, details,
+                 created_ms) VALUES ({first}, 'ws-a', 'forged', 'member', 'x', '', 0)"
+        )
+    };
     for statement in [
-        "UPDATE org_audit SET action = 'forged'",
-        "DELETE FROM org_audit",
+        "UPDATE org_audit SET action = 'forged'".to_owned(),
+        "DELETE FROM org_audit".to_owned(),
+        forged("INSERT OR REPLACE"),
+        forged("REPLACE"),
+        forged("INSERT"),
+        format!(
+            "{} ON CONFLICT (sequence) DO UPDATE SET action = 'forged'",
+            forged("INSERT")
+        ),
     ] {
-        let error = raw.execute_batch(statement).unwrap_err();
+        let error = raw.execute_batch(&statement).unwrap_err();
         assert!(error.to_string().contains("append-only"), "{error}");
     }
     assert_eq!(fixture.audit_actions("ws-a"), ["member.invite"]);

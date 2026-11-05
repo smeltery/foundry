@@ -2,12 +2,12 @@
 //! including the rows whose matrix cells the specification leaves unknown.
 mod org_fixture;
 
-use foundry_identity::authz::{Check, Credential, CredentialKind, Principal, Role, Scope};
+use foundry_identity::authz::{Check, Role, Scope};
 use foundry_identity::org::{
     OrgError, RetireCause, SettingsCatalog, SettingsNamespace, SingleUseRequest,
 };
-use foundry_identity::store::{CredentialStore, StoreError};
-use org_fixture::{Fixture, failure, key, login, who, ws};
+use foundry_identity::store::StoreError;
+use org_fixture::{Fixture, failure, who, ws};
 
 const READ: &[Scope] = &[Scope::WorkspaceRead];
 const WRITE: &[Scope] = &[Scope::WorkspaceWrite];
@@ -69,7 +69,7 @@ fn stored_setting(fixture: &Fixture) -> Option<String> {
 #[test]
 fn admin_replaces_a_whole_value_without_auditing_it() {
     let fixture = team();
-    let admin = login("user-b", "ws-a", WRITE);
+    let admin = fixture.login("user-b", "ws-a", WRITE);
     let replace = |value| {
         fixture
             .store
@@ -100,7 +100,7 @@ fn admin_replaces_a_whole_value_without_auditing_it() {
 #[test]
 fn replace_refuses_unknown_fixed_and_invalid_values() {
     let fixture = team();
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     for (namespace, value) in [("unlisted", "{}"), ("fixed", "{}"), ("defaults", "[]")] {
         let result =
             fixture
@@ -109,7 +109,7 @@ fn replace_refuses_unknown_fixed_and_invalid_values() {
         assert_eq!(failure(result), ("invalid_request", None));
     }
     let member = fixture.store.replace_setting(
-        &login("user-c", "ws-a", WRITE),
+        &fixture.login("user-c", "ws-a", WRITE),
         &ws("ws-a"),
         &catalog(),
         "defaults",
@@ -123,7 +123,7 @@ fn replace_refuses_unknown_fixed_and_invalid_values() {
 fn settings_reads_stay_denied_while_their_matrix_cells_are_unknown() {
     let fixture = team();
     for user in ["user-a", "user-b", "user-c", "user-d"] {
-        let caller = login(user, "ws-a", READ);
+        let caller = fixture.login(user, "ws-a", READ);
         let list = fixture
             .store
             .list_settings(&caller, &ws("ws-a"), &catalog());
@@ -143,9 +143,9 @@ fn single_use_creation_stays_denied_while_its_matrix_cell_is_unknown() {
         lifetime_minutes: None,
     };
     let callers = ["user-a", "user-b", "user-c", "user-d"]
-        .map(|user| login(user, "ws-a", WRITE))
+        .map(|user| fixture.login(user, "ws-a", WRITE))
         .into_iter()
-        .chain([key("svc-a", "ws-a", WRITE)]);
+        .chain([fixture.key("svc-a", "ws-a", WRITE)]);
     for caller in callers {
         let created = fixture
             .store
@@ -163,17 +163,12 @@ fn single_use_creation_stays_denied_while_its_matrix_cell_is_unknown() {
 fn admin_retires_and_a_repeat_returns_the_saved_result() {
     let fixture = team();
     fixture.seed_single_use("su-1", "ws-a", 60_000);
-    let credentials = CredentialStore::open(&fixture.path, fixture.clock.clone()).unwrap();
-    let token = credentials
-        .issue_key(&who("svc-su"), &ws("su-1"), [Scope::SessionsRun])
+    let token = fixture
+        .credentials
+        .issue_key(&who("svc-su"), &ws("su-1"), [Scope::WorkspaceRead])
         .unwrap();
-    let machine = Principal::new(
-        who("svc-su"),
-        Credential::new(CredentialKind::MachineToken, ws("su-1"))
-            .with_scopes([Scope::SessionsRun])
-            .for_single_use_workspace(),
-    );
-    let admin = login("user-b", "ws-a", WRITE);
+    let inside = fixture.caller(&token);
+    let admin = fixture.login("user-b", "ws-a", WRITE);
     let retired = fixture
         .store
         .retire_single_use(&admin, &ws("ws-a"), &ws("su-1"))
@@ -182,18 +177,23 @@ fn admin_retires_and_a_repeat_returns_the_saved_result() {
     assert_eq!((retired.cancelled_runs, retired.revoked_machines), (0, 0));
     assert_eq!(retired.record.retired_ms, Some(0));
     assert_eq!(
-        credentials.authenticate(token.secret.expose()),
+        fixture.credentials.authenticate(token.secret.expose()),
         Err(StoreError::Unauthenticated)
     );
-    // The single-use workspace's own credentials no longer authenticate.
+    // A caller that authenticated inside the workspace before it retired is
+    // refused on its next operation.
     assert_eq!(
-        denied_by(fixture.store.list_workspaces(&machine)),
+        denied_by(fixture.store.list_workspaces(&inside)),
         Check::Authentication
     );
     fixture.clock.advance(120_000);
     let again = fixture
         .store
-        .retire_single_use(&login("user-a", "ws-a", WRITE), &ws("ws-a"), &ws("su-1"))
+        .retire_single_use(
+            &fixture.login("user-a", "ws-a", WRITE),
+            &ws("ws-a"),
+            &ws("su-1"),
+        )
         .unwrap();
     assert_eq!(again, retired);
     assert_eq!(fixture.audit_actions("ws-a"), ["single_use.retire"]);
@@ -206,7 +206,11 @@ fn retiring_after_expiry_saves_the_expired_cause() {
     fixture.clock.advance(1_000);
     let outcome = fixture
         .store
-        .retire_single_use(&login("user-a", "ws-a", WRITE), &ws("ws-a"), &ws("su-1"))
+        .retire_single_use(
+            &fixture.login("user-a", "ws-a", WRITE),
+            &ws("ws-a"),
+            &ws("su-1"),
+        )
         .unwrap();
     assert_eq!(outcome.cause, RetireCause::Expired);
 }
@@ -217,12 +221,13 @@ fn retirement_is_refused_for_members_and_other_parents() {
     fixture.seed("ws-b", "Team B", &[("user-z", Role::Owner)]);
     fixture.seed_single_use("su-1", "ws-a", 60_000);
     fixture.seed_single_use("su-9", "ws-b", 60_000);
-    let member =
-        fixture
-            .store
-            .retire_single_use(&login("user-c", "ws-a", WRITE), &ws("ws-a"), &ws("su-1"));
+    let member = fixture.store.retire_single_use(
+        &fixture.login("user-c", "ws-a", WRITE),
+        &ws("ws-a"),
+        &ws("su-1"),
+    );
     assert_eq!(denied_by(member), Check::Role);
-    let owner = login("user-a", "ws-a", WRITE);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
     for (parent, single_use) in [("ws-a", "su-9"), ("ws-a", "su-unknown"), ("ws-b", "su-9")] {
         let result = fixture
             .store
@@ -230,4 +235,42 @@ fn retirement_is_refused_for_members_and_other_parents() {
         assert_eq!(failure(result), ("not_found", None));
     }
     assert!(fixture.audit_actions("ws-a").is_empty());
+}
+
+#[test]
+fn deleting_the_parent_retires_its_live_single_use_workspaces() {
+    let fixture = team();
+    fixture.seed_single_use("su-live", "ws-a", 60_000);
+    fixture.seed_single_use("su-done", "ws-a", 60_000);
+    let owner = fixture.login("user-a", "ws-a", WRITE);
+    fixture
+        .store
+        .retire_single_use(&owner, &ws("ws-a"), &ws("su-done"))
+        .unwrap();
+    let token = fixture
+        .credentials
+        .issue_key(&who("svc-su"), &ws("su-live"), [Scope::WorkspaceRead])
+        .unwrap();
+    fixture.clock.advance(5);
+    fixture
+        .store
+        .delete_workspace(&owner, &ws("ws-a"), "Team A")
+        .unwrap();
+    assert_eq!(
+        fixture.credentials.authenticate(token.secret.expose()),
+        Err(StoreError::Unauthenticated)
+    );
+    let (retired_ms, cause): (i64, String) = fixture
+        .raw()
+        .query_row(
+            "SELECT retired_ms, retire_cause FROM org_workspaces WHERE id = 'su-live'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((retired_ms, cause.as_str()), (5, "requested"));
+    assert_eq!(
+        fixture.audit_actions("ws-a"),
+        ["single_use.retire", "single_use.retire", "workspace.delete"]
+    );
 }

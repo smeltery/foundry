@@ -111,7 +111,19 @@ CREATE TRIGGER org_audit_no_update BEFORE UPDATE ON org_audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER org_audit_no_delete BEFORE DELETE ON org_audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+CREATE TRIGGER org_audit_no_replace BEFORE INSERT ON org_audit
+WHEN EXISTS (SELECT 1 FROM org_audit WHERE sequence = NEW.sequence)
+BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 ";
+
+/// The audit log's guards. A version 2 file missing any of them is refused,
+/// because its append-only guarantee no longer holds.
+const AUDIT_GUARDS: [&str; 4] = [
+    "org_audit_by_workspace",
+    "org_audit_no_update",
+    "org_audit_no_delete",
+    "org_audit_no_replace",
+];
 
 pub(crate) fn open(path: &Path) -> Result<Connection, StoreError> {
     create_private(path)?;
@@ -240,11 +252,31 @@ fn prepare(mut connection: Connection) -> Result<Connection, StoreError> {
                     )));
                 }
             }
+            check_audit_guards(&transaction)?;
         }
         _ => return Err(StoreError::unavailable("not an identity database")),
     }
     transaction.commit().storage()?;
     Ok(connection)
+}
+
+fn check_audit_guards(transaction: &rusqlite::Transaction<'_>) -> Result<(), StoreError> {
+    for name in AUDIT_GUARDS {
+        let present: bool = transaction
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                 WHERE name = ?1 AND tbl_name = 'org_audit')",
+                [name],
+                |row| row.get(0),
+            )
+            .storage()?;
+        if !present {
+            return Err(StoreError::unavailable(format!(
+                "missing audit guard {name}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn to_sql(ms: u64) -> Result<i64, StoreError> {

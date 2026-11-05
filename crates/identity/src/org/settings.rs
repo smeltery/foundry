@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 use rusqlite::{OptionalExtension, params};
 
 use super::error::{OrgError, Storage};
-use super::{Authorized, Change, OrgStore};
-use crate::authz::{OperationRequest, Principal, WorkspaceId};
+use super::{Authorized, Caller, Change, OrgStore};
+use crate::authz::{OperationRequest, WorkspaceId};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SettingsNamespace {
@@ -51,7 +51,7 @@ impl OrgStore {
     /// Every stored, readable namespace and its value.
     pub fn list_settings(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         catalog: &SettingsCatalog,
     ) -> Result<BTreeMap<String, String>, OrgError> {
@@ -64,7 +64,7 @@ impl OrgStore {
     /// One namespace's value, `None` when unset.
     pub fn get_setting(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         catalog: &SettingsCatalog,
         namespace: &str,
@@ -79,7 +79,7 @@ impl OrgStore {
     /// changes nothing and records no entry. Values never enter the audit log.
     pub fn replace_setting(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         catalog: &SettingsCatalog,
         namespace: &str,

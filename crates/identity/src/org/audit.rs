@@ -6,8 +6,8 @@
 use rusqlite::params;
 
 use super::error::{OrgError, Storage};
-use super::{Authorized, OrgStore};
-use crate::authz::{Access, OperationRequest, Principal, PrincipalId, WorkspaceId};
+use super::{Authorized, Caller, OrgStore};
+use crate::authz::{Access, OperationRequest, PrincipalId, WorkspaceId};
 use crate::store::database::{from_sql, to_sql};
 
 pub const AUDIT_PAGE_DEFAULT: u32 = 50;
@@ -72,7 +72,7 @@ pub struct AuditPage {
 impl OrgStore {
     pub fn list_audit(
         &self,
-        caller: &Principal,
+        caller: &Caller,
         workspace: &WorkspaceId,
         query: &AuditQuery,
     ) -> Result<AuditPage, OrgError> {

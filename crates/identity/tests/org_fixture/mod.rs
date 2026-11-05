@@ -5,12 +5,11 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
-use foundry_identity::authz::{
-    Credential, CredentialKind, Principal, PrincipalId, Role, Scope, WorkspaceId,
-};
-use foundry_identity::org::{OrgError, OrgStore};
-use foundry_identity::store::{IDENTITY_DATABASE, ManualClock};
+use foundry_identity::authz::{PrincipalId, Role, Scope, WorkspaceId};
+use foundry_identity::org::{Caller, OrgError, OrgStore};
+use foundry_identity::store::{CredentialStore, IDENTITY_DATABASE, IssuedCredential, ManualClock};
 use rusqlite::{Connection, params};
 
 pub fn ws(id: &str) -> WorkspaceId {
@@ -21,21 +20,8 @@ pub fn who(id: &str) -> PrincipalId {
     PrincipalId::new(id)
 }
 
-/// A user's login grant bound to `workspace`.
-pub fn login(user: &str, workspace: &str, scopes: &[Scope]) -> Principal {
-    Principal::new(
-        who(user),
-        Credential::new(CredentialKind::LoginGrant, ws(workspace)).with_scopes(scopes.to_vec()),
-    )
-}
-
-/// A service principal's scoped key bound to `workspace`.
-pub fn key(service: &str, workspace: &str, scopes: &[Scope]) -> Principal {
-    Principal::new(
-        who(service),
-        Credential::new(CredentialKind::ScopedKey, ws(workspace)).with_scopes(scopes.to_vec()),
-    )
-}
+/// How long fixture logins stay valid.
+pub const LOGIN_LIFETIME: Duration = Duration::from_secs(86_400);
 
 /// The class and cause an error reports, for compact assertions.
 pub fn failure<T: std::fmt::Debug>(
@@ -50,6 +36,7 @@ pub struct Fixture {
     pub path: PathBuf,
     pub clock: Arc<ManualClock>,
     pub store: OrgStore,
+    pub credentials: CredentialStore,
 }
 
 impl Fixture {
@@ -58,12 +45,52 @@ impl Fixture {
         let path = directory.path().join(IDENTITY_DATABASE);
         let clock = Arc::new(ManualClock::default());
         let store = OrgStore::open(&path, clock.clone()).unwrap();
+        let credentials = CredentialStore::open(&path, clock.clone()).unwrap();
         Self {
             _directory: directory,
             path,
             clock,
             store,
+            credentials,
         }
+    }
+
+    /// The caller a presented credential authenticates as.
+    pub fn caller(&self, issued: &IssuedCredential) -> Caller {
+        let principal = self
+            .credentials
+            .authenticate(issued.secret.expose())
+            .unwrap();
+        Caller::new(principal, issued.record.prefix.clone())
+    }
+
+    /// A stored login for `user` bound to `workspace`, and its caller.
+    pub fn issue_login(
+        &self,
+        user: &str,
+        workspace: &str,
+        scopes: &[Scope],
+    ) -> (IssuedCredential, Caller) {
+        let issued = self
+            .credentials
+            .issue_login(&who(user), &ws(workspace), scopes.to_vec(), LOGIN_LIFETIME)
+            .unwrap();
+        let caller = self.caller(&issued);
+        (issued, caller)
+    }
+
+    /// A user's login grant bound to `workspace`.
+    pub fn login(&self, user: &str, workspace: &str, scopes: &[Scope]) -> Caller {
+        self.issue_login(user, workspace, scopes).1
+    }
+
+    /// A service principal's scoped key bound to `workspace`.
+    pub fn key(&self, service: &str, workspace: &str, scopes: &[Scope]) -> Caller {
+        let issued = self
+            .credentials
+            .issue_key(&who(service), &ws(workspace), scopes.to_vec())
+            .unwrap();
+        self.caller(&issued)
     }
 
     /// Another store on its own connection to the same file.
