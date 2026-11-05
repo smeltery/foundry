@@ -107,7 +107,7 @@ fn schema10_migration_is_explicit_preserves_legacy_rows_and_creates_no_acceptanc
     assert_eq!(
         db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        12
+        13
     );
     assert!(f.lookup().unwrap().is_none());
     let after: (Vec<u8>, Vec<u8>, Vec<u8>) = db

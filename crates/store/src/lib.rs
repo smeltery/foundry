@@ -30,6 +30,7 @@ mod restore_snapshot;
 mod restore_types;
 mod restores;
 mod schema;
+mod session_meta;
 mod session_query;
 mod tools;
 pub mod witness;
@@ -81,6 +82,7 @@ pub use restore_types::{
 pub use restores::{
     MAX_RESTORE_ROWS_PER_DATABASE, MAX_RESTORE_ROWS_PER_SESSION, RESTORE_RECOVERY_BATCH_SIZE,
 };
+pub use session_meta::DeleteReceipt;
 pub use session_query::{
     ArchiveFilter, DEFAULT_SESSION_PAGE, DERIVED_TITLE_CHARS, MAX_SEARCH_CHARS, MAX_SEARCH_PAGE,
     MAX_SESSION_PAGE, MIN_SEARCH_CHARS, OriginFilter, SessionFilter, SessionPage,
@@ -166,17 +168,22 @@ impl Store {
 
     /// Newest created sessions first; updates do not reorder the list.
     pub fn list(&self, limit: u32) -> Result<Vec<Session>> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT body FROM sessions ORDER BY rowid DESC LIMIT ?1")?;
+        let mut statement = self.connection.prepare(
+            "SELECT body FROM sessions WHERE deleted_ms IS NULL ORDER BY rowid DESC LIMIT ?1",
+        )?;
         let rows = statement.query_map([limit], |row| row.get::<_, String>(0))?;
         rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
     }
 }
 
+/// A tombstoned session is absent from every read.
 fn read_session(connection: &Connection, id: &str) -> Result<Session> {
     let body: Option<String> = connection
-        .query_row("SELECT body FROM sessions WHERE id=?1", [id], |r| r.get(0))
+        .query_row(
+            "SELECT body FROM sessions WHERE id=?1 AND deleted_ms IS NULL",
+            [id],
+            |r| r.get(0),
+        )
         .optional()?;
     let body =
         body.ok_or_else(|| StoreError::Contract(ContractError::NotFound("session".into())))?;

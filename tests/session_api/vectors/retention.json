@@ -7,7 +7,8 @@
       "name": "archive_hides_from_default_list",
       "operation": "session.archive",
       "rows": ["API-X025"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_meta.rs::archive_and_unarchive_change_listing_but_not_lifecycle_outcome_or_version", "crates/service/tests/session_meta.rs::archive_and_unarchive_are_repeatable_and_keep_lifecycle"],
       "given": {"lifecycle": "exit", "outcome": "success", "archived": false},
       "request": {},
       "expect": {"result": "ok", "archived": true, "listed_by_default": false, "lifecycle": "exit", "outcome": "success"}
@@ -16,7 +17,8 @@
       "name": "archive_is_repeatable",
       "operation": "session.archive",
       "rows": ["API-X025"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_meta.rs::archive_and_unarchive_are_repeatable_and_keep_lifecycle"],
       "given": {"archived": true},
       "request": {},
       "expect": {"result": "ok", "archived": true}
@@ -34,7 +36,8 @@
       "name": "delete_with_preserve_archives",
       "operation": "session.delete",
       "rows": ["API-X024"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": ["crates/service/tests/session_meta.rs::delete_refuses_running_preserve_archives_and_tombstone_hides"],
       "request": {"preserve": true},
       "expect": {"result": "ok", "archived": true, "deleted": false}
     },
@@ -57,12 +60,28 @@
       "expect": {"result": "error", "error": "unavailable", "deleted": false}
     },
     {
-      "name": "delete_removes_session_pending_tombstone_decision",
+      "name": "delete_tombstones_session",
       "operation": "session.delete",
       "rows": ["API-X024"],
-      "implemented": false,
+      "implemented": true,
+      "evidence": [
+        "crates/store/tests/session_meta_delete.rs::delete_tombstones_content_and_keeps_witness_ledger_and_audit_rows",
+        "crates/service/tests/session_meta.rs::delete_refuses_running_preserve_archives_and_tombstone_hides"
+      ],
+      "given": {"lifecycle": "exit"},
       "request": {},
-      "expect": {"result": "ok", "deleted": true, "later_read": "not_found"}
+      "expect": {"result": "ok", "deleted": true, "later_read": "not_found", "witness_retained": true}
+    },
+    {
+      "name": "delete_refuses_running_session",
+      "operation": "session.delete",
+      "rows": ["API-X024"],
+      "implemented": true,
+      "evidence": ["crates/store/tests/session_meta_delete.rs::delete_refuses_a_live_attempt_or_restore_owner"],
+      "given": {"lifecycle": "running"},
+      "request": {},
+      "expect": {"result": "error", "error": "conflict", "deleted": false, "lifecycle": "running"},
+      "note": "The specified not_terminal class is not distinct yet; Foundry reports conflict."
     }
   ]
 }

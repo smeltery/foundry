@@ -5,7 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: u32 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if version > 12 {
+    if version > 13 {
         return Err(StoreError::Contract(ContractError::Unsupported(
             "database schema is newer than this store".into(),
         )));
@@ -229,6 +229,15 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     }
     if version < 12 {
         migrate_v12(&tx)?;
+    }
+    if version < 13 {
+        // Tombstone delete (NIC-92). A set `deleted_ms` hides the session from
+        // every read; its audit and digest-bearing rows are kept.
+        tx.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN deleted_ms INTEGER
+                CHECK(deleted_ms IS NULL OR (typeof(deleted_ms)='integer' AND deleted_ms>=0));
+            PRAGMA user_version=13;",
+        )?;
     }
     tx.commit()?;
     Ok(())

@@ -53,6 +53,8 @@ pub(crate) fn verified(
 ) -> Result<Option<VerifiedAcceptance>> {
     crate::continue_intent::uuid(session)?;
     crate::continue_intent::uuid(restore_id)?;
+    // A tombstone dropped the message and event bytes this record binds.
+    crate::read_session(db, session)?;
     let valid: Option<bool> = db
         .query_row(
             "SELECT typeof(intent_body)='blob' AND length(intent_body) BETWEEN 1 AND 4096

@@ -94,6 +94,7 @@ impl Store {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        read_session(&tx, session_id)?;
         let mut message = required(&tx, session_id, id)?;
         if matches!(
             message.state,
