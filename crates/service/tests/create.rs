@@ -114,15 +114,25 @@ fn decoded_v2_request_replays_across_restart_with_its_associations() {
 }
 
 #[test]
-fn unknown_tool_profile_is_unsupported_and_writes_nothing() {
+fn every_create_path_resolves_the_tool_profile_before_writing() {
     let dir = tempdir().unwrap();
     let mut service = Service::open(dir.path().join("store.db")).unwrap();
-    let request = decode(r#""idempotency_key":null,"tool_profile":"default/read-write""#);
-    assert!(matches!(
-        service.create_session(request.unwrap()),
-        Err(ServiceError::Store(StoreError::Contract(
-            ContractError::Unsupported(_)
-        )))
+    let unknown = || decode(r#""idempotency_key":null,"tool_profile":"default/read-write""#);
+    let unsupported = |error| {
+        matches!(
+            error,
+            ServiceError::Store(StoreError::Contract(ContractError::Unsupported(_)))
+        )
+    };
+    assert!(unsupported(
+        service.create_session(unknown().unwrap()).unwrap_err()
     ));
+    assert!(unsupported(service.create(unknown().unwrap()).unwrap_err()));
     assert!(service.list(10).unwrap().is_empty());
+    let known = decode(r#""idempotency_key":null,"tool_profile":"default""#).unwrap();
+    let created = service.create_session(known).unwrap();
+    assert_eq!(
+        created.associations.tool_profile.as_deref(),
+        Some("default")
+    );
 }

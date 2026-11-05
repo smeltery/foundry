@@ -141,7 +141,7 @@ impl WorkspaceTools {
         let allowed = match name {
             "read" => self.grants.read,
             "list" => self.grants.list,
-            "edit" => self.grants.overwrite,
+            "edit" => self.grants.read && self.grants.overwrite,
             _ => self.grants.create || self.grants.overwrite,
         };
         if !allowed {

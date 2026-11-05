@@ -6,6 +6,7 @@ use tempfile::tempdir;
 
 fn overwrite() -> Grants {
     Grants {
+        read: true,
         overwrite: true,
         ..Grants::default()
     }
@@ -13,12 +14,20 @@ fn overwrite() -> Grants {
 fn call(tools: &WorkspaceTools, input: Value) -> foundry_tools::Result<Value> {
     tools.execute_json("edit", &serde_json::to_vec(&input).unwrap())
 }
+/// Names the I/O error kind; the loop and not-a-directory kinds are not yet
+/// matchable on stable Rust.
+fn io_kind(result: foundry_tools::Result<Value>) -> String {
+    match result {
+        Err(ToolError::Io(kind)) => format!("{kind:?}"),
+        other => panic!("expected an I/O error, got {other:?}"),
+    }
+}
 fn edit(path: &str, old_text: &str, new_text: &str) -> Value {
     json!({"path":path,"old_text":old_text,"new_text":new_text})
 }
 
 #[test]
-fn edit_is_denied_without_the_overwrite_grant() {
+fn edit_is_denied_without_both_read_and_overwrite() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("file"), "alpha").unwrap();
     for grants in [
@@ -28,6 +37,11 @@ fn edit_is_denied_without_the_overwrite_grant() {
             list: true,
             create: true,
             overwrite: false,
+        },
+        // Overwrite alone would turn match results into a read of the file.
+        Grants {
+            overwrite: true,
+            ..Grants::default()
         },
     ] {
         let tools = WorkspaceTools::open(dir.path(), grants, Limits::default()).unwrap();
@@ -139,13 +153,18 @@ fn symlink_escapes_are_never_followed() {
     fs::write(root.path().join("inside"), "inside").unwrap();
     symlink("inside", root.path().join("internal-link")).unwrap();
     let tools = WorkspaceTools::open(root.path(), overwrite(), Limits::default()).unwrap();
-    for (path, old_text) in [
-        ("file-link", "outside"),
-        ("dir-link/secret", "outside"),
-        ("internal-link", "inside"),
-    ] {
-        assert!(call(&tools, edit(path, old_text, "bad")).is_err(), "{path}");
+    for (path, old_text) in [("file-link", "outside"), ("internal-link", "inside")] {
+        assert_eq!(
+            io_kind(call(&tools, edit(path, old_text, "bad"))),
+            "FilesystemLoop"
+        );
     }
+    // A no-follow directory open reports ELOOP or ENOTDIR depending on the OS.
+    let kind = io_kind(call(&tools, edit("dir-link/secret", "outside", "bad")));
+    assert!(
+        matches!(kind.as_str(), "FilesystemLoop" | "NotADirectory"),
+        "{kind}"
+    );
     assert_eq!(
         fs::read_to_string(outside.path().join("secret")).unwrap(),
         "outside"
@@ -174,7 +193,10 @@ fn hardlinks_and_fifos_are_rejected_like_overwrite() {
     use std::os::unix::ffi::OsStrExt;
     let fifo = std::ffi::CString::new(dir.path().join("fifo").as_os_str().as_bytes()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
-    assert!(call(&tools, edit("fifo", "a", "b")).is_err());
+    assert!(matches!(
+        call(&tools, edit("fifo", "a", "b")),
+        Err(ToolError::Invalid("only regular files can be edited"))
+    ));
 }
 
 #[test]
@@ -215,5 +237,24 @@ fn limits_are_checked_before_mutating() {
     assert_eq!(
         fs::read_to_string(dir.path().join("small")).unwrap(),
         "12345678"
+    );
+}
+
+#[test]
+fn replace_all_result_size_is_bounded_before_it_is_built() {
+    let dir = tempdir().unwrap();
+    let content = "a".repeat(256 * 1024);
+    fs::write(dir.path().join("file"), &content).unwrap();
+    let tools = WorkspaceTools::open(dir.path(), overwrite(), Limits::default()).unwrap();
+    // 262144 matches times a 1 MiB replacement would be 256 GiB if built first.
+    let input = json!({"path":"file","old_text":"a","new_text":"b".repeat(1024 * 1024),
+        "replace_all":true});
+    assert!(matches!(
+        call(&tools, input),
+        Err(ToolError::Limit("write bytes"))
+    ));
+    assert_eq!(
+        fs::read_to_string(dir.path().join("file")).unwrap(),
+        content
     );
 }

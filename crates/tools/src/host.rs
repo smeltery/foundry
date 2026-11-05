@@ -213,7 +213,13 @@ pub fn serve(root: Dir, reader: &mut impl Read, writer: &mut impl Write) -> Resu
     let tools = WorkspaceTools::from_dir(root, grants, request.limits.checked()?)
         .map_err(|_| HostError::Bootstrap)?;
     let input = serde_json::to_vec(&request.input).map_err(|_| HostError::Protocol)?;
-    let result = tools.execute_json(&request.tool, &input);
+    // The wire carries no edit input yet, so edit is refused rather than run
+    // with an effect this host does not classify.
+    let result = if request.tool == "edit" {
+        Err(ToolError::UnknownTool)
+    } else {
+        tools.execute_json(&request.tool, &input)
+    };
     let effect = if request.tool == "write" {
         Effect::Unknown
     } else {

@@ -1,5 +1,8 @@
-//! In-place text replacement under the overwrite grant. Resolution, symlink
-//! refusal, link-count checks and byte limits are the same as `write`.
+//! In-place text replacement under the read and overwrite grants. Resolution,
+//! symlink refusal, link-count checks and byte limits are the same as `write`.
+//! Like an overwrite, the rewrite is not transactional: an I/O failure after
+//! truncation can leave the file empty or partial, so an error is never a
+//! clean no-op and callers must reconcile before retrying.
 use crate::{Result, ToolError, WorkspaceTools, filesystem::regular_options};
 #[cfg(unix)]
 use cap_std::fs::MetadataExt;
@@ -19,9 +22,9 @@ pub(crate) struct EditInput {
 
 impl WorkspaceTools {
     pub(crate) fn edit(&self, args: EditInput) -> Result<Value> {
-        // Edit rewrites an existing file and never creates one, so it needs exactly
-        // the authority of an overwrite.
-        if !self.grants.overwrite {
+        // Edit rewrites an existing file and never creates one. Its match result
+        // reveals file contents, so it also needs read.
+        if !(self.grants.read && self.grants.overwrite) {
             return Err(ToolError::Denied);
         }
         if args.old_text.is_empty() {
@@ -58,10 +61,17 @@ impl WorkspaceTools {
         if replacements > 1 && !args.replace_all {
             return Err(ToolError::Invalid("old_text is not unique"));
         }
-        let edited = content.replace(&args.old_text, &args.new_text);
-        if edited.len() > self.limits.write_bytes {
+        // Bound the result before building it: many matches with a long
+        // replacement could otherwise allocate far beyond the write limit.
+        let projected = replacements
+            .checked_mul(args.new_text.len())
+            .and_then(|added| {
+                (content.len() - replacements * args.old_text.len()).checked_add(added)
+            });
+        if projected.is_none_or(|bytes| bytes > self.limits.write_bytes) {
             return Err(ToolError::Limit("write bytes"));
         }
+        let edited = content.replace(&args.old_text, &args.new_text);
         // Every check passed on the opened descriptor; only now rewrite that object.
         file.set_len(0)?;
         file.seek(SeekFrom::Start(0))?;

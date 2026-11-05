@@ -30,6 +30,8 @@ pub struct CreateReceipt {
 impl Store {
     /// Validates, then records a queued session with its metadata and
     /// associations, or replays the session an equal keyed request created.
+    /// Only the reference format of a tool profile is checked here; the service
+    /// owns resolving it to a known profile.
     pub fn create_session(&mut self, request: CreateSession) -> Result<CreateReceipt> {
         request.validate()?;
         if let Some(profile) = &request.tool_profile {

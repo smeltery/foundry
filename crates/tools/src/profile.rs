@@ -67,7 +67,7 @@ impl ToolProfile {
             ("read", grants.read),
             ("list", grants.list),
             ("write", grants.create || grants.overwrite),
-            ("edit", grants.overwrite),
+            ("edit", grants.read && grants.overwrite),
         ]
         .into_iter()
         .filter_map(|(tool, enabled)| enabled.then_some(tool))
