@@ -248,12 +248,15 @@ hides the session from every read and list. `delete_session` refuses a session
 with a live attempt or restore owner. Otherwise, in one transaction, it clears
 the prompt, result and title in the stored body, replaces the stored create
 request with `{}`, deletes the session's tags and empties message text and event
-data. Identity, lifecycle, outcome, version, origin, lineage and the idempotency
-key stay. Attempts, tool receipts, checkpoints and their payloads, witnesses,
-continuation records and completion decisions are not changed, so stored cut
-hashes and digests and the witness integrity read stay verifiable. A cut can no
-longer be recomputed from the dropped content. Archive, rename and tag writes
-never change `Session::version`.
+data. Identity, lifecycle, outcome, version, directory, model, origin, lineage
+and the idempotency key stay. Attempts, tool receipts, checkpoints and their
+payloads, witnesses, restores, continuation records, finalizations, message
+reconciliations and completion decisions are kept unchanged as digests and
+evidence. Their message and event bytes are gone, so they cannot be re-checked
+against content after delete, and a cut cannot be recomputed. Every per-session
+read refuses a tombstoned session with `not_found`, including witness reads,
+continuation acceptance lookups, witness fact checks and completion records.
+Archive, rename and tag writes never change `Session::version`.
 
 ## Recovery limits
 

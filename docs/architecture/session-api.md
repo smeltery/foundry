@@ -709,15 +709,17 @@ yet). Otherwise one transaction (`Store::delete_session`,
 `crates/store/src/session_meta.rs`) hides the session from every read and list
 and drops its content: prompt, result, title, stored create request, tags,
 message text and event data. The session row keeps its identity, lifecycle,
-outcome, version, origin, lineage and idempotency key, and attempts, tool
-receipts, checkpoints, witnesses, continuation and completion records are not
-changed, so their digests and the witness integrity read
-(`read_checkpoint_witness`) stay verifiable. A later create with the same
-idempotency key reports `conflict`; deleting again reports `not_found`. Evidence:
+outcome, version, directory, model, origin, lineage and idempotency key.
+Attempts, tool receipts, checkpoints, witnesses, restores, continuation and
+completion records are kept unchanged as digests and evidence, but they cannot
+be re-checked against the dropped content: every per-session read, including
+`read_checkpoint_witness`, `continuation_acceptance` and completion records,
+reports `not_found`. A later create with the same idempotency key reports
+`conflict`; deleting again reports `not_found`. Evidence:
 `crates/store/tests/session_meta.rs`, `crates/store/tests/session_meta_delete.rs`
 and `crates/service/tests/session_meta.rs`. Private checkpoint payloads are kept: the
-schema requires a non-empty payload and its integrity read needs the bytes, so
-dropping them needs a separate decision. Unarchive does not touch project
+schema requires a non-empty payload, so dropping them needs a table rebuild and a
+separate decision. Unarchive does not touch project
 grouping, which does not exist yet; usage settlement and retention protections
 (`delete_blocked`) and delete timeouts are not implemented.
 

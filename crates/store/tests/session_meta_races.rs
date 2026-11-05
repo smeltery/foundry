@@ -128,7 +128,6 @@ fn concurrent_archive_rename_and_lifecycle_writes_all_land() {
     let path = dir.path().join("db");
     let mut owner = Store::open(&path).unwrap();
     let id = owner.create(request("race")).unwrap().id;
-    let fence = owner.begin_attempt(&id, 0).unwrap();
     let barrier = Arc::new(Barrier::new(3));
     let spawn = |rename: bool| {
         let (path, id, barrier) = (path.clone(), id.clone(), barrier.clone());
@@ -148,17 +147,24 @@ fn concurrent_archive_rename_and_lifecycle_writes_all_land() {
     };
     let handles = [spawn(true), spawn(false)];
     barrier.wait();
+    // Every admission and terminal rewrites the body while metadata writers run;
+    // a body read outside its write transaction would restore a stale title.
     for n in 0..30 {
+        let version = owner.get(&id).unwrap().version;
+        let fence = owner.begin_attempt(&id, version).unwrap();
         owner
             .append_event(&fence, &format!("e{n}"), 0, "text", json!(n))
+            .unwrap();
+        owner
+            .finish_attempt(&fence, Lifecycle::Exit, Some(Outcome::Failure), None)
             .unwrap();
     }
     for handle in handles {
         handle.join().unwrap();
     }
-    let session = owner
-        .finish_attempt(&fence, Lifecycle::Exit, Some(Outcome::Failure), None)
-        .unwrap();
+    let session = owner.get(&id).unwrap();
+    assert_eq!(session.lifecycle, Lifecycle::Exit);
+    assert_eq!(session.version, 60);
     assert_eq!(session.metadata.title.as_deref(), Some("title 29"));
     assert!(!session.metadata.archived);
     assert_eq!(owner.events(&id, 0, 100).unwrap().len(), 30);

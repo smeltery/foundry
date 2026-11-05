@@ -4,7 +4,7 @@
     ".flox/toolchain/": 140,
     "apps/cli/": 14671,
     "crates/contracts/": 4717,
-    "crates/store/": 18000,
+    "crates/store/": 18188,
     "crates/runtime/": 15592,
     "crates/mcp/": 3000,
     "crates/service/": 17820,

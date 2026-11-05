@@ -80,9 +80,11 @@ impl Store {
     /// refused. Otherwise the session disappears from every read and list, and
     /// its content is dropped in the same transaction: prompt, result, title,
     /// creation request, tags, message text and event data. Identity,
-    /// lifecycle, outcome, lineage and every digest-bearing row (tool receipts,
-    /// checkpoints, witnesses, continuation and completion records) are kept,
-    /// so integrity checks over them stay verifiable.
+    /// lifecycle, outcome, directory, model, lineage and every digest-bearing
+    /// row (tool receipts, checkpoints, witnesses, continuation and completion
+    /// records) are kept as digests and evidence. They cannot be re-checked
+    /// against the dropped content, so every per-session read, including
+    /// witness and continuation checks, reports `not_found` afterwards.
     pub fn delete_session(&mut self, session_id: &str) -> Result<DeleteReceipt> {
         let tx = self
             .connection

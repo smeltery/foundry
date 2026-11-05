@@ -1,12 +1,14 @@
-//! Tombstone delete: refusal while running, dropped content, retained
-//! witness, ledger and audit rows.
-mod support_witness;
+//! Tombstone delete: refusal while running, dropped content, kept witness,
+//! ledger, continuation and audit rows, and not_found from every per-session read.
+mod support_acceptance;
 use foundry_contracts::{ContractError, CreateSession, Lifecycle, Outcome};
 use foundry_store::{ArchiveFilter, SessionFilter, Store, StoreError, ToolOutcome};
 use rusqlite::Connection;
 use serde_json::json;
-use support_witness::{checkpoint, input, terminal};
-use tempfile::tempdir;
+use support_acceptance::{
+    Fixture,
+    witness::{checkpoint, input, terminal},
+};
 
 fn request(prompt: &str) -> CreateSession {
     CreateSession {
@@ -14,10 +16,6 @@ fn request(prompt: &str) -> CreateSession {
         directory: "/workspace/project".into(),
         ..Default::default()
     }
-}
-
-fn tags(values: &[&str]) -> Vec<String> {
-    values.iter().map(|value| (*value).to_owned()).collect()
 }
 
 fn listed(store: &Store, archive: ArchiveFilter) -> Vec<String> {
@@ -48,31 +46,54 @@ fn conflict<T>(result: foundry_store::Result<T>) {
     }
 }
 
-/// Every row of `table` for one session, rendered with SQLite's own quoting.
-fn snapshot(db: &Connection, table: &str, session: &str) -> Vec<String> {
-    let mut names = db
-        .prepare(&format!(
-            "SELECT name FROM pragma_table_info('{table}') ORDER BY cid"
-        ))
-        .unwrap();
-    let names: Vec<String> = names
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .map(Result::unwrap)
-        .collect();
-    let quoted = names
-        .iter()
-        .map(|name| format!("quote({name})"))
-        .collect::<Vec<_>>()
-        .join("||','||");
-    let mut rows = db
-        .prepare(&format!(
-            "SELECT {quoted} FROM {table} WHERE session_id=?1 ORDER BY rowid"
-        ))
-        .unwrap();
-    rows.query_map([session], |r| r.get(0))
-        .unwrap()
-        .map(Result::unwrap)
+/// Kept tables and how each row is linked to its session.
+const KEPT: [(&str, &str); 11] = [
+    ("attempts", "session_id=?1"),
+    ("tool_calls", "session_id=?1"),
+    ("context_checkpoints", "session_id=?1"),
+    ("context_checkpoint_heads", "session_id=?1"),
+    ("context_witnesses", "session_id=?1"),
+    ("completion_decisions", "session_id=?1"),
+    ("context_restores", "session_id=?1"),
+    ("context_continue_messages", "session_id=?1"),
+    ("message_reconciliations", "session_id=?1"),
+    (
+        "context_continue_acceptances",
+        "restore_id IN (SELECT id FROM context_restores WHERE session_id=?1)",
+    ),
+    (
+        "context_finalizations",
+        "checkpoint_id IN (SELECT id FROM context_checkpoints WHERE session_id=?1)",
+    ),
+];
+
+/// Every kept row of one session, rendered with SQLite's own quoting.
+fn kept_rows(db: &Connection, session: &str) -> Vec<(&'static str, Vec<String>)> {
+    KEPT.iter()
+        .map(|&(table, linked)| {
+            let mut names = db
+                .prepare(&format!(
+                    "SELECT name FROM pragma_table_info('{table}') ORDER BY cid"
+                ))
+                .unwrap();
+            let quoted = names
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|name| format!("quote({})", name.unwrap()))
+                .collect::<Vec<_>>()
+                .join("||','||");
+            let mut rows = db
+                .prepare(&format!(
+                    "SELECT {quoted} FROM {table} WHERE {linked} ORDER BY rowid"
+                ))
+                .unwrap();
+            let rows = rows
+                .query_map([session], |r| r.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            (table, rows)
+        })
         .collect()
 }
 
@@ -108,12 +129,28 @@ fn delete_refuses_a_live_attempt_or_restore_owner() {
 
 #[test]
 fn delete_tombstones_content_and_keeps_witness_ledger_and_audit_rows() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("db");
-    let mut store = Store::open(&path).unwrap();
+    // A witnessed checkpoint, restore, accepted continuation and settled attempt.
+    let mut f = Fixture::new();
+    let continued = f.fence.session_id.clone();
+    let baseline = f.input.intent.baseline_checkpoint_id.clone();
+    f.accept().unwrap();
+    assert!(f.lookup().unwrap().is_some());
+    f.store
+        .finish_attempt(&f.fence, Lifecycle::Exit, Some(Outcome::Failure), None)
+        .unwrap();
+    let db = f.db();
+    db.execute(
+        "INSERT INTO message_reconciliations(session_id,message_id,ordinal,attempt_id,prior_state,
+            resolved_state,cause,receipt_digest,recorded_ms)
+         VALUES(?1,'instruction',1,?2,'in_flight','delivered','operator_confirmed',zeroblob(32),1)",
+        [&continued, &f.fence.attempt_id],
+    )
+    .unwrap();
+
+    let store = &mut f.store;
     let keyed = CreateSession {
         idempotency_key: Some("delete-key".into()),
-        tags: tags(&["alpha"]),
+        tags: vec!["alpha".into()],
         title: Some("Visible title".into()),
         ..request("tombstone sample")
     };
@@ -137,72 +174,83 @@ fn delete_tombstones_content_and_keeps_witness_ledger_and_audit_rows() {
             Some("private result".into()),
         )
         .unwrap();
+    let queued = store.create(request("queued private prompt")).unwrap().id;
+    store.enqueue_message(&queued, "q1", "queued text").unwrap();
 
-    let witnessed = checkpoint::session(&mut store);
-    let fence = store.begin_attempt(&witnessed, 0).unwrap();
-    let value = input(&store, &fence, "witness");
-    let published = store
-        .finish_with_witnessed_checkpoint(&fence, value, terminal())
-        .unwrap();
-    let witness = store
-        .read_checkpoint_witness(&witnessed, &published.checkpoint.id)
-        .unwrap();
-
-    let db = Connection::open(&path).unwrap();
-    let kept = [
-        "attempts",
-        "tool_calls",
-        "context_checkpoints",
-        "context_checkpoint_heads",
-        "context_witnesses",
-        "completion_decisions",
-    ];
-    let ledger = |session: &str| -> Vec<Vec<String>> {
-        kept.iter()
-            .map(|table| snapshot(&db, table, session))
-            .collect()
-    };
     let lineage = |session: &str| -> String {
         db.query_row(
             "SELECT quote(id)||quote(idempotency_key)||quote(origin_kind)||quote(parent_session_id)
                 ||quote(forked_from_session_id)||quote(json_extract(body,'$.lifecycle'))
                 ||quote(json_extract(body,'$.outcome'))||quote(json_extract(body,'$.version'))
+                ||quote(json_extract(body,'$.directory'))||quote(json_extract(body,'$.model'))
              FROM sessions WHERE id=?1",
             [session],
             |r| r.get(0),
         )
         .unwrap()
     };
-    let before = [ledger(&tooled), ledger(&witnessed)];
-    let lineage_before = [lineage(&tooled), lineage(&witnessed)];
-    assert!(before[0][1].len() == 1 && before[1][4].len() == 1 && before[1][5].len() == 1);
+    let sessions = [&tooled, &continued, &queued];
+    let before: Vec<_> = sessions.iter().map(|id| kept_rows(&db, id)).collect();
+    let lineage_before: Vec<_> = sessions.iter().map(|id| lineage(id)).collect();
+    let count = |id: &str, table: &str| {
+        let rows = kept_rows(&db, id);
+        rows.iter()
+            .find(|(name, _)| *name == table)
+            .unwrap()
+            .1
+            .len()
+    };
+    assert_eq!(count(&tooled, "tool_calls"), 1);
+    for table in [
+        "context_witnesses",
+        "context_restores",
+        "context_continue_messages",
+        "context_continue_acceptances",
+        "context_finalizations",
+        "message_reconciliations",
+    ] {
+        assert!(count(&continued, table) >= 1, "{table}");
+    }
+    assert_eq!(count(&continued, "completion_decisions"), 2);
 
-    for id in [&tooled, &witnessed] {
+    for id in sessions {
         let receipt = store.delete_session(id).unwrap();
         assert_eq!(&receipt.session_id, id);
         not_found(store.get(id));
         not_found(store.events(id, 0, 10));
         not_found(store.messages(id, 0, 10));
+        not_found(store.withdraw_message(id, "q1"));
         not_found(store.session_tags(id));
         not_found(store.associations(id));
+        not_found(store.session_completion(id));
+        not_found(store.completion_decision(id, &fence.attempt_id));
+        not_found(store.current_completion_decision(id));
+        not_found(store.checkpoint_head(id));
         not_found(store.set_archived(id, true));
         not_found(store.rename_session(id, Some("again")));
         not_found(store.enqueue_message(id, "m2", "more"));
         not_found(store.begin_attempt(id, 99));
+        not_found(store.begin_fresh_attempt(id, 0));
         not_found(store.delete_session(id));
     }
+    not_found(store.read_checkpoint_witness(&continued, &baseline));
+    not_found(store.continuation_acceptance(
+        &continued,
+        &f.input.intent.restore_id,
+        f.input.request_digest().unwrap(),
+    ));
+    let store = &mut f.store;
     assert!(store.list(10).unwrap().is_empty());
-    assert!(listed(&store, ArchiveFilter::All).is_empty());
+    assert!(listed(store, ArchiveFilter::All).is_empty());
     // The kept key cannot create a new session over the tombstone.
     conflict(store.create_session(keyed));
 
-    assert_eq!([ledger(&tooled), ledger(&witnessed)], before);
-    assert_eq!([lineage(&tooled), lineage(&witnessed)], lineage_before);
-    // The witness still verifies against its stored checkpoint after delete.
-    let reread = store
-        .read_checkpoint_witness(&witnessed, &published.checkpoint.id)
-        .unwrap();
-    assert_eq!(reread.digest(), witness.digest());
+    // Digest and evidence rows are unchanged, though their message and event
+    // bytes are gone, so they can no longer be re-checked against content.
+    let after: Vec<_> = sessions.iter().map(|id| kept_rows(&db, id)).collect();
+    assert_eq!(after, before);
+    let lineage_after: Vec<_> = sessions.iter().map(|id| lineage(id)).collect();
+    assert_eq!(lineage_after, lineage_before);
 
     let content: (String, String, Option<String>, i64) = db
         .query_row(
@@ -214,15 +262,20 @@ fn delete_tombstones_content_and_keeps_witness_ledger_and_audit_rows() {
         )
         .unwrap();
     assert_eq!(content, (String::new(), "{}".into(), None, 0));
-    let body: String = db
-        .query_row("SELECT body FROM sessions WHERE id=?1", [&tooled], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    assert!(
-        !body.contains("private") && !body.contains("Visible"),
-        "{body}"
-    );
+    let bodies: Vec<String> = db
+        .prepare("SELECT body FROM sessions")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    for body in &bodies {
+        assert!(
+            !body.contains("private") && !body.contains("Visible"),
+            "{body}"
+        );
+        assert!(body.contains("\"directory\":"), "{body}");
+    }
     let leftovers: i64 = db
         .query_row(
             "SELECT (SELECT count(*) FROM messages WHERE text!='')
@@ -232,8 +285,7 @@ fn delete_tombstones_content_and_keeps_witness_ledger_and_audit_rows() {
         )
         .unwrap();
     assert_eq!(leftovers, 0);
-    drop(store);
     // A reopened store keeps the tombstones.
-    let store = Store::open(&path).unwrap();
+    let store = Store::open(f.dir.path().join("db")).unwrap();
     not_found(store.get(&tooled));
 }
